@@ -2,6 +2,16 @@
 
 Tool to enable software management and execution remotely from "over there."
 
+## Making a release
+
+See the following link about file size:
+https://stackoverflow.com/a/54842093
+
+```
+cargo build --release
+strip target/release/over-there
+```
+
 ## overthered
 
 `otd` as alias?
