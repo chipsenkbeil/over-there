@@ -1,6 +1,5 @@
-#[macro_use]
-extern crate clap;
-use clap::{App, Arg, SubCommand};
+use clap::{crate_authors, crate_description, crate_version, App, Arg, SubCommand};
+
 use ring::rand::SecureRandom;
 use ring::{digest, hmac, rand};
 
@@ -12,6 +11,12 @@ fn main() {
         .subcommand(SubCommand::with_name("daemon").about("Launch daemon instance"))
         .subcommand(SubCommand::with_name("client").about("Issue commands to daemon instance"))
         .get_matches();
+
+    match matches.subcommand_name() {
+        Some("daemon") => println!("Running daemon!"),
+        Some("client") => println!("Running client!"),
+        _ => println!("Print help!"),
+    }
 
     println!("Hello, world!");
 }
