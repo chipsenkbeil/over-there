@@ -5,6 +5,27 @@ version = "0.1.0"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 edition = "2018"
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "over-there-daemon"
+path = "src/main-daemon.rs"
+
+[[bin]]
+name = "over-there-client"
+path = "src/main-client.rs"
+
+# TODO: Currently, there is not a way to mark a dependency as binary-only
+#       and the workarounds suggested are:
+#
+#       1. Make binaries as examples instead and use dev-dependencies (bad)
+#       2. Make binary dependencies as optional features that are required
+#          by the binaries (bad)
+#       3. Use workspaces to separate out binaries and library (overkill)
+#
+#       Until I reach the point where I'm actively distributing this library,
+#       I'll ignore the problem and bring everything in to the library.
 [dependencies]
 clap = "~2.33.0"
 ring = "0.16.9"
