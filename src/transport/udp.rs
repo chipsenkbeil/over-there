@@ -60,7 +60,7 @@ impl super::Transport for UDP {
         // For each packet, serialize and send to everyone
         for packet in packets.iter() {
             let packet_data = rmp_serde::to_vec(&packet)?;
-            self.sock.send(&packet_data);
+            self.sock.send(&packet_data)?;
         }
 
         Ok(())
