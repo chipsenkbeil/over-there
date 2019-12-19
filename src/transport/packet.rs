@@ -18,19 +18,20 @@ pub struct Packet {
 }
 
 impl Packet {
-    const METADATA_SIZE: usize = mem::size_of::<Metadata>();
+    const METADATA_SIZE: u32 = mem::size_of::<Metadata>() as u32;
 
-    pub fn data_to_multipart(data: Vec<u8>, max_packet_size: usize) -> Vec<Self> {
+    pub fn data_to_multipart(data: Vec<u8>, max_data_per_packet: u32) -> Vec<Self> {
         // TODO: How can we get the overhead size
-        if data.len() <= max_packet_size {
+        if data.len() as u32 <= max_data_per_packet {
             vec![Packet {
                 metadata: None,
                 data,
             }]
         } else {
+            // TODO: Create unique group id
             let group_id = 0;
-            let chunk_size = max_packet_size - Self::METADATA_SIZE;
-            let chunks = data.chunks(chunk_size);
+            let chunk_size = max_data_per_packet - Self::METADATA_SIZE;
+            let chunks = data.chunks(chunk_size as usize);
             let total_chunks = chunks.len();
             let packets = chunks
                 .enumerate()

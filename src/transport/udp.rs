@@ -1,5 +1,5 @@
-use super::msg::Msg;
 use super::packet::Packet;
+use crate::msg::Msg;
 use std::error::Error;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use ttl_cache::TtlCache;
@@ -10,7 +10,7 @@ pub struct UDP {
 
     /// Maximum size allowed for a packet
     /// 508 bytes for data; 508 = 576 - 60 (IP header) - 8 (udp header)
-    max_size: usize,
+    max_data_per_packet: u32,
 
     /// Cache of packets belonging to a group that has not been completed
     cache: TtlCache<u32, Vec<Packet>>,
@@ -30,15 +30,15 @@ impl UDP {
     pub fn new(
         host: IpAddr,
         port: Vec<u16>,
-        cache_capacity: usize,
+        max_data_per_packet: u32,
     ) -> Result<Self, std::io::Error> {
         let addr_candidates: Vec<SocketAddr> =
             port.iter().map(|p| SocketAddr::new(host, *p)).collect();
         let sock = UdpSocket::bind(&addr_candidates[..])?;
         let instance = UDP {
             sock,
-            max_size: UDP::MAX_CACHE_SIZE,
-            cache: TtlCache::new(cache_capacity),
+            max_data_per_packet,
+            cache: TtlCache::new(Self::MAX_CACHE_SIZE),
         };
         Ok(instance)
     }
@@ -50,7 +50,7 @@ impl super::Transport for UDP {
 
         // TODO: Split data into chunks if larger than our max size
         //       and add our metadata to a packet to send off
-        let packets = Packet::data_to_multipart(data, Self::MAX_IPV4_DATAGRAM_SIZE);
+        let packets = Packet::data_to_multipart(data, self.max_data_per_packet);
 
         // For each packet, serialize and send to everyone
         for packet in packets.iter() {
@@ -65,7 +65,7 @@ impl super::Transport for UDP {
         // TODO: Have a common buffer of max size? Recreate buffer each time?
         let mut buf = [0; Self::MAX_IPV4_DATAGRAM_SIZE];
 
-        let (len, src) = self.sock.recv_from(&mut buf)?;
+        let (_, src) = self.sock.recv_from(&mut buf)?;
         let p: Packet = rmp_serde::from_read_ref(&buf[..])?;
 
         // if p.is_multipart() {
