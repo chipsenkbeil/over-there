@@ -10,25 +10,25 @@ pub struct Msg {
     origin: Vec<u32>,
 
     /// Represents the request or response associated with the message
-    reqOrRes: Either<Request, Response>,
+    req_or_res: Either<Request, Response>,
 }
 
 impl Msg {
-    pub fn new(id: u32, origin: Vec<u32>, reqOrRes: Either<Request, Response>) -> Self {
+    pub fn new(id: u32, origin: Vec<u32>, req_or_res: Either<Request, Response>) -> Self {
         Msg {
             id,
             origin,
-            reqOrRes,
+            req_or_res,
         }
     }
 
-    pub fn new_from_parent(id: u32, reqOrRes: Either<Request, Response>, parent: &Msg) -> Self {
+    pub fn new_from_parent(id: u32, req_or_res: Either<Request, Response>, parent: &Msg) -> Self {
         let mut origin = parent.origin.clone();
         origin.append(&mut vec![parent.id]);
         Msg {
             id,
             origin,
-            reqOrRes,
+            req_or_res,
         }
     }
 
