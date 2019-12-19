@@ -1,20 +1,9 @@
 [package]
 name = "over-there"
-description = "Tool to enable software management and execution remotely from \"over there.\""
+description = "Tool to enable file editing, software management, and execution remotely from \"over there.\""
 version = "0.1.0"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 edition = "2018"
-
-[lib]
-path = "src/lib.rs"
-
-[[bin]]
-name = "over-there-daemon"
-path = "src/main-daemon.rs"
-
-[[bin]]
-name = "over-there-client"
-path = "src/main-client.rs"
 
 # TODO: Currently, there is not a way to mark a dependency as binary-only
 #       and the workarounds suggested are:
@@ -27,5 +16,11 @@ path = "src/main-client.rs"
 #       Until I reach the point where I'm actively distributing this library,
 #       I'll ignore the problem and bring everything in to the library.
 [dependencies]
-clap = "~2.33.0"
-ring = "0.16.9"
+clap = "~2.33.0" # This should be a binary-only dependency?
+hmac = "0.7.1"
+sha2 = "0.8.0"
+aes-gcm-siv = "0.3.0"
+serde = { version = "1.0.103", features = ["derive"] }
+serde_bytes = "0.11.3"
+rmp-serde = "0.14.0"
+ttl_cache = "0.5.1"

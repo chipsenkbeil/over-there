@@ -1,12 +1,9 @@
 use clap::{crate_authors, crate_description, crate_version, App, Arg, SubCommand};
 
-use ring::rand::SecureRandom;
-use ring::{digest, hmac, rand};
-
 use over_there;
 
 fn main() {
-    let matches = App::new("Over There Daemon")
+    let matches = App::new("Over There")
         .version(crate_version!())
         .author(crate_authors!())
         .about(crate_description!())
