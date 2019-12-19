@@ -1,5 +1,6 @@
 use super::packet::Packet;
 use crate::msg::Msg;
+use std::cell::RefCell;
 use std::error::Error;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use ttl_cache::TtlCache;
@@ -14,6 +15,9 @@ pub struct UDP {
 
     /// Cache of packets belonging to a group that has not been completed
     cache: TtlCache<u32, Vec<Packet>>,
+
+    /// Buffer to contain bytes for temporary storage
+    buffer: RefCell<[u8; Self::MAX_IPV4_DATAGRAM_SIZE]>,
 }
 
 impl UDP {
@@ -39,6 +43,7 @@ impl UDP {
             sock,
             max_data_per_packet,
             cache: TtlCache::new(Self::MAX_CACHE_SIZE),
+            buffer: RefCell::new([0; Self::MAX_IPV4_DATAGRAM_SIZE]),
         };
         Ok(instance)
     }
@@ -62,10 +67,8 @@ impl super::Transport for UDP {
     }
 
     fn recv(&self) -> Result<Option<Msg>, Box<dyn Error>> {
-        // TODO: Have a common buffer of max size? Recreate buffer each time?
-        let mut buf = [0; Self::MAX_IPV4_DATAGRAM_SIZE];
-
-        let (_, src) = self.sock.recv_from(&mut buf)?;
+        let mut buf = self.buffer.borrow_mut();
+        let (_, src) = self.sock.recv_from(&mut buf[..])?;
         let p: Packet = rmp_serde::from_read_ref(&buf[..])?;
 
         // if p.is_multipart() {
