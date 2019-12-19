@@ -4,9 +4,9 @@ use std::mem;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Metadata {
-    group_id: usize,
-    index: usize,
-    total_entries: usize,
+    group_id: u32,
+    index: u32,
+    total_entries: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -37,8 +37,8 @@ impl Packet {
                 .map(|(index, chunk)| Packet {
                     metadata: Some(Metadata {
                         group_id,
-                        index,
-                        total_entries: total_chunks,
+                        index: index as u32,
+                        total_entries: total_chunks as u32,
                     }),
                     data: chunk.to_vec(),
                 })
