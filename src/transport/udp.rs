@@ -1,4 +1,5 @@
-use super::packet::Packet;
+use super::data::disassembler;
+use super::data::Packet;
 use crate::msg::Msg;
 use std::cell::RefCell;
 use std::error::Error;
@@ -53,9 +54,9 @@ impl super::Transport for UDP {
     fn send(&self, msg: Msg) -> Result<(), Box<dyn Error>> {
         let data = msg.to_vec()?;
 
-        // TODO: Split data into chunks if larger than our max size
-        //       and add our metadata to a packet to send off
-        let packets = Packet::data_to_multipart(data, self.max_data_per_packet);
+        // TODO: Create unique id for group of packets
+        let id = 0;
+        let packets = disassembler::make_packets_from_data(id, data, self.max_data_per_packet);
 
         // For each packet, serialize and send to everyone
         for packet in packets.iter() {
