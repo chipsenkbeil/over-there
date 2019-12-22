@@ -33,52 +33,56 @@ impl<T, U> Either<T, U> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(test)]
+    mod either {
+        use super::*;
 
-    #[test]
-    fn is_left_yields_true_if_left() {
-        let e = Either::Left::<u32, &str>(123);
-        assert_eq!(e.is_left(), true);
-    }
+        #[test]
+        fn is_left_yields_true_if_left() {
+            let e = Either::Left::<u32, &str>(123);
+            assert_eq!(e.is_left(), true);
+        }
 
-    #[test]
-    fn is_left_yields_false_if_right() {
-        let e = Either::Right::<u32, &str>("123");
-        assert_eq!(e.is_left(), false);
-    }
+        #[test]
+        fn is_left_yields_false_if_right() {
+            let e = Either::Right::<u32, &str>("123");
+            assert_eq!(e.is_left(), false);
+        }
 
-    #[test]
-    fn is_right_yields_true_if_right() {
-        let e = Either::Right::<u32, &str>("123");
-        assert_eq!(e.is_right(), true);
-    }
+        #[test]
+        fn is_right_yields_true_if_right() {
+            let e = Either::Right::<u32, &str>("123");
+            assert_eq!(e.is_right(), true);
+        }
 
-    #[test]
-    fn is_right_yields_false_if_left() {
-        let e = Either::Left::<u32, &str>(123);
-        assert_eq!(e.is_right(), false);
-    }
+        #[test]
+        fn is_right_yields_false_if_left() {
+            let e = Either::Left::<u32, &str>(123);
+            assert_eq!(e.is_right(), false);
+        }
 
-    #[test]
-    fn get_left_yields_some_value_if_left() {
-        let e = Either::Left::<u32, &str>(123);
-        assert_eq!(e.get_left(), Some(&123));
-    }
+        #[test]
+        fn get_left_yields_some_value_if_left() {
+            let e = Either::Left::<u32, &str>(123);
+            assert_eq!(e.get_left(), Some(&123));
+        }
 
-    #[test]
-    fn get_left_yields_none_if_right() {
-        let e = Either::Right::<u32, &str>("123");
-        assert_eq!(e.get_left(), None);
-    }
+        #[test]
+        fn get_left_yields_none_if_right() {
+            let e = Either::Right::<u32, &str>("123");
+            assert_eq!(e.get_left(), None);
+        }
 
-    #[test]
-    fn get_right_yields_some_value_if_right() {
-        let e = Either::Right::<u32, &str>("123");
-        assert_eq!(e.get_right(), Some(&"123"));
-    }
+        #[test]
+        fn get_right_yields_some_value_if_right() {
+            let e = Either::Right::<u32, &str>("123");
+            assert_eq!(e.get_right(), Some(&"123"));
+        }
 
-    #[test]
-    fn get_right_yields_none_if_left() {
-        let e = Either::Left::<u32, &str>(123);
-        assert_eq!(e.get_right(), None);
+        #[test]
+        fn get_right_yields_none_if_left() {
+            let e = Either::Left::<u32, &str>(123);
+            assert_eq!(e.get_right(), None);
+        }
     }
 }

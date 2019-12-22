@@ -28,7 +28,7 @@ pub fn make_packets_from_data(
 ) -> Result<Vec<Packet>, DisassemblerError> {
     // We assume that we have a desired chunk size that can fit our
     // metadata and data reasonably
-    if desired_chunk_size > Metadata::size() {
+    if desired_chunk_size <= Metadata::size() {
         return Err(DisassemblerError::DesiredChunkSizeTooSmall(
             desired_chunk_size,
             Metadata::size() + 1,
@@ -68,7 +68,7 @@ mod tests {
 
         let DisassemblerError::DesiredChunkSizeTooSmall(size, min_size) =
             make_packets_from_data(0, vec![1, 2, 3], chunk_size).unwrap_err();
-        assert_eq!(size, chunk_size,);
+        assert_eq!(size, chunk_size);
         assert_eq!(min_size, Metadata::size() + 1);
     }
 
@@ -113,7 +113,7 @@ mod tests {
             p1.metadata.is_last, false,
             "Non-final packet unexpectedly marked as last"
         );
-        assert_eq!(&p1.get_data()[..], &data[0..1]);
+        assert_eq!(&p1.get_data()[..], &data[0..2]);
         assert_eq!(p1.is_multipart(), true, "Packet unexpectedly not multipart");
 
         // Check data quality of second packet
