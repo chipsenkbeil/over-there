@@ -1,9 +1,11 @@
+use super::data::assembler::Assembler;
 use super::data::disassembler;
 use super::data::Packet;
 use crate::msg::Msg;
 use std::cell::RefCell;
 use std::error::Error;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::time::Duration;
 use ttl_cache::TtlCache;
 
 pub struct UDP {
@@ -11,11 +13,10 @@ pub struct UDP {
     sock: UdpSocket,
 
     /// Maximum size allowed for a packet
-    /// 508 bytes for data; 508 = 576 - 60 (IP header) - 8 (udp header)
     max_data_per_packet: u32,
 
     /// Cache of packets belonging to a group that has not been completed
-    cache: TtlCache<u32, Vec<Packet>>,
+    cache: RefCell<TtlCache<u32, Assembler>>,
 
     /// Buffer to contain bytes for temporary storage
     buffer: RefCell<[u8; Self::MAX_IPV4_DATAGRAM_SIZE]>,
@@ -29,6 +30,7 @@ impl UDP {
     pub const MAX_IPV6_DATAGRAM_SIZE: usize = 1212;
 
     pub const MAX_CACHE_SIZE: usize = 1500;
+    pub const MAX_CACHE_DURATION_SECS: u64 = 60 * 5;
 
     /// Creates a new instance of a UDP transport layer, binding to the
     /// specified host using the first open port in the list provided.
@@ -43,7 +45,7 @@ impl UDP {
         let instance = UDP {
             sock,
             max_data_per_packet,
-            cache: TtlCache::new(Self::MAX_CACHE_SIZE),
+            cache: RefCell::new(TtlCache::new(Self::MAX_CACHE_SIZE)),
             buffer: RefCell::new([0; Self::MAX_IPV4_DATAGRAM_SIZE]),
         };
         Ok(instance)
@@ -72,17 +74,23 @@ impl super::Transport for UDP {
         let (_, src) = self.sock.recv_from(&mut buf[..])?;
         let p: Packet = rmp_serde::from_read_ref(&buf[..])?;
 
-        // if p.is_multipart() {
-        //     // If this packet is part of a group, store it in our cache and
-        //     // only put back together the message if we have the full collection
-        //     Ok()
-        // } else {
-        //     // Otherwise, this is a single datagram that we can consume immediately
-        //     let m = Msg::from_vec(&p.get_data())?;
-        //     Ok(m)
-        // }
+        // Retrieve the assembler associated with the packet or
+        // create a new instance
+        let mut map = self.cache.borrow_mut();
+        let mut assembler = match map.get_mut(&p.get_id()) {
+            Some(a) => a,
+            None => {
+                let d = Duration::new(UDP::MAX_CACHE_DURATION_SECS, 0);
+                map.insert(p.get_id(), Assembler::new(), d);
+                map.get_mut(&p.get_id()).unwrap()
+            }
+        };
 
-        let m = Msg::from_vec(&p.get_data())?;
-        Ok(Some(m))
+        assembler.add_packet(p);
+        assembler.assemble();
+        assembler.assemble();
+        Ok(None)
+
+        // let m = Msg::from_vec(&p.get_data())?;
     }
 }

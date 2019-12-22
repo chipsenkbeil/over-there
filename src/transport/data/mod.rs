@@ -43,6 +43,16 @@ impl Packet {
         self.metadata.index > 0 || !self.metadata.is_last
     }
 
+    /// Returns the id associated with the packet
+    pub fn get_id(&self) -> u32 {
+        self.metadata.id
+    }
+
+    /// Returns whether or not this packet is the last in a multi-part collection
+    pub fn is_last(&self) -> bool {
+        self.metadata.is_last
+    }
+
     /// Returns the bytes data held within the packet
     pub fn get_data(&self) -> &Vec<u8> {
         &self.data

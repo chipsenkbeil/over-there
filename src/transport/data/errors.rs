@@ -24,6 +24,7 @@ pub enum AssemblerError {
     PacketExists(u32),
     PacketBeyondLastIndex(u32, u32),
     PacketHasDifferentId(u32, u32),
+    FinalPacketAlreadyExists(u32),
     IncompletePacketCollection,
 }
 
@@ -40,6 +41,11 @@ impl std::fmt::Display for AssemblerError {
                 f,
                 "Packet has id {} whereas expected id {}",
                 id, expected_id
+            ),
+            AssemblerError::FinalPacketAlreadyExists(final_packet_index) => write!(
+                f,
+                "Packet at index {} is already marked as the last packet",
+                final_packet_index
             ),
             AssemblerError::IncompletePacketCollection => {
                 write!(f, "Attempted to assemble without all packets!")
