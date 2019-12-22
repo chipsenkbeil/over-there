@@ -67,6 +67,11 @@ impl Packet {
     pub fn from_vec(v: &Vec<u8>) -> Result<Self, rmp_serde::decode::Error> {
         rmp_serde::from_read_ref(v)
     }
+
+    /// Deserializes the slice of bytes to a single packet
+    pub fn from_slice(slice: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
+        rmp_serde::from_read_ref(slice)
+    }
 }
 
 #[cfg(test)]

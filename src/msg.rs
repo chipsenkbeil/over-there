@@ -22,6 +22,14 @@ impl Msg {
         }
     }
 
+    pub fn from_request(id: u32, origin: Vec<u32>, req: Request) -> Self {
+        Self::new(id, origin, Either::Left(req))
+    }
+
+    pub fn from_response(id: u32, origin: Vec<u32>, res: Response) -> Self {
+        Self::new(id, origin, Either::Right(res))
+    }
+
     pub fn new_from_parent(id: u32, req_or_res: Either<Request, Response>, parent: &Msg) -> Self {
         let mut origin = parent.origin.clone();
         origin.append(&mut vec![parent.id]);
@@ -30,6 +38,14 @@ impl Msg {
             origin,
             req_or_res,
         }
+    }
+
+    pub fn get_request(&self) -> Option<&Request> {
+        self.req_or_res.get_left()
+    }
+
+    pub fn get_response(&self) -> Option<&Response> {
+        self.req_or_res.get_right()
     }
 
     pub fn to_vec(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
