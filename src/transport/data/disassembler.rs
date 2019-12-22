@@ -1,25 +1,5 @@
+use super::errors::DisassemblerError;
 use super::{Metadata, Packet};
-use std::error::Error;
-use std::fmt;
-
-#[derive(Debug)]
-pub enum DisassemblerError {
-    DesiredChunkSizeTooSmall(u32, u32),
-}
-
-impl fmt::Display for DisassemblerError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            DisassemblerError::DesiredChunkSizeTooSmall(size, min_size) => write!(
-                f,
-                "Desired chunk size of {} is not {} or greater",
-                size, min_size
-            ),
-        }
-    }
-}
-
-impl Error for DisassemblerError {}
 
 pub fn make_packets_from_data(
     id: u32,
