@@ -1,9 +1,9 @@
-use clap::{crate_authors, crate_description, crate_version, App, Arg, SubCommand};
+use clap::{crate_authors, crate_description, crate_version, App};
 
 use over_there;
 
 fn main() {
-    let matches = App::new("Over There")
+    let _matches = App::new("Over There")
         .version(crate_version!())
         .author(crate_authors!())
         .about(crate_description!())

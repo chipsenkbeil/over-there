@@ -37,6 +37,11 @@ pub struct Packet {
 }
 
 impl Packet {
+    /// Returns the size of metadata for packets
+    pub fn metadata_size() -> u32 {
+        Metadata::size()
+    }
+
     /// Indicates whether or not this packet is part of a series of packets
     /// representing one collection of data
     pub fn is_multipart(&self) -> bool {
@@ -46,6 +51,12 @@ impl Packet {
     /// Returns the id associated with the packet
     pub fn get_id(&self) -> u32 {
         self.metadata.id
+    }
+
+    /// Returns the index (position) of this packet relative to others with
+    /// the same id
+    pub fn get_index(&self) -> u32 {
+        self.metadata.index
     }
 
     /// Returns whether or not this packet is the last in a multi-part collection
