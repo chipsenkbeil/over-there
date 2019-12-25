@@ -8,7 +8,7 @@ use std::time::Duration;
 use ttl_cache::TtlCache;
 
 #[derive(Debug)]
-pub enum MsgManangerError {
+pub enum Error {
     FailedToEncodeMsg(rmp_serde::encode::Error),
     FailedToDecodeMsg(rmp_serde::decode::Error),
     FailedToEncodePacket(rmp_serde::encode::Error),
@@ -19,36 +19,28 @@ pub enum MsgManangerError {
     FailedToRecv(Box<dyn std::error::Error>),
 }
 
-impl std::fmt::Display for MsgManangerError {
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &*self {
-            MsgManangerError::FailedToEncodeMsg(msg) => {
-                write!(f, "Failed to encode message: {:?}", msg)
-            }
-            MsgManangerError::FailedToDecodeMsg(error) => {
-                write!(f, "Failed to decode message: {:?}", error)
-            }
-            MsgManangerError::FailedToEncodePacket(packet) => {
+            Error::FailedToEncodeMsg(msg) => write!(f, "Failed to encode message: {:?}", msg),
+            Error::FailedToDecodeMsg(error) => write!(f, "Failed to decode message: {:?}", error),
+            Error::FailedToEncodePacket(packet) => {
                 write!(f, "Failed to encode packet: {:?}", packet)
             }
-            MsgManangerError::FailedToDecodePacket(packet) => {
+            Error::FailedToDecodePacket(packet) => {
                 write!(f, "Failed to decode packet: {:?}", packet)
             }
-            MsgManangerError::FailedToAssembleData(error) => {
-                write!(f, "Failed to assemble data: {:?}", error)
-            }
-            MsgManangerError::FailedToDisassembleData(error) => {
+            Error::FailedToAssembleData(error) => write!(f, "Failed to assemble data: {:?}", error),
+            Error::FailedToDisassembleData(error) => {
                 write!(f, "Failed to disassemble data: {:?}", error)
             }
-            MsgManangerError::FailedToSend(error) => write!(f, "Failed to send data: {:?}", error),
-            MsgManangerError::FailedToRecv(error) => {
-                write!(f, "Failed to receive data: {:?}", error)
-            }
+            Error::FailedToSend(error) => write!(f, "Failed to send data: {:?}", error),
+            Error::FailedToRecv(error) => write!(f, "Failed to receive data: {:?}", error),
         }
     }
 }
 
-impl std::error::Error for MsgManangerError {}
+impl std::error::Error for Error {}
 
 pub struct MsgManager {
     /// Maximum size allowed for a packet
@@ -78,20 +70,18 @@ impl MsgManager {
         &self,
         msg: Msg,
         mut send_handler: impl FnMut(Vec<u8>) -> Result<(), Box<dyn std::error::Error>>,
-    ) -> Result<(), MsgManangerError> {
-        let data = msg.to_vec().map_err(MsgManangerError::FailedToEncodeMsg)?;
+    ) -> Result<(), Error> {
+        let data = msg.to_vec().map_err(Error::FailedToEncodeMsg)?;
 
         // Split message into multiple packets
         let id: u32 = random();
         let packets = disassembler::make_packets_from_data(id, data, self.max_data_per_packet)
-            .map_err(MsgManangerError::FailedToDisassembleData)?;
+            .map_err(Error::FailedToDisassembleData)?;
 
         // For each packet, serialize and send to specific address
         for packet in packets.iter() {
-            let packet_data = packet
-                .to_vec()
-                .map_err(MsgManangerError::FailedToEncodePacket)?;
-            send_handler(packet_data).map_err(MsgManangerError::FailedToSend)?;
+            let packet_data = packet.to_vec().map_err(Error::FailedToEncodePacket)?;
+            send_handler(packet_data).map_err(Error::FailedToSend)?;
         }
 
         Ok(())
@@ -100,12 +90,12 @@ impl MsgManager {
     pub fn recv(
         &self,
         mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, Box<dyn std::error::Error>>,
-    ) -> Result<Option<Msg>, MsgManangerError> {
+    ) -> Result<Option<Msg>, Error> {
         let mut buf = self.buffer.borrow_mut();
-        let _bsize = recv_handler(&mut buf).map_err(MsgManangerError::FailedToRecv)?;
+        let _bsize = recv_handler(&mut buf).map_err(Error::FailedToRecv)?;
 
         // Process the packet received from the UDP socket
-        let p = Packet::from_slice(&buf).map_err(MsgManangerError::FailedToDecodePacket)?;
+        let p = Packet::from_slice(&buf).map_err(Error::FailedToDecodePacket)?;
         let p_id = p.get_id();
         debug!(
             "Packet [id: {} | index: {} | is_last: {}]",
@@ -133,14 +123,12 @@ impl MsgManager {
         // Bubble up the error; we don't care about the success
         assembler
             .add_packet(p)
-            .map_err(MsgManangerError::FailedToAssembleData)?;
+            .map_err(Error::FailedToAssembleData)?;
 
         // Determine if time to assemble message
         if assembler.verify() {
-            let data = assembler
-                .assemble()
-                .map_err(MsgManangerError::FailedToAssembleData)?;
-            let m = Msg::from_vec(&data).map_err(MsgManangerError::FailedToDecodeMsg)?;
+            let data = assembler.assemble().map_err(Error::FailedToAssembleData)?;
+            let m = Msg::from_vec(&data).map_err(Error::FailedToDecodeMsg)?;
             debug!("New message: {:?}", m);
 
             // We also want to drop the assembler at this point

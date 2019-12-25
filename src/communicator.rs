@@ -1,10 +1,10 @@
-use super::msg::manager::{MsgManager, MsgManangerError};
+use super::msg::manager;
 use super::transport::Transport;
 
 #[derive(Debug)]
 pub enum Error {
     IO(std::io::Error),
-    MsgManager(MsgManangerError),
+    MsgManager(manager::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -23,12 +23,12 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 pub struct Communicator<T: Transport> {
-    msg_manager: MsgManager,
+    msg_manager: manager::MsgManager,
     transport: T,
 }
 
 impl<T: Transport> Communicator<T> {
-    pub fn new(msg_manager: MsgManager, transport: T) -> Self {
+    pub fn new(msg_manager: manager::MsgManager, transport: T) -> Self {
         Communicator {
             msg_manager,
             transport,
@@ -36,14 +36,14 @@ impl<T: Transport> Communicator<T> {
     }
 
     pub fn from_transport(transport: T, max_data_per_packet: u32) -> Self {
-        Self::new(MsgManager::new(max_data_per_packet), transport)
+        Self::new(manager::MsgManager::new(max_data_per_packet), transport)
     }
 
     pub fn transport(&self) -> &T {
         &self.transport
     }
 
-    pub fn msg_manager(&self) -> &MsgManager {
+    pub fn msg_manager(&self) -> &manager::MsgManager {
         &self.msg_manager
     }
 }
