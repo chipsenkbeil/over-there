@@ -9,33 +9,27 @@ use ttl_cache::TtlCache;
 
 #[derive(Debug)]
 pub enum Error {
-    FailedToEncodeMsg(rmp_serde::encode::Error),
-    FailedToDecodeMsg(rmp_serde::decode::Error),
-    FailedToEncodePacket(rmp_serde::encode::Error),
-    FailedToDecodePacket(rmp_serde::decode::Error),
-    FailedToAssembleData(transport::data::assembler::Error),
-    FailedToDisassembleData(transport::data::disassembler::Error),
-    FailedToSend(Box<dyn std::error::Error>),
-    FailedToRecv(Box<dyn std::error::Error>),
+    EncodeMsg(rmp_serde::encode::Error),
+    DecodeMsg(rmp_serde::decode::Error),
+    EncodePacket(rmp_serde::encode::Error),
+    DecodePacket(rmp_serde::decode::Error),
+    AssembleData(transport::data::assembler::Error),
+    DisassembleData(transport::data::disassembler::Error),
+    Send(Box<dyn std::error::Error>),
+    Recv(Box<dyn std::error::Error>),
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &*self {
-            Error::FailedToEncodeMsg(msg) => write!(f, "Failed to encode message: {:?}", msg),
-            Error::FailedToDecodeMsg(error) => write!(f, "Failed to decode message: {:?}", error),
-            Error::FailedToEncodePacket(packet) => {
-                write!(f, "Failed to encode packet: {:?}", packet)
-            }
-            Error::FailedToDecodePacket(packet) => {
-                write!(f, "Failed to decode packet: {:?}", packet)
-            }
-            Error::FailedToAssembleData(error) => write!(f, "Failed to assemble data: {:?}", error),
-            Error::FailedToDisassembleData(error) => {
-                write!(f, "Failed to disassemble data: {:?}", error)
-            }
-            Error::FailedToSend(error) => write!(f, "Failed to send data: {:?}", error),
-            Error::FailedToRecv(error) => write!(f, "Failed to receive data: {:?}", error),
+            Error::EncodeMsg(msg) => write!(f, "Failed to encode message: {:?}", msg),
+            Error::DecodeMsg(error) => write!(f, "Failed to decode message: {:?}", error),
+            Error::EncodePacket(packet) => write!(f, "Failed to encode packet: {:?}", packet),
+            Error::DecodePacket(packet) => write!(f, "Failed to decode packet: {:?}", packet),
+            Error::AssembleData(error) => write!(f, "Failed to assemble data: {:?}", error),
+            Error::DisassembleData(error) => write!(f, "Failed to disassemble data: {:?}", error),
+            Error::Send(error) => write!(f, "Failed to send data: {:?}", error),
+            Error::Recv(error) => write!(f, "Failed to receive data: {:?}", error),
         }
     }
 }
@@ -71,17 +65,17 @@ impl MsgManager {
         msg: Msg,
         mut send_handler: impl FnMut(Vec<u8>) -> Result<(), Box<dyn std::error::Error>>,
     ) -> Result<(), Error> {
-        let data = msg.to_vec().map_err(Error::FailedToEncodeMsg)?;
+        let data = msg.to_vec().map_err(Error::EncodeMsg)?;
 
         // Split message into multiple packets
         let id: u32 = random();
         let packets = disassembler::make_packets_from_data(id, data, self.max_data_per_packet)
-            .map_err(Error::FailedToDisassembleData)?;
+            .map_err(Error::DisassembleData)?;
 
         // For each packet, serialize and send to specific address
         for packet in packets.iter() {
-            let packet_data = packet.to_vec().map_err(Error::FailedToEncodePacket)?;
-            send_handler(packet_data).map_err(Error::FailedToSend)?;
+            let packet_data = packet.to_vec().map_err(Error::EncodePacket)?;
+            send_handler(packet_data).map_err(Error::Send)?;
         }
 
         Ok(())
@@ -92,10 +86,10 @@ impl MsgManager {
         mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, Box<dyn std::error::Error>>,
     ) -> Result<Option<Msg>, Error> {
         let mut buf = self.buffer.borrow_mut();
-        let _bsize = recv_handler(&mut buf).map_err(Error::FailedToRecv)?;
+        let _bsize = recv_handler(&mut buf).map_err(Error::Recv)?;
 
         // Process the packet received from the UDP socket
-        let p = Packet::from_slice(&buf).map_err(Error::FailedToDecodePacket)?;
+        let p = Packet::from_slice(&buf).map_err(Error::DecodePacket)?;
         let p_id = p.get_id();
         debug!(
             "Packet [id: {} | index: {} | is_last: {}]",
@@ -121,14 +115,12 @@ impl MsgManager {
         };
 
         // Bubble up the error; we don't care about the success
-        assembler
-            .add_packet(p)
-            .map_err(Error::FailedToAssembleData)?;
+        assembler.add_packet(p).map_err(Error::AssembleData)?;
 
         // Determine if time to assemble message
         if assembler.verify() {
-            let data = assembler.assemble().map_err(Error::FailedToAssembleData)?;
-            let m = Msg::from_vec(&data).map_err(Error::FailedToDecodeMsg)?;
+            let data = assembler.assemble().map_err(Error::AssembleData)?;
+            let m = Msg::from_vec(&data).map_err(Error::DecodeMsg)?;
             debug!("New message: {:?}", m);
 
             // We also want to drop the assembler at this point
@@ -155,7 +147,7 @@ mod tests {
         let msg = Msg::from_request(0, vec![], Request::HeartbeatRequest);
 
         match m.send(msg, |_| Ok(())) {
-            Err(Error::FailedToDisassembleData(_)) => (),
+            Err(Error::DisassembleData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -168,7 +160,7 @@ mod tests {
         match m.send(msg, |_| {
             Err(Box::new(std::io::Error::from(std::io::ErrorKind::Other)))
         }) {
-            Err(Error::FailedToSend(_)) => (),
+            Err(Error::Send(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -187,7 +179,7 @@ mod tests {
         let m = MsgManager::new(100);
 
         match m.recv(|_| Err(Box::new(std::io::Error::from(std::io::ErrorKind::Other)))) {
-            Err(Error::FailedToRecv(_)) => (),
+            Err(Error::Recv(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -204,7 +196,7 @@ mod tests {
             buf[2] = 0;
             Ok(buf.len())
         }) {
-            Err(Error::FailedToDecodePacket(_)) => (),
+            Err(Error::DecodePacket(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -244,7 +236,7 @@ mod tests {
             buf[..l].clone_from_slice(&data);
             Ok(l)
         }) {
-            Err(Error::FailedToAssembleData(_)) => (),
+            Err(Error::AssembleData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -263,7 +255,7 @@ mod tests {
             buf[..l].clone_from_slice(&data);
             Ok(l)
         }) {
-            Err(Error::FailedToDecodeMsg(_)) => (),
+            Err(Error::DecodeMsg(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
