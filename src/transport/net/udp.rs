@@ -1,5 +1,8 @@
-use super::NetworkTransport;
+use super::{NetworkTransport, Transport};
+use crate::communicator;
+use crate::msg::Msg;
 use log::debug;
+use std::io::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
 pub struct UDP {
@@ -20,10 +23,14 @@ impl UDP {
     pub fn new(sock: UdpSocket) -> UDP {
         UDP { sock }
     }
+}
 
+impl Transport for UDP {}
+
+impl NetworkTransport<UDP> for UDP {
     /// Creates a new instance of a UDP transport layer, binding to the
     /// specified host using the first open port in the list provided.
-    pub fn bind(host: IpAddr, port: Vec<u16>) -> Result<Self, std::io::Error> {
+    fn bind(host: IpAddr, port: Vec<u16>) -> Result<Self, Error> {
         let addr_candidates: Vec<SocketAddr> =
             port.iter().map(|p| SocketAddr::new(host, *p)).collect();
         let sock = UdpSocket::bind(&addr_candidates[..])?;
@@ -32,38 +39,63 @@ impl UDP {
     }
 
     /// Creates a new instance of a UDP transport layer using default settings
-    pub fn local() -> Result<Self, std::io::Error> {
-        UDP::bind(
+    fn local() -> Result<Self, Error> {
+        Self::bind(
             IpAddr::from(Ipv4Addr::LOCALHOST),
             UDP::DEFAULT_PORT_RANGE.collect(),
         )
     }
-}
 
-impl NetworkTransport for UDP {
-    fn addr(&self) -> Result<SocketAddr, std::io::Error> {
+    fn addr(&self) -> Result<SocketAddr, Error> {
         self.sock.local_addr()
     }
 
-    fn ip(&self) -> Result<IpAddr, std::io::Error> {
+    fn ip(&self) -> Result<IpAddr, Error> {
         let addr = self.addr()?;
         Ok(addr.ip())
     }
 
-    fn port(&self) -> Result<u16, std::io::Error> {
+    fn port(&self) -> Result<u16, Error> {
         let addr = self.addr()?;
         Ok(addr.port())
     }
 
     /// Sends a provided data, returning bytes sent
-    fn send_data(&self, data: Vec<u8>, addr: SocketAddr) -> Result<usize, std::io::Error> {
+    fn send(&self, data: Vec<u8>, addr: SocketAddr) -> Result<usize, Error> {
         self.sock.send_to(&data, addr)
     }
 
     /// Checks for the next incoming data
-    fn recv_data(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), std::io::Error> {
+    fn recv(&self, buffer: &mut [u8]) -> Result<(usize, SocketAddr), Error> {
         let (bsize, src) = self.sock.recv_from(buffer)?;
         debug!("Received {} bytes", bsize);
         Ok((bsize, src))
+    }
+}
+
+impl<T: NetworkTransport<UDP>> communicator::Communicator<T> {
+    pub fn send(&self, msg: Msg, addr: SocketAddr) -> Result<(), communicator::Error> {
+        self.msg_manager()
+            .send(msg, |data| {
+                let _result = self.transport().send(data, addr)?;
+                Ok(())
+            })
+            .map_err(communicator::Error::MsgManager)
+    }
+
+    pub fn recv(&self) -> Result<Option<(Msg, SocketAddr)>, communicator::Error> {
+        let mut addr: Option<SocketAddr> = None;
+        let msg = self
+            .msg_manager()
+            .recv(|buf| {
+                let (size, src) = self.transport().recv(buf)?;
+                addr = Some(src);
+                Ok(size)
+            })
+            .map_err(communicator::Error::MsgManager)?;
+        Ok(match (msg, addr) {
+            (Some(m), Some(a)) => Some((m, a)),
+            _ => None,
+        })
     }
 }

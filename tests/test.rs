@@ -1,9 +1,9 @@
 extern crate over_there;
 
 use over_there::msg::{Msg, Request, Response};
-use over_there::transport::msg::MsgTransport;
 use over_there::transport::net::udp::UDP;
 use over_there::transport::net::NetworkTransport;
+use over_there::Communicator;
 
 fn init() {
     let _ = env_logger::builder()
@@ -16,8 +16,8 @@ fn init() {
 fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     init();
 
-    let client = MsgTransport::new(UDP::local()?, UDP::MAX_IPV4_DATAGRAM_SIZE as u32);
-    let server = MsgTransport::new(UDP::local()?, UDP::MAX_IPV4_DATAGRAM_SIZE as u32);
+    let client = Communicator::from_transport(UDP::local()?, UDP::MAX_IPV4_DATAGRAM_SIZE as u32);
+    let server = Communicator::from_transport(UDP::local()?, UDP::MAX_IPV4_DATAGRAM_SIZE as u32);
 
     // Send message to server
     let id = 123;

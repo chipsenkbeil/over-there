@@ -1,5 +1,10 @@
-use crate::utils::Either;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+pub mod handler;
+pub mod manager;
+pub mod utils;
+use utils::Either;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Msg {
@@ -40,8 +45,16 @@ impl Msg {
         }
     }
 
+    pub fn is_request(&self) -> bool {
+        self.get_request().is_some()
+    }
+
     pub fn get_request(&self) -> Option<&Request> {
         self.req_or_res.get_left()
+    }
+
+    pub fn is_response(&self) -> bool {
+        self.get_response().is_some()
     }
 
     pub fn get_response(&self) -> Option<&Response> {
@@ -61,6 +74,12 @@ impl Msg {
 pub enum Request {
     /// Make sure daemon is alive
     HeartbeatRequest,
+
+    /// Request version
+    VersionResponse,
+
+    /// Request capabilities
+    CapabilitiesResponse,
 
     /// List all files, directories, etc. at a path
     ///
@@ -92,12 +111,23 @@ pub enum Request {
     ///
     /// Server 2 Address, Message to forward
     ForwardRequest(String, Box<Request>),
+
+    /// Key-value map for custom requests
+    ///
+    /// Args: Map
+    CustomRequest(HashMap<String, String>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Response {
     /// Report alive status
     HeartbeatResponse,
+
+    /// Report version
+    VersionResponse(String),
+
+    /// Report capabilities
+    CapabilitiesResponse(Vec<String>),
 
     /// Generic error reponse used upon failing
     ///
@@ -134,4 +164,9 @@ pub enum Response {
     ///
     /// Client Address, Message to pass back
     ForwardResponse(String, Box<Response>),
+
+    /// Key-value map for custom responses
+    ///
+    /// Args: Map
+    CustomResponse(HashMap<String, String>),
 }
