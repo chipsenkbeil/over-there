@@ -1,6 +1,41 @@
 use super::Packet;
 use std::collections::HashMap;
 
+#[derive(Debug)]
+pub enum Error {
+    PacketExists(u32, u32),
+    PacketBeyondLastIndex(u32, u32),
+    PacketHasDifferentId(u32, u32),
+    FinalPacketAlreadyExists(u32),
+    IncompletePacketCollection,
+}
+
+impl std::error::Error for Error {}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            Error::PacketExists(id, index) => write!(f, "Packet {}:{} already exists", id, index),
+            Error::PacketBeyondLastIndex(id, index) => {
+                write!(f, "Packet {}:{} beyond last index", id, index)
+            }
+            Error::PacketHasDifferentId(id, expected_id) => write!(
+                f,
+                "Packet has id {} whereas expected id {}",
+                id, expected_id
+            ),
+            Error::FinalPacketAlreadyExists(final_packet_index) => write!(
+                f,
+                "Packet at index {} is already marked as the last packet",
+                final_packet_index
+            ),
+            Error::IncompletePacketCollection => {
+                write!(f, "Attempted to assemble without all packets!")
+            }
+        }
+    }
+}
+
 pub struct Assembler {
     packets: HashMap<u32, Packet>,
     final_packet_index: Option<u32>,
@@ -23,7 +58,7 @@ impl Assembler {
 
         // Check if we already have this packet
         if self.packets.contains_key(&index) {
-            return Err(Error::PacketExists(packet.metadata.index));
+            return Err(Error::PacketExists(packet.get_id(), packet.get_index()));
         }
 
         // Check if we are adding a last packet when we already have one
@@ -36,8 +71,8 @@ impl Assembler {
         // Check if we are trying to add a packet beyond the final one
         if self.final_packet_index.map(|i| index > i).unwrap_or(false) {
             return Err(Error::PacketBeyondLastIndex(
-                index,
-                self.final_packet_index.unwrap(),
+                packet.get_id(),
+                packet.get_index(),
             ));
         }
 
@@ -112,10 +147,11 @@ mod tests {
         #[test]
         fn fails_if_packet_already_exists() {
             let mut a = Assembler::new();
+            let id = 123;
             let index = 999;
 
             // Add first packet successfully
-            let result = a.add_packet(helper_new_empty_packet(0, index, false));
+            let result = a.add_packet(helper_new_empty_packet(id, index, false));
             assert_eq!(
                 result.is_ok(),
                 true,
@@ -125,11 +161,12 @@ mod tests {
 
             // Fail if adding packet with same index
             match a
-                .add_packet(helper_new_empty_packet(0, index, false))
+                .add_packet(helper_new_empty_packet(id, index, false))
                 .unwrap_err()
             {
-                Error::PacketExists(existing_index) => {
-                    assert_eq!(existing_index, index, "Unexpected index returned in error")
+                Error::PacketExists(eid, eindex) => {
+                    assert_eq!(id, eid, "Unexpected index returned in error");
+                    assert_eq!(index, eindex, "Unexpected index returned in error");
                 }
                 e => panic!("Unexpected error {} received", e),
             }
@@ -138,9 +175,10 @@ mod tests {
         #[test]
         fn fails_if_adding_packet_beyond_last() {
             let mut a = Assembler::new();
+            let id = 123;
 
             // Add first packet successfully
-            let result = a.add_packet(helper_new_empty_packet(0, 0, true));
+            let result = a.add_packet(helper_new_empty_packet(id, 0, true));
             assert_eq!(
                 result.is_ok(),
                 true,
@@ -150,12 +188,12 @@ mod tests {
 
             // Fail if adding packet after final packet
             match a
-                .add_packet(helper_new_empty_packet(0, 1, false))
+                .add_packet(helper_new_empty_packet(id, 1, false))
                 .unwrap_err()
             {
-                Error::PacketBeyondLastIndex(index, last_index) => {
-                    assert_eq!(index, 1, "Beyond index was not one");
-                    assert_eq!(last_index, 0, "Last index was not zero");
+                Error::PacketBeyondLastIndex(eid, eindex) => {
+                    assert_eq!(id, eid, "Beyond packet id was different");
+                    assert_eq!(eindex, 1, "Beyond packet index was wrong");
                 }
                 e => panic!("Unexpected error {} received", e),
             }
@@ -355,41 +393,6 @@ mod tests {
 
             let collected_data = a.assemble().unwrap();
             assert_eq!(data, collected_data);
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    PacketExists(u32),
-    PacketBeyondLastIndex(u32, u32),
-    PacketHasDifferentId(u32, u32),
-    FinalPacketAlreadyExists(u32),
-    IncompletePacketCollection,
-}
-
-impl std::error::Error for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match *self {
-            Error::PacketExists(index) => write!(f, "Packet {} already exists", index),
-            Error::PacketBeyondLastIndex(index, last_index) => {
-                write!(f, "Packet {} beyond last index of {}", index, last_index)
-            }
-            Error::PacketHasDifferentId(id, expected_id) => write!(
-                f,
-                "Packet has id {} whereas expected id {}",
-                id, expected_id
-            ),
-            Error::FinalPacketAlreadyExists(final_packet_index) => write!(
-                f,
-                "Packet at index {} is already marked as the last packet",
-                final_packet_index
-            ),
-            Error::IncompletePacketCollection => {
-                write!(f, "Attempted to assemble without all packets!")
-            }
         }
     }
 }
