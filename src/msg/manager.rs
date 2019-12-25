@@ -144,13 +144,8 @@ impl MsgManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::msg::Request;
+    use crate::msg::{Msg, Request};
     use crate::transport::data::{assembler, disassembler};
-
-    #[test]
-    fn send_should_fail_if_unable_to_convert_message_to_bytes() {
-        panic!("TODO: Implement test");
-    }
 
     #[test]
     fn send_should_fail_if_unable_to_convert_bytes_to_packets() {
@@ -159,63 +154,167 @@ mod tests {
         let m = MsgManager::new(0);
         let msg = Msg::from_request(0, vec![], Request::HeartbeatRequest);
 
-        // NOTE: Cannot pattern match or evaluate the specifics of the error
-        let result = m.send(msg, |_| Ok(()));
-        assert_eq!(result.is_err(), true,);
-    }
-
-    #[test]
-    fn send_should_fail_if_unable_to_convert_packet_to_bytes() {
-        panic!("TODO: Implement test");
+        match m.send(msg, |_| Ok(())) {
+            Err(Error::FailedToDisassembleData(_)) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[test]
     fn send_should_fail_if_socket_fails_to_send_bytes() {
-        panic!("TODO: Implement test");
+        let m = MsgManager::new(100);
+        let msg = Msg::from_request(0, vec![], Request::HeartbeatRequest);
+
+        match m.send(msg, |_| {
+            Err(Box::new(std::io::Error::from(std::io::ErrorKind::Other)))
+        }) {
+            Err(Error::FailedToSend(_)) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[test]
     fn send_should_return_okay_if_successfully_sent_message() {
-        let m = MsgManager::new(9999);
+        let m = MsgManager::new(100);
         let msg = Msg::from_request(0, vec![], Request::HeartbeatRequest);
 
-        // NOTE: Cannot pattern match or evaluate the specifics of the error
         let result = m.send(msg, |_| Ok(()));
         assert_eq!(result.is_ok(), true);
     }
 
     #[test]
     fn recv_should_fail_if_socket_fails_to_get_bytes() {
-        panic!("TODO: Implement test");
+        let m = MsgManager::new(100);
+
+        match m.recv(|_| Err(Box::new(std::io::Error::from(std::io::ErrorKind::Other)))) {
+            Err(Error::FailedToRecv(_)) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_bytes_to_packet() {
-        panic!("TODO: Implement test");
+        let m = MsgManager::new(100);
+
+        // Force buffer to have a couple of early zeros, which is not
+        // valid data when decoding
+        match m.recv(|buf| {
+            buf[0] = 0;
+            buf[1] = 0;
+            buf[2] = 0;
+            Ok(buf.len())
+        }) {
+            Err(Error::FailedToDecodePacket(_)) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[test]
     fn recv_should_fail_if_unable_to_add_packet_to_assembler() {
-        panic!("TODO: Implement test");
-    }
+        let m = MsgManager::new(100);
 
-    #[test]
-    fn recv_should_fail_if_unable_to_assemble_packet_data() {
-        panic!("TODO: Implement test");
+        // Make several packets so that we don't send a single and last
+        // packet, which would remove itself from the cache and allow
+        // us to re-add a packet with the same id & index
+        let p = &disassembler::make_packets_from_data(
+            0,
+            Msg::from_request(0, vec![], Request::HeartbeatRequest)
+                .to_vec()
+                .unwrap(),
+            Packet::metadata_size() + 1,
+        )
+        .unwrap()[0];
+        assert_eq!(
+            m.recv(|buf| {
+                let data = p.to_vec()?;
+                let l = data.len();
+                buf[..l].clone_from_slice(&data);
+                Ok(l)
+            })
+            .is_ok(),
+            true,
+            "Failed to receive first packet!"
+        );
+
+        // Add the same packet more than once, which should
+        // trigger the assembler to fail
+        match m.recv(|buf| {
+            let data = p.to_vec()?;
+            let l = data.len();
+            buf[..l].clone_from_slice(&data);
+            Ok(l)
+        }) {
+            Err(Error::FailedToAssembleData(_)) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_complete_data_to_message() {
-        panic!("TODO: Implement test");
+        let m = MsgManager::new(100);
+
+        // Provide a valid packet, but one that does not form a message
+        let p =
+            &disassembler::make_packets_from_data(0, vec![1, 2, 3], Packet::metadata_size() + 3)
+                .unwrap()[0];
+        match m.recv(|buf| {
+            let data = p.to_vec()?;
+            let l = data.len();
+            buf[..l].clone_from_slice(&data);
+            Ok(l)
+        }) {
+            Err(Error::FailedToDecodeMsg(_)) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[test]
     fn recv_should_return_none_if_received_packet_does_not_complete_message() {
-        panic!("TODO: Implement test");
+        let m = MsgManager::new(100);
+
+        // Make several packets so that we don't send a single and last
+        // packet, which would result in a complete message
+        let p = &disassembler::make_packets_from_data(
+            0,
+            Msg::from_request(0, vec![], Request::HeartbeatRequest)
+                .to_vec()
+                .unwrap(),
+            Packet::metadata_size() + 1,
+        )
+        .unwrap()[0];
+        match m.recv(|buf| {
+            let data = p.to_vec()?;
+            let l = data.len();
+            buf[..l].clone_from_slice(&data);
+            Ok(l)
+        }) {
+            Ok(None) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[test]
     fn recv_should_return_some_message_if_received_packet_does_complete_message() {
-        panic!("TODO: Implement test");
+        let m = MsgManager::new(100);
+        let msg = Msg::from_request(0, vec![], Request::HeartbeatRequest);
+
+        // Make one large packet so we can complete a message
+        let p = &disassembler::make_packets_from_data(0, msg.to_vec().unwrap(), 100).unwrap()[0];
+        match m.recv(|buf| {
+            let data = p.to_vec()?;
+            let l = data.len();
+            buf[..l].clone_from_slice(&data);
+            Ok(l)
+        }) {
+            Ok(Some(recv_msg)) => {
+                assert_eq!(
+                    recv_msg.to_vec().unwrap(),
+                    msg.to_vec().unwrap(),
+                    "Received unexpected message: {:?}",
+                    recv_msg
+                );
+            }
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 }
