@@ -1,15 +1,33 @@
-use super::errors::DisassemblerError;
 use super::{Metadata, Packet};
+
+#[derive(Debug)]
+pub enum Error {
+    DesiredChunkSizeTooSmall(u32, u32),
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            Error::DesiredChunkSizeTooSmall(size, min_size) => write!(
+                f,
+                "Desired chunk size of {} is not {} or greater",
+                size, min_size
+            ),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 pub fn make_packets_from_data(
     id: u32,
     data: Vec<u8>,
     desired_chunk_size: u32,
-) -> Result<Vec<Packet>, DisassemblerError> {
+) -> Result<Vec<Packet>, Error> {
     // We assume that we have a desired chunk size that can fit our
     // metadata and data reasonably
     if desired_chunk_size <= Metadata::size() {
-        return Err(DisassemblerError::DesiredChunkSizeTooSmall(
+        return Err(Error::DesiredChunkSizeTooSmall(
             desired_chunk_size,
             Metadata::size() + 1,
         ));
@@ -46,7 +64,7 @@ mod tests {
         // Needs to accommodate metadata & data, which this does not
         let chunk_size = Metadata::size();
 
-        let DisassemblerError::DesiredChunkSizeTooSmall(size, min_size) =
+        let Error::DesiredChunkSizeTooSmall(size, min_size) =
             make_packets_from_data(0, vec![1, 2, 3], chunk_size).unwrap_err();
         assert_eq!(size, chunk_size);
         assert_eq!(min_size, Metadata::size() + 1);

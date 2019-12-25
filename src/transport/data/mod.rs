@@ -1,6 +1,5 @@
 pub mod assembler;
 pub mod disassembler;
-pub mod errors;
 
 use serde::{Deserialize, Serialize};
 

@@ -13,8 +13,8 @@ pub enum MsgManangerError {
     FailedToDecodeMsg(rmp_serde::decode::Error),
     FailedToEncodePacket(rmp_serde::encode::Error),
     FailedToDecodePacket(rmp_serde::decode::Error),
-    FailedToAssembleData(transport::data::errors::AssemblerError),
-    FailedToDisassembleData(transport::data::errors::DisassemblerError),
+    FailedToAssembleData(transport::data::assembler::Error),
+    FailedToDisassembleData(transport::data::disassembler::Error),
     FailedToSend(Box<dyn std::error::Error>),
     FailedToRecv(Box<dyn std::error::Error>),
 }
@@ -157,7 +157,7 @@ impl MsgManager {
 mod tests {
     use super::*;
     use crate::msg::Request;
-    use crate::transport::data::errors::{AssemblerError, DisassemblerError};
+    use crate::transport::data::{assembler, disassembler};
 
     #[test]
     fn send_should_fail_if_unable_to_convert_message_to_bytes() {
