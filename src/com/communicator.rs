@@ -1,5 +1,5 @@
-use super::msg::manager;
-use super::transport::Transport;
+use super::{manager, msg, transport};
+use transport::Transport;
 
 #[derive(Debug)]
 pub enum Error {
@@ -45,5 +45,32 @@ impl<T: Transport> Communicator<T> {
 
     pub fn msg_manager(&self) -> &manager::MsgManager {
         &self.msg_manager
+    }
+}
+
+impl<T: transport::net::NetworkTransport<transport::net::udp::UDP>> Communicator<T> {
+    pub fn send(&self, msg: msg::Msg, addr: std::net::SocketAddr) -> Result<(), Error> {
+        self.msg_manager()
+            .send(msg, |data| {
+                let _result = self.transport().send(data, addr)?;
+                Ok(())
+            })
+            .map_err(Error::MsgManager)
+    }
+
+    pub fn recv(&self) -> Result<Option<(msg::Msg, std::net::SocketAddr)>, Error> {
+        let mut addr: Option<std::net::SocketAddr> = None;
+        let msg = self
+            .msg_manager()
+            .recv(|buf| {
+                let (size, src) = self.transport().recv(buf)?;
+                addr = Some(src);
+                Ok(size)
+            })
+            .map_err(Error::MsgManager)?;
+        Ok(match (msg, addr) {
+            (Some(m), Some(a)) => Some((m, a)),
+            _ => None,
+        })
     }
 }

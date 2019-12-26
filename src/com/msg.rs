@@ -1,10 +1,6 @@
+use crate::utils::Either;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-pub mod handler;
-pub mod manager;
-pub mod utils;
-use utils::Either;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Msg {

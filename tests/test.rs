@@ -1,9 +1,9 @@
 extern crate over_there;
 
-use over_there::msg::{Msg, Request, Response};
-use over_there::transport::net::udp::UDP;
-use over_there::transport::net::NetworkTransport;
 use over_there::Communicator;
+use over_there::NetworkTransport;
+use over_there::UDP;
+use over_there::{Msg, Request, Response};
 
 fn init() {
     let _ = env_logger::builder()

@@ -1,10 +1,10 @@
-use crate::msg::Msg;
-use crate::transport;
-use crate::transport::data::{assembler::Assembler, disassembler, Packet};
+use super::msg::Msg;
+use super::transport;
 use log::debug;
 use rand::random;
 use std::cell::RefCell;
 use std::time::Duration;
+use transport::data::{assembler::Assembler, disassembler, Packet};
 use ttl_cache::TtlCache;
 
 #[derive(Debug)]
@@ -136,8 +136,7 @@ impl MsgManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::msg::{Msg, Request};
-    use crate::transport::data::{assembler, disassembler};
+    use crate::Request;
 
     #[test]
     fn send_should_fail_if_unable_to_convert_bytes_to_packets() {

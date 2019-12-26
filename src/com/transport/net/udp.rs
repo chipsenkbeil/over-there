@@ -1,6 +1,4 @@
 use super::{NetworkTransport, Transport};
-use crate::communicator;
-use crate::msg::Msg;
 use log::debug;
 use std::io::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
@@ -70,32 +68,5 @@ impl NetworkTransport<UDP> for UDP {
         let (bsize, src) = self.sock.recv_from(buffer)?;
         debug!("Received {} bytes", bsize);
         Ok((bsize, src))
-    }
-}
-
-impl<T: NetworkTransport<UDP>> communicator::Communicator<T> {
-    pub fn send(&self, msg: Msg, addr: SocketAddr) -> Result<(), communicator::Error> {
-        self.msg_manager()
-            .send(msg, |data| {
-                let _result = self.transport().send(data, addr)?;
-                Ok(())
-            })
-            .map_err(communicator::Error::MsgManager)
-    }
-
-    pub fn recv(&self) -> Result<Option<(Msg, SocketAddr)>, communicator::Error> {
-        let mut addr: Option<SocketAddr> = None;
-        let msg = self
-            .msg_manager()
-            .recv(|buf| {
-                let (size, src) = self.transport().recv(buf)?;
-                addr = Some(src);
-                Ok(size)
-            })
-            .map_err(communicator::Error::MsgManager)?;
-        Ok(match (msg, addr) {
-            (Some(m), Some(a)) => Some((m, a)),
-            _ => None,
-        })
     }
 }
