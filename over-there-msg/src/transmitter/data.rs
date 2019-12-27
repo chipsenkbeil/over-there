@@ -90,7 +90,7 @@ impl DataTransmitter {
         debug!("{} incoming bytes {:?}", size, buf);
 
         // Process the packet received from the UDP socket
-        let p = Packet::from_slice(&buf).map_err(Error::DecodePacket)?;
+        let p = Packet::from_slice(&buf[..size]).map_err(Error::DecodePacket)?;
         let p_id = p.id();
         debug!(
             "Packet [id: {} | index: {} | is_last: {}]",
