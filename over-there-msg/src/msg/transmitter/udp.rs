@@ -2,6 +2,7 @@ use super::Msg;
 use super::{Error, MsgTransmitter};
 use over_there_transport::udp;
 use over_there_transport::Transmitter;
+use std::io;
 use std::net::{SocketAddr, UdpSocket};
 
 pub struct UdpMsgTransmitter {
@@ -25,8 +26,24 @@ impl UdpMsgTransmitter {
 
     /// Sends a message to the specified address using the underlying socket
     pub fn send(&self, msg: Msg, addr: SocketAddr) -> Result<(), Error> {
-        self.msg_transmitter
-            .send(msg, |data| self.socket.send_to(&data, addr).map(|_| ()))
+        self.msg_transmitter.send(msg, |data| {
+            // TODO: Support sending remaining bytes in loop? Would need to
+            //       support collecting bytes for a packet in multiple receives,
+            //       which means we'd need a start and stop indicator of some
+            //       kind that is a single byte. Seems too complicated, so
+            //       easier to fail and give a reason if we don't send all
+            //       of the bytes in one go. It's one of the reasons we made
+            //       packets of a guaranteed max size.
+            let size = self.socket.send_to(&data, addr)?;
+            if size < data.len() {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Only sent {} bytes out of {}", size, data.len()),
+                ));
+            }
+
+            Ok(())
+        })
     }
 
     /// Receives data from the underlying socket, yielding a message and
