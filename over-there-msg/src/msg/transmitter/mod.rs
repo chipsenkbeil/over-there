@@ -54,7 +54,7 @@ impl MsgTransmitter {
         self.transmitter
             .recv(recv_handler)
             .map_err(Error::RecvData)?
-            .map(|v| Msg::from_vec(&v))
+            .map(|v| Msg::from_slice(&v))
             .transpose()
             .map_err(Error::DecodeMsg)
     }

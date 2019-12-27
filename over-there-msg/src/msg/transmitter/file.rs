@@ -29,6 +29,9 @@ impl FileMsgTransmitter {
     }
 
     /// Sends a message using the underlying stream
+    /// NOTE: This will cause problems if the msg is larger than our max
+    ///       size per packet as each call to send underneath will reset
+    ///       to the beginning of the file and overwrite the previous chunk
     pub fn send(&mut self, msg: Msg) -> Result<(), Error> {
         let mut f = &self.out_file;
         self.msg_transmitter.send(msg, |data| {
@@ -46,6 +49,9 @@ impl FileMsgTransmitter {
 
     /// Receives data from the underlying stream, yielding a message if
     /// the final packet has been received
+    /// NOTE: This will cause problems if the file contains more than one
+    ///       chunk of data as it attempts to read the entire file and
+    ///       treat it as one chunk rather than multiple
     pub fn recv(&mut self) -> Result<Option<Msg>, Error> {
         let mut f = &self.in_file;
         self.msg_transmitter.recv(|buf| {

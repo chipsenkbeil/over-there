@@ -70,8 +70,8 @@ impl Msg {
         rmp_serde::to_vec(&self)
     }
 
-    pub fn from_vec(v: &Vec<u8>) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_read_ref(v)
+    pub fn from_slice(slice: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
+        rmp_serde::from_read_ref(slice)
     }
 }
 
