@@ -86,8 +86,7 @@ impl DataTransmitter {
         if size == 0 {
             return Ok(None);
         }
-
-        debug!("{} incoming bytes {:?}", size, buf);
+        debug!("{} incoming bytes", size);
 
         // Process the packet received from the UDP socket
         let p = Packet::from_slice(&buf[..size]).map_err(Error::DecodePacket)?;
