@@ -5,6 +5,13 @@ version = "0.1.0"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 edition = "2018"
 
+[workspace]
+members = [
+    "over-there-transport",
+    "over-there-msg",
+    "over-there-utils",
+]
+
 # TODO: Currently, there is not a way to mark a dependency as binary-only
 #       and the workarounds suggested are:
 #

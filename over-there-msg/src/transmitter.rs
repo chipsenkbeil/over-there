@@ -1,10 +1,9 @@
-use super::msg::Msg;
-use super::transport;
+use crate::msg::Msg;
 use log::debug;
+use over_there_transport::{assembler, disassembler, Assembler, Disassembler, Packet};
 use rand::random;
 use std::cell::RefCell;
 use std::time::Duration;
-use transport::data::{assembler::Assembler, disassembler, Packet};
 use ttl_cache::TtlCache;
 
 #[derive(Debug)]
@@ -13,10 +12,10 @@ pub enum Error {
     DecodeMsg(rmp_serde::decode::Error),
     EncodePacket(rmp_serde::encode::Error),
     DecodePacket(rmp_serde::decode::Error),
-    AssembleData(transport::data::assembler::Error),
-    DisassembleData(transport::data::disassembler::Error),
-    Send(Box<dyn std::error::Error>),
-    Recv(Box<dyn std::error::Error>),
+    AssembleData(assembler::Error),
+    DisassembleData(disassembler::Error),
+    Send(std::io::Error),
+    Recv(std::io::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -36,7 +35,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-pub struct MsgManager {
+pub struct Transmitter {
     /// Maximum size allowed for a packet
     max_data_per_packet: u32,
 
@@ -48,12 +47,12 @@ pub struct MsgManager {
     buffer: RefCell<Box<[u8]>>,
 }
 
-impl MsgManager {
+impl Transmitter {
     const MAX_CACHE_SIZE: usize = 1500;
     const MAX_CACHE_DURATION_SECS: u64 = 60 * 5;
 
     pub fn new(max_data_per_packet: u32) -> Self {
-        MsgManager {
+        Transmitter {
             max_data_per_packet,
             cache: RefCell::new(TtlCache::new(Self::MAX_CACHE_SIZE)),
             buffer: RefCell::new(vec![0; max_data_per_packet as usize].into_boxed_slice()),
@@ -63,13 +62,13 @@ impl MsgManager {
     pub fn send(
         &self,
         msg: Msg,
-        mut send_handler: impl FnMut(Vec<u8>) -> Result<(), Box<dyn std::error::Error>>,
+        mut send_handler: impl FnMut(Vec<u8>) -> Result<(), std::io::Error>,
     ) -> Result<(), Error> {
         let data = msg.to_vec().map_err(Error::EncodeMsg)?;
 
         // Split message into multiple packets
         let id: u32 = random();
-        let packets = disassembler::make_packets_from_data(id, data, self.max_data_per_packet)
+        let packets = Disassembler::make_packets_from_data(id, data, self.max_data_per_packet)
             .map_err(Error::DisassembleData)?;
 
         // For each packet, serialize and send to specific address
@@ -83,18 +82,18 @@ impl MsgManager {
 
     pub fn recv(
         &self,
-        mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, Box<dyn std::error::Error>>,
+        mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, std::io::Error>,
     ) -> Result<Option<Msg>, Error> {
         let mut buf = self.buffer.borrow_mut();
         let _bsize = recv_handler(&mut buf).map_err(Error::Recv)?;
 
         // Process the packet received from the UDP socket
         let p = Packet::from_slice(&buf).map_err(Error::DecodePacket)?;
-        let p_id = p.get_id();
+        let p_id = p.id();
         debug!(
             "Packet [id: {} | index: {} | is_last: {}]",
             p_id,
-            p.get_index(),
+            p.index(),
             p.is_last()
         );
 
@@ -109,8 +108,8 @@ impl MsgManager {
             Some(a) => a,
             None => {
                 let d = Duration::new(Self::MAX_CACHE_DURATION_SECS, 0);
-                map.insert(p.get_id(), Assembler::new(), d);
-                map.get_mut(&p.get_id()).unwrap()
+                map.insert(p.id(), Assembler::new(), d);
+                map.get_mut(&p.id()).unwrap()
             }
         };
 
@@ -136,14 +135,14 @@ impl MsgManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Request;
+    use crate::msg::Request;
 
     #[test]
     fn send_should_fail_if_unable_to_convert_bytes_to_packets() {
         // Produce a message manager with a "bytes per packet" that is too
         // low, causing the process to fail
-        let m = MsgManager::new(0);
-        let msg = Msg::from_request(0, vec![], Request::HeartbeatRequest);
+        let m = Transmitter::new(0);
+        let msg = Msg::new_request(Request::HeartbeatRequest);
 
         match m.send(msg, |_| Ok(())) {
             Err(Error::DisassembleData(_)) => (),
@@ -153,11 +152,11 @@ mod tests {
 
     #[test]
     fn send_should_fail_if_socket_fails_to_send_bytes() {
-        let m = MsgManager::new(100);
-        let msg = Msg::from_request(0, vec![], Request::HeartbeatRequest);
+        let m = Transmitter::new(100);
+        let msg = Msg::new_request(Request::HeartbeatRequest);
 
         match m.send(msg, |_| {
-            Err(Box::new(std::io::Error::from(std::io::ErrorKind::Other)))
+            Err(std::io::Error::from(std::io::ErrorKind::Other))
         }) {
             Err(Error::Send(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
@@ -166,8 +165,8 @@ mod tests {
 
     #[test]
     fn send_should_return_okay_if_successfully_sent_message() {
-        let m = MsgManager::new(100);
-        let msg = Msg::from_request(0, vec![], Request::HeartbeatRequest);
+        let m = Transmitter::new(100);
+        let msg = Msg::new_request(Request::HeartbeatRequest);
 
         let result = m.send(msg, |_| Ok(()));
         assert_eq!(result.is_ok(), true);
@@ -175,9 +174,9 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_socket_fails_to_get_bytes() {
-        let m = MsgManager::new(100);
+        let m = Transmitter::new(100);
 
-        match m.recv(|_| Err(Box::new(std::io::Error::from(std::io::ErrorKind::Other)))) {
+        match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
             Err(Error::Recv(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
@@ -185,7 +184,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_bytes_to_packet() {
-        let m = MsgManager::new(100);
+        let m = Transmitter::new(100);
 
         // Force buffer to have a couple of early zeros, which is not
         // valid data when decoding
@@ -202,22 +201,22 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_add_packet_to_assembler() {
-        let m = MsgManager::new(100);
+        let m = Transmitter::new(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
         // us to re-add a packet with the same id & index
-        let p = &disassembler::make_packets_from_data(
+        let p = &Disassembler::make_packets_from_data(
             0,
-            Msg::from_request(0, vec![], Request::HeartbeatRequest)
+            Msg::new_request(Request::HeartbeatRequest)
                 .to_vec()
                 .unwrap(),
             Packet::metadata_size() + 1,
         )
         .unwrap()[0];
+        let data = p.to_vec().unwrap();
         assert_eq!(
             m.recv(|buf| {
-                let data = p.to_vec()?;
                 let l = data.len();
                 buf[..l].clone_from_slice(&data);
                 Ok(l)
@@ -230,7 +229,6 @@ mod tests {
         // Add the same packet more than once, which should
         // trigger the assembler to fail
         match m.recv(|buf| {
-            let data = p.to_vec()?;
             let l = data.len();
             buf[..l].clone_from_slice(&data);
             Ok(l)
@@ -242,14 +240,15 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_complete_data_to_message() {
-        let m = MsgManager::new(100);
+        let m = Transmitter::new(100);
 
         // Provide a valid packet, but one that does not form a message
         let p =
-            &disassembler::make_packets_from_data(0, vec![1, 2, 3], Packet::metadata_size() + 3)
+            &Disassembler::make_packets_from_data(0, vec![1, 2, 3], Packet::metadata_size() + 3)
                 .unwrap()[0];
+
+        let data = p.to_vec().unwrap();
         match m.recv(|buf| {
-            let data = p.to_vec()?;
             let l = data.len();
             buf[..l].clone_from_slice(&data);
             Ok(l)
@@ -261,20 +260,20 @@ mod tests {
 
     #[test]
     fn recv_should_return_none_if_received_packet_does_not_complete_message() {
-        let m = MsgManager::new(100);
+        let m = Transmitter::new(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
-        let p = &disassembler::make_packets_from_data(
+        let p = &Disassembler::make_packets_from_data(
             0,
-            Msg::from_request(0, vec![], Request::HeartbeatRequest)
+            Msg::new_request(Request::HeartbeatRequest)
                 .to_vec()
                 .unwrap(),
             Packet::metadata_size() + 1,
         )
         .unwrap()[0];
+        let data = p.to_vec().unwrap();
         match m.recv(|buf| {
-            let data = p.to_vec()?;
             let l = data.len();
             buf[..l].clone_from_slice(&data);
             Ok(l)
@@ -286,13 +285,13 @@ mod tests {
 
     #[test]
     fn recv_should_return_some_message_if_received_packet_does_complete_message() {
-        let m = MsgManager::new(100);
-        let msg = Msg::from_request(0, vec![], Request::HeartbeatRequest);
+        let m = Transmitter::new(100);
+        let msg = Msg::new_request(Request::HeartbeatRequest);
 
         // Make one large packet so we can complete a message
-        let p = &disassembler::make_packets_from_data(0, msg.to_vec().unwrap(), 100).unwrap()[0];
+        let p = &Disassembler::make_packets_from_data(0, msg.to_vec().unwrap(), 100).unwrap()[0];
+        let data = p.to_vec().unwrap();
         match m.recv(|buf| {
-            let data = p.to_vec()?;
             let l = data.len();
             buf[..l].clone_from_slice(&data);
             Ok(l)

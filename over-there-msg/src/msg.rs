@@ -1,14 +1,15 @@
-use crate::utils::Either;
+use over_there_utils::Either;
+use rand::random;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Msg {
     /// ID associated with a request or response
-    id: u32,
+    pub id: u32,
 
     /// IDs in the chain of communication (oldest to newest)
-    origin: Vec<u32>,
+    pub origin: Vec<u32>,
 
     /// Represents the request or response associated with the message
     req_or_res: Either<Request, Response>,
@@ -23,19 +24,25 @@ impl Msg {
         }
     }
 
-    pub fn from_request(id: u32, origin: Vec<u32>, req: Request) -> Self {
-        Self::new(id, origin, Either::Left(req))
+    pub fn new_request(req: Request) -> Self {
+        Self::new_from_parent(Either::Left(req), None)
     }
 
-    pub fn from_response(id: u32, origin: Vec<u32>, res: Response) -> Self {
-        Self::new(id, origin, Either::Right(res))
+    pub fn new_response(res: Response, parent: &Msg) -> Self {
+        Self::new_from_parent(Either::Right(res), Some(parent))
     }
 
-    pub fn new_from_parent(id: u32, req_or_res: Either<Request, Response>, parent: &Msg) -> Self {
-        let mut origin = parent.origin.clone();
-        origin.append(&mut vec![parent.id]);
+    fn new_from_parent(req_or_res: Either<Request, Response>, parent: Option<&Msg>) -> Self {
+        let origin = match parent {
+            Some(p) => {
+                let mut origin = p.origin.clone();
+                origin.append(&mut vec![p.id]);
+                origin
+            }
+            None => vec![],
+        };
         Msg {
-            id,
+            id: random(),
             origin,
             req_or_res,
         }

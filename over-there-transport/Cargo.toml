@@ -1,0 +1,11 @@
+[package]
+name = "over-there-transport"
+version = "0.1.0"
+authors = ["Chip Senkbeil <chip@senkbeil.org>"]
+edition = "2018"
+
+[dependencies]
+serde = { version = "1.0.103", features = ["derive"] }
+serde_bytes = "0.11.3"
+rmp-serde = "0.14.0"
+log = "0.4.8"

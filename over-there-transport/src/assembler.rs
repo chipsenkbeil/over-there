@@ -1,4 +1,4 @@
-use super::Packet;
+use crate::packet::Packet;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -54,11 +54,11 @@ impl Assembler {
 
     /// Adds a new packet to the assembler, consuming it for reconstruction
     pub fn add_packet(&mut self, packet: Packet) -> Result<(), Error> {
-        let index = packet.metadata.index;
+        let index = packet.index();
 
         // Check if we already have this packet
         if self.packets.contains_key(&index) {
-            return Err(Error::PacketExists(packet.get_id(), packet.get_index()));
+            return Err(Error::PacketExists(packet.id(), packet.index()));
         }
 
         // Check if we are adding a last packet when we already have one
@@ -70,29 +70,26 @@ impl Assembler {
 
         // Check if we are trying to add a packet beyond the final one
         if self.final_packet_index.map(|i| index > i).unwrap_or(false) {
-            return Err(Error::PacketBeyondLastIndex(
-                packet.get_id(),
-                packet.get_index(),
-            ));
+            return Err(Error::PacketBeyondLastIndex(packet.id(), packet.index()));
         }
 
         // Check if id does not match existing id
         if let Some(id) = self.id_for_packets {
-            if packet.metadata.id != id {
-                return Err(Error::PacketHasDifferentId(packet.metadata.id, id));
+            if packet.id() != id {
+                return Err(Error::PacketHasDifferentId(packet.id(), id));
             }
         }
 
         // If it is our first time to add a packet, mark the id
         if self.packets.is_empty() {
-            self.id_for_packets = Some(packet.metadata.id)
+            self.id_for_packets = Some(packet.id())
         }
 
-        let pindex = packet.metadata.index;
+        let pindex = packet.index();
         self.packets.insert(pindex, packet);
 
         // If we are adding the final packet, mark it
-        if self.packets.get(&pindex).unwrap().metadata.is_last {
+        if self.packets.get(&pindex).unwrap().is_last() {
             self.final_packet_index = Some(pindex);
         }
 
@@ -118,11 +115,11 @@ impl Assembler {
 
         // Gather references to packets in proper order
         let mut packets = self.packets.values().collect::<Vec<&Packet>>();
-        packets.sort_unstable_by_key(|p| p.metadata.index);
+        packets.sort_unstable_by_key(|p| p.index());
 
         // Collect packet data into one unified binary representation
         // TODO: Improve by NOT cloning data
-        let data: Vec<u8> = packets.iter().flat_map(|p| p.data.clone()).collect();
+        let data: Vec<u8> = packets.iter().flat_map(|p| p.data().clone()).collect();
 
         Ok(data)
     }
@@ -130,15 +127,7 @@ impl Assembler {
 
 #[cfg(test)]
 mod tests {
-    use super::super::Metadata;
     use super::*;
-
-    fn helper_new_empty_packet(id: u32, index: u32, is_last: bool) -> Packet {
-        Packet {
-            metadata: Metadata { id, index, is_last },
-            data: vec![],
-        }
-    }
 
     #[test]
     fn add_packet_fails_if_packet_already_exists() {
@@ -147,7 +136,7 @@ mod tests {
         let index = 999;
 
         // Add first packet successfully
-        let result = a.add_packet(helper_new_empty_packet(id, index, false));
+        let result = a.add_packet(Packet::empty(id, index, false));
         assert_eq!(
             result.is_ok(),
             true,
@@ -156,10 +145,7 @@ mod tests {
         );
 
         // Fail if adding packet with same index
-        match a
-            .add_packet(helper_new_empty_packet(id, index, false))
-            .unwrap_err()
-        {
+        match a.add_packet(Packet::empty(id, index, false)).unwrap_err() {
             Error::PacketExists(eid, eindex) => {
                 assert_eq!(id, eid, "Unexpected index returned in error");
                 assert_eq!(index, eindex, "Unexpected index returned in error");
@@ -174,7 +160,7 @@ mod tests {
         let id = 123;
 
         // Add first packet successfully
-        let result = a.add_packet(helper_new_empty_packet(id, 0, true));
+        let result = a.add_packet(Packet::empty(id, 0, true));
         assert_eq!(
             result.is_ok(),
             true,
@@ -183,10 +169,7 @@ mod tests {
         );
 
         // Fail if adding packet after final packet
-        match a
-            .add_packet(helper_new_empty_packet(id, 1, false))
-            .unwrap_err()
-        {
+        match a.add_packet(Packet::empty(id, 1, false)).unwrap_err() {
             Error::PacketBeyondLastIndex(eid, eindex) => {
                 assert_eq!(id, eid, "Beyond packet id was different");
                 assert_eq!(eindex, 1, "Beyond packet index was wrong");
@@ -201,7 +184,7 @@ mod tests {
         let id = 999;
 
         // Add first packet successfully
-        let result = a.add_packet(helper_new_empty_packet(id, 0, false));
+        let result = a.add_packet(Packet::empty(id, 0, false));
         assert_eq!(
             result.is_ok(),
             true,
@@ -210,10 +193,7 @@ mod tests {
         );
 
         // Fail if adding packet after final packet
-        match a
-            .add_packet(helper_new_empty_packet(id + 1, 1, false))
-            .unwrap_err()
-        {
+        match a.add_packet(Packet::empty(id + 1, 1, false)).unwrap_err() {
             Error::PacketHasDifferentId(actual_id, expected_id) => {
                 assert_eq!(actual_id, id + 1, "Actual id was different than provided");
                 assert_eq!(expected_id, id, "Expected id was different from tracked");
@@ -227,7 +207,7 @@ mod tests {
         let mut a = Assembler::new();
 
         // Make the second packet (index) be the last packet
-        let result = a.add_packet(helper_new_empty_packet(0, 1, true));
+        let result = a.add_packet(Packet::empty(0, 1, true));
         assert_eq!(
             result.is_ok(),
             true,
@@ -237,10 +217,7 @@ mod tests {
 
         // Fail if making the first packet (index) be the last packet
         // when we already have a last packet
-        match a
-            .add_packet(helper_new_empty_packet(0, 0, true))
-            .unwrap_err()
-        {
+        match a.add_packet(Packet::empty(0, 0, true)).unwrap_err() {
             Error::FinalPacketAlreadyExists(actual_last_index) => {
                 assert_eq!(
                     actual_last_index, 1,
@@ -262,7 +239,7 @@ mod tests {
         let mut a = Assembler::new();
 
         // Add first packet (index 0), still needing final packet
-        let _ = a.add_packet(helper_new_empty_packet(0, 0, false));
+        let _ = a.add_packet(Packet::empty(0, 0, false));
 
         assert_eq!(a.verify(), false);
     }
@@ -273,7 +250,7 @@ mod tests {
 
         // Add packet at end (index 1), still needing first packet
         assert_eq!(
-            a.add_packet(helper_new_empty_packet(0, 1, true)).is_ok(),
+            a.add_packet(Packet::empty(0, 1, true)).is_ok(),
             true,
             "Unexpectedly failed to add a new packet",
         );
@@ -287,14 +264,14 @@ mod tests {
 
         // Add packet at beginning (index 0)
         assert_eq!(
-            a.add_packet(helper_new_empty_packet(0, 0, false)).is_ok(),
+            a.add_packet(Packet::empty(0, 0, false)).is_ok(),
             true,
             "Unexpectedly failed to add a new packet",
         );
 
         // Add packet at end (index 2)
         assert_eq!(
-            a.add_packet(helper_new_empty_packet(0, 2, true)).is_ok(),
+            a.add_packet(Packet::empty(0, 2, true)).is_ok(),
             true,
             "Unexpectedly failed to add a new packet",
         );
@@ -307,7 +284,7 @@ mod tests {
         let mut a = Assembler::new();
 
         assert_eq!(
-            a.add_packet(helper_new_empty_packet(0, 0, true)).is_ok(),
+            a.add_packet(Packet::empty(0, 0, true)).is_ok(),
             true,
             "Unexpectedly failed to add a new packet",
         );
@@ -333,14 +310,7 @@ mod tests {
         let data: Vec<u8> = vec![1, 2, 3];
 
         // Try a single packet and collecting data
-        let _ = a.add_packet(Packet {
-            metadata: Metadata {
-                id: 0,
-                index: 0,
-                is_last: true,
-            },
-            data: data.clone(),
-        });
+        let _ = a.add_packet(Packet::new(0, 0, true, data.clone()));
 
         let collected_data = a.assemble().unwrap();
         assert_eq!(data, collected_data);
@@ -352,30 +322,9 @@ mod tests {
         let data: Vec<u8> = vec![1, 2, 3, 4, 5];
 
         // Try a multiple packets and collecting data
-        let _ = a.add_packet(Packet {
-            metadata: Metadata {
-                id: 0,
-                index: 2,
-                is_last: true,
-            },
-            data: data[3..].to_vec(),
-        });
-        let _ = a.add_packet(Packet {
-            metadata: Metadata {
-                id: 0,
-                index: 0,
-                is_last: false,
-            },
-            data: data[0..1].to_vec(),
-        });
-        let _ = a.add_packet(Packet {
-            metadata: Metadata {
-                id: 0,
-                index: 1,
-                is_last: false,
-            },
-            data: data[1..3].to_vec(),
-        });
+        let _ = a.add_packet(Packet::new(0, 2, true, data[3..].to_vec()));
+        let _ = a.add_packet(Packet::new(0, 0, false, data[0..1].to_vec()));
+        let _ = a.add_packet(Packet::new(0, 1, false, data[1..3].to_vec()));
 
         let collected_data = a.assemble().unwrap();
         assert_eq!(data, collected_data);
