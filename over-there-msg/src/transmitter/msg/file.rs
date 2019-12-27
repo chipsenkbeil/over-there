@@ -31,7 +31,10 @@ impl FileMsgTransmitter {
     /// Sends a message using the underlying stream
     pub fn send(&mut self, msg: Msg) -> Result<(), Error> {
         let mut f = &self.out_file;
-        self.msg_transmitter.send(msg, |data| f.write_all(&data))
+        self.msg_transmitter.send(msg, |data| {
+            f.write_all(&data)?;
+            f.flush()
+        })
     }
 
     /// Receives data from the underlying stream, yielding a message if

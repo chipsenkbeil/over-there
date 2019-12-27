@@ -78,7 +78,16 @@ impl DataTransmitter {
         mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, std::io::Error>,
     ) -> Result<Option<Vec<u8>>, Error> {
         let mut buf = self.buffer.borrow_mut();
-        let _bsize = recv_handler(&mut buf).map_err(Error::RecvBytes)?;
+        let size = recv_handler(&mut buf).map_err(Error::RecvBytes)?;
+
+        // If we don't receive any bytes, we treat it as there are no bytes
+        // available, which is not an error but also does not warrant trying
+        // to parse a packet, which will cause an error
+        if size == 0 {
+            return Ok(None);
+        }
+
+        debug!("{} incoming bytes {:?}", size, buf);
 
         // Process the packet received from the UDP socket
         let p = Packet::from_slice(&buf).map_err(Error::DecodePacket)?;
@@ -222,6 +231,16 @@ mod tests {
             Ok(l)
         }) {
             Err(Error::AssembleData(_)) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[test]
+    fn recv_should_return_none_if_zero_bytes_received() {
+        let m = DataTransmitter::new(100);
+
+        match m.recv(|_| Ok(0)) {
+            Ok(None) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
