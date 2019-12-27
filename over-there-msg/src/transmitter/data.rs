@@ -1,4 +1,3 @@
-use crate::msg::Msg;
 use log::debug;
 use over_there_transport::{assembler, disassembler, Assembler, Disassembler, Packet};
 use rand::random;
@@ -8,8 +7,6 @@ use ttl_cache::TtlCache;
 
 #[derive(Debug)]
 pub enum Error {
-    EncodeMsg(rmp_serde::encode::Error),
-    DecodeMsg(rmp_serde::decode::Error),
     EncodePacket(rmp_serde::encode::Error),
     DecodePacket(rmp_serde::decode::Error),
     AssembleData(assembler::Error),
@@ -21,10 +18,8 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &*self {
-            Error::EncodeMsg(msg) => write!(f, "Failed to encode message: {:?}", msg),
-            Error::DecodeMsg(error) => write!(f, "Failed to decode message: {:?}", error),
-            Error::EncodePacket(packet) => write!(f, "Failed to encode packet: {:?}", packet),
-            Error::DecodePacket(packet) => write!(f, "Failed to decode packet: {:?}", packet),
+            Error::EncodePacket(error) => write!(f, "Failed to encode packet: {:?}", error),
+            Error::DecodePacket(error) => write!(f, "Failed to decode packet: {:?}", error),
             Error::AssembleData(error) => write!(f, "Failed to assemble data: {:?}", error),
             Error::DisassembleData(error) => write!(f, "Failed to disassemble data: {:?}", error),
             Error::SendBytes(error) => write!(f, "Failed to send bytes: {:?}", error),
@@ -35,7 +30,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-pub struct MsgTransmitter {
+pub struct DataTransmitter {
     /// Maximum size allowed for a packet
     max_data_per_packet: u32,
 
@@ -47,12 +42,12 @@ pub struct MsgTransmitter {
     buffer: RefCell<Box<[u8]>>,
 }
 
-impl MsgTransmitter {
+impl DataTransmitter {
     const MAX_CACHE_SIZE: usize = 1500;
     const MAX_CACHE_DURATION_SECS: u64 = 60 * 5;
 
     pub fn new(max_data_per_packet: u32) -> Self {
-        MsgTransmitter {
+        DataTransmitter {
             max_data_per_packet,
             cache: RefCell::new(TtlCache::new(Self::MAX_CACHE_SIZE)),
             buffer: RefCell::new(vec![0; max_data_per_packet as usize].into_boxed_slice()),
@@ -61,11 +56,9 @@ impl MsgTransmitter {
 
     pub fn send(
         &self,
-        msg: Msg,
+        data: Vec<u8>,
         mut send_handler: impl FnMut(Vec<u8>) -> Result<(), std::io::Error>,
     ) -> Result<(), Error> {
-        let data = msg.to_vec().map_err(Error::EncodeMsg)?;
-
         // Split message into multiple packets
         let id: u32 = random();
         let packets = Disassembler::make_packets_from_data(id, data, self.max_data_per_packet)
@@ -83,7 +76,7 @@ impl MsgTransmitter {
     pub fn recv(
         &self,
         mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, std::io::Error>,
-    ) -> Result<Option<Msg>, Error> {
+    ) -> Result<Option<Vec<u8>>, Error> {
         let mut buf = self.buffer.borrow_mut();
         let _bsize = recv_handler(&mut buf).map_err(Error::RecvBytes)?;
 
@@ -119,13 +112,11 @@ impl MsgTransmitter {
         // Determine if time to assemble message
         if assembler.verify() {
             let data = assembler.assemble().map_err(Error::AssembleData)?;
-            let m = Msg::from_vec(&data).map_err(Error::DecodeMsg)?;
-            debug!("New message: {:?}", m);
 
             // We also want to drop the assembler at this point
             map.remove(&p_id);
 
-            Ok(Some(m))
+            Ok(Some(data))
         } else {
             Ok(None)
         }
@@ -135,16 +126,15 @@ impl MsgTransmitter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::msg::Request;
 
     #[test]
     fn send_should_fail_if_unable_to_convert_bytes_to_packets() {
-        // Produce a message manager with a "bytes per packet" that is too
+        // Produce a data transmitter with a "bytes per packet" that is too
         // low, causing the process to fail
-        let m = MsgTransmitter::new(0);
-        let msg = Msg::new_request(Request::HeartbeatRequest);
+        let m = DataTransmitter::new(0);
+        let data = vec![1, 2, 3];
 
-        match m.send(msg, |_| Ok(())) {
+        match m.send(data, |_| Ok(())) {
             Err(Error::DisassembleData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
@@ -152,10 +142,10 @@ mod tests {
 
     #[test]
     fn send_should_fail_if_socket_fails_to_send_bytes() {
-        let m = MsgTransmitter::new(100);
-        let msg = Msg::new_request(Request::HeartbeatRequest);
+        let m = DataTransmitter::new(100);
+        let data = vec![1, 2, 3];
 
-        match m.send(msg, |_| {
+        match m.send(data, |_| {
             Err(std::io::Error::from(std::io::ErrorKind::Other))
         }) {
             Err(Error::SendBytes(_)) => (),
@@ -164,17 +154,17 @@ mod tests {
     }
 
     #[test]
-    fn send_should_return_okay_if_successfully_sent_message() {
-        let m = MsgTransmitter::new(100);
-        let msg = Msg::new_request(Request::HeartbeatRequest);
+    fn send_should_return_okay_if_successfully_sent_data() {
+        let m = DataTransmitter::new(100);
+        let data = vec![1, 2, 3];
 
-        let result = m.send(msg, |_| Ok(()));
+        let result = m.send(data, |_| Ok(()));
         assert_eq!(result.is_ok(), true);
     }
 
     #[test]
     fn recv_should_fail_if_socket_fails_to_get_bytes() {
-        let m = MsgTransmitter::new(100);
+        let m = DataTransmitter::new(100);
 
         match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
             Err(Error::RecvBytes(_)) => (),
@@ -184,7 +174,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_bytes_to_packet() {
-        let m = MsgTransmitter::new(100);
+        let m = DataTransmitter::new(100);
 
         // Force buffer to have a couple of early zeros, which is not
         // valid data when decoding
@@ -201,16 +191,14 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_add_packet_to_assembler() {
-        let m = MsgTransmitter::new(100);
+        let m = DataTransmitter::new(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
         // us to re-add a packet with the same id & index
         let p = &Disassembler::make_packets_from_data(
             0,
-            Msg::new_request(Request::HeartbeatRequest)
-                .to_vec()
-                .unwrap(),
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             Packet::metadata_size() + 1,
         )
         .unwrap()[0];
@@ -239,36 +227,14 @@ mod tests {
     }
 
     #[test]
-    fn recv_should_fail_if_unable_to_convert_complete_data_to_message() {
-        let m = MsgTransmitter::new(100);
-
-        // Provide a valid packet, but one that does not form a message
-        let p =
-            &Disassembler::make_packets_from_data(0, vec![1, 2, 3], Packet::metadata_size() + 3)
-                .unwrap()[0];
-
-        let data = p.to_vec().unwrap();
-        match m.recv(|buf| {
-            let l = data.len();
-            buf[..l].clone_from_slice(&data);
-            Ok(l)
-        }) {
-            Err(Error::DecodeMsg(_)) => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[test]
-    fn recv_should_return_none_if_received_packet_does_not_complete_message() {
-        let m = MsgTransmitter::new(100);
+    fn recv_should_return_none_if_received_packet_does_not_complete_data() {
+        let m = DataTransmitter::new(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
         let p = &Disassembler::make_packets_from_data(
             0,
-            Msg::new_request(Request::HeartbeatRequest)
-                .to_vec()
-                .unwrap(),
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             Packet::metadata_size() + 1,
         )
         .unwrap()[0];
@@ -284,25 +250,20 @@ mod tests {
     }
 
     #[test]
-    fn recv_should_return_some_message_if_received_packet_does_complete_message() {
-        let m = MsgTransmitter::new(100);
-        let msg = Msg::new_request(Request::HeartbeatRequest);
+    fn recv_should_return_some_data_if_received_packet_does_complete_data() {
+        let m = DataTransmitter::new(100);
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
-        let p = &Disassembler::make_packets_from_data(0, msg.to_vec().unwrap(), 100).unwrap()[0];
-        let data = p.to_vec().unwrap();
+        let p = &Disassembler::make_packets_from_data(0, data.clone(), 100).unwrap()[0];
+        let pdata = p.to_vec().unwrap();
         match m.recv(|buf| {
-            let l = data.len();
-            buf[..l].clone_from_slice(&data);
+            let l = pdata.len();
+            buf[..l].clone_from_slice(&pdata);
             Ok(l)
         }) {
-            Ok(Some(recv_msg)) => {
-                assert_eq!(
-                    recv_msg.to_vec().unwrap(),
-                    msg.to_vec().unwrap(),
-                    "Received unexpected message: {:?}",
-                    recv_msg
-                );
+            Ok(Some(recv_data)) => {
+                assert_eq!(recv_data, data, "Received unexpected data: {:?}", recv_data);
             }
             x => panic!("Unexpected result: {:?}", x),
         }

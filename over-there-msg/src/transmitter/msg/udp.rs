@@ -1,4 +1,5 @@
 use crate::msg::Msg;
+use crate::transmitter::data::DataTransmitter;
 use crate::transmitter::msg::{Error, MsgTransmitter};
 use over_there_transport::udp;
 use std::net::{SocketAddr, UdpSocket};
@@ -17,7 +18,8 @@ impl UdpMsgTransmitter {
     }
 
     pub fn from_socket(socket: UdpSocket) -> Self {
-        let msg_transmitter = MsgTransmitter::new(udp::MAX_IPV4_DATAGRAM_SIZE as u32);
+        let data_transmitter = DataTransmitter::new(udp::MAX_IPV4_DATAGRAM_SIZE as u32);
+        let msg_transmitter = MsgTransmitter::new(data_transmitter);
         Self::new(socket, msg_transmitter)
     }
 
