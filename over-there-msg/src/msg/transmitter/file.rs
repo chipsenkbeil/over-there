@@ -1,6 +1,6 @@
-use crate::msg::Msg;
-use crate::transmitter::data::DataTransmitter;
-use crate::transmitter::msg::{Error, MsgTransmitter};
+use super::Msg;
+use super::{Error, MsgTransmitter};
+use over_there_transport::Transmitter;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 
@@ -23,8 +23,8 @@ impl FileMsgTransmitter {
     }
 
     pub fn from_files(in_file: File, out_file: File) -> Self {
-        let data_transmitter = DataTransmitter::new(Self::MAX_FILE_TRANSMIT_CHUNK_SIZE as u32);
-        let msg_transmitter = MsgTransmitter::new(data_transmitter);
+        let transmitter = Transmitter::new(Self::MAX_FILE_TRANSMIT_CHUNK_SIZE as u32);
+        let msg_transmitter = MsgTransmitter::new(transmitter);
         Self::new(in_file, out_file, msg_transmitter)
     }
 

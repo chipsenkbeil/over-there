@@ -10,7 +10,6 @@ serde_bytes = "0.11.3"
 rmp-serde = "0.14.0"
 log = "0.4.8"
 rand = "0.7.2"
-ttl_cache = "0.5.1"
 over-there-transport = { path = "../over-there-transport" }
 over-there-utils = { path = "../over-there-utils" }
 

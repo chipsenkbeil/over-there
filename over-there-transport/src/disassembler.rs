@@ -19,7 +19,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-pub struct Disassembler {}
+pub(crate) struct Disassembler {}
 
 impl Disassembler {
     pub fn make_packets_from_data(
@@ -89,7 +89,6 @@ mod tests {
         assert_eq!(p.index(), 0, "Unexpected index for single packet");
         assert_eq!(p.is_last(), true, "Single packet not marked as last packet");
         assert_eq!(p.data(), &data);
-        assert_eq!(p.is_multipart(), false, "Packet unexpectedly multipart");
     }
 
     #[test]
@@ -113,7 +112,6 @@ mod tests {
             "Non-final packet unexpectedly marked as last"
         );
         assert_eq!(&p1.data()[..], &data[0..2]);
-        assert_eq!(p1.is_multipart(), true, "Packet unexpectedly not multipart");
 
         // Check data quality of second packet
         let p2 = packets.get(1).unwrap();
@@ -121,6 +119,5 @@ mod tests {
         assert_eq!(p2.index(), 1, "Last packet not marked with correct index");
         assert_eq!(p2.is_last(), true, "Last packet not marked as final");
         assert_eq!(&p2.data()[..], &data[2..]);
-        assert_eq!(p2.is_multipart(), true, "Packet unexpectedly not multipart");
     }
 }

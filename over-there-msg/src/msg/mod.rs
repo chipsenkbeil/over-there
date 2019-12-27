@@ -1,3 +1,5 @@
+pub mod transmitter;
+
 use over_there_utils::Either;
 use rand::random;
 use serde::{Deserialize, Serialize};

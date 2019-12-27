@@ -119,18 +119,6 @@ fn test_file_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 
     let client_file = tempfile::tempfile()?;
     let server_file = tempfile::tempfile()?;
-    let client_file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open("/tmp/client.chip")?;
-    let server_file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open("/tmp/server.chip")?;
-    println!("CLIENT FILE {:?}", client_file);
-    println!("SERVER FILE {:?}", server_file);
     let mut client =
         FileMsgTransmitter::from_files(client_file.try_clone()?, server_file.try_clone()?);
     let mut server = FileMsgTransmitter::from_files(server_file, client_file);

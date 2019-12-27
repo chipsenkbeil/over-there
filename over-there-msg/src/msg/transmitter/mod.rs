@@ -2,15 +2,16 @@ pub mod file;
 pub mod tcp;
 pub mod udp;
 
-use super::data::{self, DataTransmitter};
-use crate::msg::Msg;
+use super::Msg;
+use over_there_transport::transmitter;
+use over_there_transport::Transmitter;
 
 #[derive(Debug)]
 pub enum Error {
     EncodeMsg(rmp_serde::encode::Error),
     DecodeMsg(rmp_serde::decode::Error),
-    SendData(data::Error),
-    RecvData(data::Error),
+    SendData(transmitter::Error),
+    RecvData(transmitter::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -27,12 +28,12 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 pub struct MsgTransmitter {
-    data_transmitter: DataTransmitter,
+    transmitter: Transmitter,
 }
 
 impl MsgTransmitter {
-    pub fn new(data_transmitter: DataTransmitter) -> Self {
-        MsgTransmitter { data_transmitter }
+    pub fn new(transmitter: Transmitter) -> Self {
+        MsgTransmitter { transmitter }
     }
 
     pub fn send(
@@ -41,7 +42,7 @@ impl MsgTransmitter {
         send_handler: impl FnMut(Vec<u8>) -> Result<(), std::io::Error>,
     ) -> Result<(), Error> {
         let data = msg.to_vec().map_err(Error::EncodeMsg)?;
-        self.data_transmitter
+        self.transmitter
             .send(data, send_handler)
             .map_err(Error::SendData)
     }
@@ -50,7 +51,7 @@ impl MsgTransmitter {
         &self,
         recv_handler: impl FnMut(&mut [u8]) -> Result<usize, std::io::Error>,
     ) -> Result<Option<Msg>, Error> {
-        self.data_transmitter
+        self.transmitter
             .recv(recv_handler)
             .map_err(Error::RecvData)?
             .map(|v| Msg::from_vec(&v))
@@ -63,11 +64,10 @@ impl MsgTransmitter {
 mod tests {
     use super::*;
     use crate::msg::Request;
-    use over_there_transport::{Disassembler, Packet};
 
     #[test]
     fn send_should_fail_if_unable_to_send_data() {
-        let m = MsgTransmitter::new(DataTransmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::new(100));
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
         match m.send(msg, |_| {
@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn send_should_succeed_if_able_to_send_msg() {
-        let m = MsgTransmitter::new(DataTransmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::new(100));
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
         assert_eq!(m.send(msg, |_| Ok(())).is_ok(), true);
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_receive_data() {
-        let m = MsgTransmitter::new(DataTransmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::new(100));
 
         match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
             Err(Error::RecvData(_)) => (),
@@ -98,14 +98,21 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_complete_data_to_msg() {
-        let m = MsgTransmitter::new(DataTransmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::new(100));
 
-        // Provide a valid packet, but one that does not form a message
-        let p =
-            &Disassembler::make_packets_from_data(0, vec![1, 2, 3], Packet::metadata_size() + 3)
-                .unwrap()[0];
+        // Construct a data representation that is valid to read
+        // but is not a msg
+        let data: [u8; 100] = {
+            let mut tmp = [0; 100];
+            m.transmitter
+                .send(vec![1, 2, 3], |msg_data| {
+                    tmp[..msg_data.len()].clone_from_slice(&msg_data);
+                    Ok(())
+                })
+                .unwrap();
+            tmp
+        };
 
-        let data = p.to_vec().unwrap();
         match m.recv(|buf| {
             let l = data.len();
             buf[..l].clone_from_slice(&data);
@@ -118,15 +125,19 @@ mod tests {
 
     #[test]
     fn recv_should_succeed_if_able_to_receive_msg() {
-        let m = MsgTransmitter::new(DataTransmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::new(100));
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
-        // Convert msg into one large packet that we'll send for our test
-        let data = {
-            let data = msg.to_vec().unwrap();
-            let psize = Packet::metadata_size() + data.len() as u32;
-            let p = &Disassembler::make_packets_from_data(0, data, psize).unwrap()[0];
-            p.to_vec().unwrap()
+        // Construct a data representation for our message
+        let data: [u8; 100] = {
+            let mut tmp = [0; 100];
+            m.transmitter
+                .send(msg.to_vec().unwrap(), |msg_data| {
+                    tmp[..msg_data.len()].clone_from_slice(&msg_data);
+                    Ok(())
+                })
+                .unwrap();
+            tmp
         };
 
         match m.recv(|buf| {

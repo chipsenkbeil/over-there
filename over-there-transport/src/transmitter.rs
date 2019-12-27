@@ -1,5 +1,9 @@
+use crate::{
+    assembler::{self, Assembler},
+    disassembler::{self, Disassembler},
+    packet::Packet,
+};
 use log::debug;
-use over_there_transport::{assembler, disassembler, Assembler, Disassembler, Packet};
 use rand::random;
 use std::cell::RefCell;
 use std::time::Duration;
@@ -30,7 +34,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-pub struct DataTransmitter {
+pub struct Transmitter {
     /// Maximum size allowed for a packet
     max_data_per_packet: u32,
 
@@ -42,12 +46,12 @@ pub struct DataTransmitter {
     buffer: RefCell<Box<[u8]>>,
 }
 
-impl DataTransmitter {
+impl Transmitter {
     const MAX_CACHE_SIZE: usize = 1500;
     const MAX_CACHE_DURATION_SECS: u64 = 60 * 5;
 
     pub fn new(max_data_per_packet: u32) -> Self {
-        DataTransmitter {
+        Transmitter {
             max_data_per_packet,
             cache: RefCell::new(TtlCache::new(Self::MAX_CACHE_SIZE)),
             buffer: RefCell::new(vec![0; max_data_per_packet as usize].into_boxed_slice()),
@@ -88,7 +92,7 @@ impl DataTransmitter {
         }
         debug!("{} incoming bytes", size);
 
-        // Process the packet received from the UDP socket
+        // Process the received packet
         let p = Packet::from_slice(&buf[..size]).map_err(Error::DecodePacket)?;
         let p_id = p.id();
         debug!(
@@ -137,9 +141,9 @@ mod tests {
 
     #[test]
     fn send_should_fail_if_unable_to_convert_bytes_to_packets() {
-        // Produce a data transmitter with a "bytes per packet" that is too
+        // Produce a transmitter with a "bytes per packet" that is too
         // low, causing the process to fail
-        let m = DataTransmitter::new(0);
+        let m = Transmitter::new(0);
         let data = vec![1, 2, 3];
 
         match m.send(data, |_| Ok(())) {
@@ -149,8 +153,8 @@ mod tests {
     }
 
     #[test]
-    fn send_should_fail_if_socket_fails_to_send_bytes() {
-        let m = DataTransmitter::new(100);
+    fn send_should_fail_if_fails_to_send_bytes() {
+        let m = Transmitter::new(100);
         let data = vec![1, 2, 3];
 
         match m.send(data, |_| {
@@ -163,7 +167,7 @@ mod tests {
 
     #[test]
     fn send_should_return_okay_if_successfully_sent_data() {
-        let m = DataTransmitter::new(100);
+        let m = Transmitter::new(100);
         let data = vec![1, 2, 3];
 
         let result = m.send(data, |_| Ok(()));
@@ -172,7 +176,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_socket_fails_to_get_bytes() {
-        let m = DataTransmitter::new(100);
+        let m = Transmitter::new(100);
 
         match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
             Err(Error::RecvBytes(_)) => (),
@@ -182,7 +186,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_bytes_to_packet() {
-        let m = DataTransmitter::new(100);
+        let m = Transmitter::new(100);
 
         // Force buffer to have a couple of early zeros, which is not
         // valid data when decoding
@@ -199,7 +203,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_add_packet_to_assembler() {
-        let m = DataTransmitter::new(100);
+        let m = Transmitter::new(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
@@ -236,7 +240,7 @@ mod tests {
 
     #[test]
     fn recv_should_return_none_if_zero_bytes_received() {
-        let m = DataTransmitter::new(100);
+        let m = Transmitter::new(100);
 
         match m.recv(|_| Ok(0)) {
             Ok(None) => (),
@@ -246,7 +250,7 @@ mod tests {
 
     #[test]
     fn recv_should_return_none_if_received_packet_does_not_complete_data() {
-        let m = DataTransmitter::new(100);
+        let m = Transmitter::new(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
@@ -269,7 +273,7 @@ mod tests {
 
     #[test]
     fn recv_should_return_some_data_if_received_packet_does_complete_data() {
-        let m = DataTransmitter::new(100);
+        let m = Transmitter::new(100);
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message

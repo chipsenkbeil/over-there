@@ -1,9 +1,7 @@
 pub mod msg;
-pub mod transmitter;
 
+pub use msg::transmitter::file::FileMsgTransmitter;
+pub use msg::transmitter::tcp::TcpMsgTransmitter;
+pub use msg::transmitter::udp::UdpMsgTransmitter;
+pub use msg::transmitter::MsgTransmitter;
 pub use msg::{Msg, Request, Response};
-pub use transmitter::data::DataTransmitter;
-pub use transmitter::msg::file::FileMsgTransmitter;
-pub use transmitter::msg::tcp::TcpMsgTransmitter;
-pub use transmitter::msg::udp::UdpMsgTransmitter;
-pub use transmitter::msg::MsgTransmitter;

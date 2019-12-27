@@ -1,7 +1,7 @@
-use crate::msg::Msg;
-use crate::transmitter::data::DataTransmitter;
-use crate::transmitter::msg::{Error, MsgTransmitter};
+use super::Msg;
+use super::{Error, MsgTransmitter};
 use over_there_transport::tcp;
+use over_there_transport::Transmitter;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
@@ -19,8 +19,8 @@ impl TcpMsgTransmitter {
     }
 
     pub fn from_stream(stream: TcpStream) -> Self {
-        let data_transmitter = DataTransmitter::new(tcp::MTU_ETHERNET_SIZE as u32);
-        let msg_transmitter = MsgTransmitter::new(data_transmitter);
+        let transmitter = Transmitter::new(tcp::MTU_ETHERNET_SIZE as u32);
+        let msg_transmitter = MsgTransmitter::new(transmitter);
         Self::new(stream, msg_transmitter)
     }
 

@@ -36,7 +36,7 @@ impl std::fmt::Display for Error {
     }
 }
 
-pub struct Assembler {
+pub(crate) struct Assembler {
     packets: HashMap<u32, Packet>,
     final_packet_index: Option<u32>,
     id_for_packets: Option<u32>,
@@ -129,6 +129,10 @@ impl Assembler {
 mod tests {
     use super::*;
 
+    fn make_empty_packet(id: u32, index: u32, is_last: bool) -> Packet {
+        Packet::new(id, index, is_last, vec![])
+    }
+
     #[test]
     fn add_packet_fails_if_packet_already_exists() {
         let mut a = Assembler::new();
@@ -136,7 +140,7 @@ mod tests {
         let index = 999;
 
         // Add first packet successfully
-        let result = a.add_packet(Packet::empty(id, index, false));
+        let result = a.add_packet(make_empty_packet(id, index, false));
         assert_eq!(
             result.is_ok(),
             true,
@@ -145,7 +149,10 @@ mod tests {
         );
 
         // Fail if adding packet with same index
-        match a.add_packet(Packet::empty(id, index, false)).unwrap_err() {
+        match a
+            .add_packet(make_empty_packet(id, index, false))
+            .unwrap_err()
+        {
             Error::PacketExists(eid, eindex) => {
                 assert_eq!(id, eid, "Unexpected index returned in error");
                 assert_eq!(index, eindex, "Unexpected index returned in error");
@@ -160,7 +167,7 @@ mod tests {
         let id = 123;
 
         // Add first packet successfully
-        let result = a.add_packet(Packet::empty(id, 0, true));
+        let result = a.add_packet(make_empty_packet(id, 0, true));
         assert_eq!(
             result.is_ok(),
             true,
@@ -169,7 +176,7 @@ mod tests {
         );
 
         // Fail if adding packet after final packet
-        match a.add_packet(Packet::empty(id, 1, false)).unwrap_err() {
+        match a.add_packet(make_empty_packet(id, 1, false)).unwrap_err() {
             Error::PacketBeyondLastIndex(eid, eindex) => {
                 assert_eq!(id, eid, "Beyond packet id was different");
                 assert_eq!(eindex, 1, "Beyond packet index was wrong");
@@ -184,7 +191,7 @@ mod tests {
         let id = 999;
 
         // Add first packet successfully
-        let result = a.add_packet(Packet::empty(id, 0, false));
+        let result = a.add_packet(make_empty_packet(id, 0, false));
         assert_eq!(
             result.is_ok(),
             true,
@@ -193,7 +200,10 @@ mod tests {
         );
 
         // Fail if adding packet after final packet
-        match a.add_packet(Packet::empty(id + 1, 1, false)).unwrap_err() {
+        match a
+            .add_packet(make_empty_packet(id + 1, 1, false))
+            .unwrap_err()
+        {
             Error::PacketHasDifferentId(actual_id, expected_id) => {
                 assert_eq!(actual_id, id + 1, "Actual id was different than provided");
                 assert_eq!(expected_id, id, "Expected id was different from tracked");
@@ -207,7 +217,7 @@ mod tests {
         let mut a = Assembler::new();
 
         // Make the second packet (index) be the last packet
-        let result = a.add_packet(Packet::empty(0, 1, true));
+        let result = a.add_packet(make_empty_packet(0, 1, true));
         assert_eq!(
             result.is_ok(),
             true,
@@ -217,7 +227,7 @@ mod tests {
 
         // Fail if making the first packet (index) be the last packet
         // when we already have a last packet
-        match a.add_packet(Packet::empty(0, 0, true)).unwrap_err() {
+        match a.add_packet(make_empty_packet(0, 0, true)).unwrap_err() {
             Error::FinalPacketAlreadyExists(actual_last_index) => {
                 assert_eq!(
                     actual_last_index, 1,
@@ -239,7 +249,7 @@ mod tests {
         let mut a = Assembler::new();
 
         // Add first packet (index 0), still needing final packet
-        let _ = a.add_packet(Packet::empty(0, 0, false));
+        let _ = a.add_packet(make_empty_packet(0, 0, false));
 
         assert_eq!(a.verify(), false);
     }
@@ -250,7 +260,7 @@ mod tests {
 
         // Add packet at end (index 1), still needing first packet
         assert_eq!(
-            a.add_packet(Packet::empty(0, 1, true)).is_ok(),
+            a.add_packet(make_empty_packet(0, 1, true)).is_ok(),
             true,
             "Unexpectedly failed to add a new packet",
         );
@@ -264,14 +274,14 @@ mod tests {
 
         // Add packet at beginning (index 0)
         assert_eq!(
-            a.add_packet(Packet::empty(0, 0, false)).is_ok(),
+            a.add_packet(make_empty_packet(0, 0, false)).is_ok(),
             true,
             "Unexpectedly failed to add a new packet",
         );
 
         // Add packet at end (index 2)
         assert_eq!(
-            a.add_packet(Packet::empty(0, 2, true)).is_ok(),
+            a.add_packet(make_empty_packet(0, 2, true)).is_ok(),
             true,
             "Unexpectedly failed to add a new packet",
         );
@@ -284,7 +294,7 @@ mod tests {
         let mut a = Assembler::new();
 
         assert_eq!(
-            a.add_packet(Packet::empty(0, 0, true)).is_ok(),
+            a.add_packet(make_empty_packet(0, 0, true)).is_ok(),
             true,
             "Unexpectedly failed to add a new packet",
         );
