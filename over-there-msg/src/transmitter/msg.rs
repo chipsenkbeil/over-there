@@ -14,8 +14,8 @@ pub enum Error {
     DecodePacket(rmp_serde::decode::Error),
     AssembleData(assembler::Error),
     DisassembleData(disassembler::Error),
-    Send(std::io::Error),
-    Recv(std::io::Error),
+    SendBytes(std::io::Error),
+    RecvBytes(std::io::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -27,15 +27,15 @@ impl std::fmt::Display for Error {
             Error::DecodePacket(packet) => write!(f, "Failed to decode packet: {:?}", packet),
             Error::AssembleData(error) => write!(f, "Failed to assemble data: {:?}", error),
             Error::DisassembleData(error) => write!(f, "Failed to disassemble data: {:?}", error),
-            Error::Send(error) => write!(f, "Failed to send data: {:?}", error),
-            Error::Recv(error) => write!(f, "Failed to receive data: {:?}", error),
+            Error::SendBytes(error) => write!(f, "Failed to send bytes: {:?}", error),
+            Error::RecvBytes(error) => write!(f, "Failed to receive bytes: {:?}", error),
         }
     }
 }
 
 impl std::error::Error for Error {}
 
-pub struct Transmitter {
+pub struct MsgTransmitter {
     /// Maximum size allowed for a packet
     max_data_per_packet: u32,
 
@@ -47,12 +47,12 @@ pub struct Transmitter {
     buffer: RefCell<Box<[u8]>>,
 }
 
-impl Transmitter {
+impl MsgTransmitter {
     const MAX_CACHE_SIZE: usize = 1500;
     const MAX_CACHE_DURATION_SECS: u64 = 60 * 5;
 
     pub fn new(max_data_per_packet: u32) -> Self {
-        Transmitter {
+        MsgTransmitter {
             max_data_per_packet,
             cache: RefCell::new(TtlCache::new(Self::MAX_CACHE_SIZE)),
             buffer: RefCell::new(vec![0; max_data_per_packet as usize].into_boxed_slice()),
@@ -74,7 +74,7 @@ impl Transmitter {
         // For each packet, serialize and send to specific address
         for packet in packets.iter() {
             let packet_data = packet.to_vec().map_err(Error::EncodePacket)?;
-            send_handler(packet_data).map_err(Error::Send)?;
+            send_handler(packet_data).map_err(Error::SendBytes)?;
         }
 
         Ok(())
@@ -85,7 +85,7 @@ impl Transmitter {
         mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, std::io::Error>,
     ) -> Result<Option<Msg>, Error> {
         let mut buf = self.buffer.borrow_mut();
-        let _bsize = recv_handler(&mut buf).map_err(Error::Recv)?;
+        let _bsize = recv_handler(&mut buf).map_err(Error::RecvBytes)?;
 
         // Process the packet received from the UDP socket
         let p = Packet::from_slice(&buf).map_err(Error::DecodePacket)?;
@@ -141,7 +141,7 @@ mod tests {
     fn send_should_fail_if_unable_to_convert_bytes_to_packets() {
         // Produce a message manager with a "bytes per packet" that is too
         // low, causing the process to fail
-        let m = Transmitter::new(0);
+        let m = MsgTransmitter::new(0);
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
         match m.send(msg, |_| Ok(())) {
@@ -152,20 +152,20 @@ mod tests {
 
     #[test]
     fn send_should_fail_if_socket_fails_to_send_bytes() {
-        let m = Transmitter::new(100);
+        let m = MsgTransmitter::new(100);
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
         match m.send(msg, |_| {
             Err(std::io::Error::from(std::io::ErrorKind::Other))
         }) {
-            Err(Error::Send(_)) => (),
+            Err(Error::SendBytes(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
 
     #[test]
     fn send_should_return_okay_if_successfully_sent_message() {
-        let m = Transmitter::new(100);
+        let m = MsgTransmitter::new(100);
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
         let result = m.send(msg, |_| Ok(()));
@@ -174,17 +174,17 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_socket_fails_to_get_bytes() {
-        let m = Transmitter::new(100);
+        let m = MsgTransmitter::new(100);
 
         match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
-            Err(Error::Recv(_)) => (),
+            Err(Error::RecvBytes(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_bytes_to_packet() {
-        let m = Transmitter::new(100);
+        let m = MsgTransmitter::new(100);
 
         // Force buffer to have a couple of early zeros, which is not
         // valid data when decoding
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_add_packet_to_assembler() {
-        let m = Transmitter::new(100);
+        let m = MsgTransmitter::new(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_complete_data_to_message() {
-        let m = Transmitter::new(100);
+        let m = MsgTransmitter::new(100);
 
         // Provide a valid packet, but one that does not form a message
         let p =
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn recv_should_return_none_if_received_packet_does_not_complete_message() {
-        let m = Transmitter::new(100);
+        let m = MsgTransmitter::new(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn recv_should_return_some_message_if_received_packet_does_complete_message() {
-        let m = Transmitter::new(100);
+        let m = MsgTransmitter::new(100);
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
         // Make one large packet so we can complete a message

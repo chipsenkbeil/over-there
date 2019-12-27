@@ -1,6 +1,5 @@
-use over_there_msg::Communicator;
-use over_there_msg::{Msg, Request, Response};
-use over_there_transport::{NetworkTransport, UDPTransport};
+use over_there_msg::{Msg, Request, Response, UdpMsgTransmitter};
+use over_there_transport::udp;
 
 fn init() {
     let _ = env_logger::builder()
@@ -13,19 +12,13 @@ fn init() {
 fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     init();
 
-    let client = Communicator::from_transport(
-        UDPTransport::local()?,
-        UDPTransport::MAX_IPV4_DATAGRAM_SIZE as u32,
-    );
-    let server = Communicator::from_transport(
-        UDPTransport::local()?,
-        UDPTransport::MAX_IPV4_DATAGRAM_SIZE as u32,
-    );
+    let client = UdpMsgTransmitter::from_socket(udp::local()?);
+    let server = UdpMsgTransmitter::from_socket(udp::local()?);
 
     // Send message to server
     let req = Request::HeartbeatRequest;
     let msg = Msg::new_request(req);
-    client.send(msg, server.transport.socket().local_addr()?)?;
+    client.send(msg, server.socket.local_addr()?)?;
 
     // Keep checking until we receive a complete message from the client
     loop {
