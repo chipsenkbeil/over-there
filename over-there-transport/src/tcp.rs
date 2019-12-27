@@ -2,10 +2,10 @@ use std::io::Result;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
 
 /// Maximum Transmission Unit for Ethernet in bytes
-pub const MTU_ETHERNET: usize = 1500;
+pub const MTU_ETHERNET_SIZE: usize = 1500;
 
 /// Maximum Transmission Unit for Dialup in bytes
-pub const MTU_DIALUP: usize = 576;
+pub const MTU_DIALUP_SIZE: usize = 576;
 
 /// 8080-8099
 pub const DEFAULT_PORT_RANGE: std::ops::Range<u16> = (8080..8099);
