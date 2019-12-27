@@ -2,6 +2,8 @@ use over_there_msg::{
     FileMsgTransmitter, Msg, Request, Response, TcpMsgTransmitter, UdpMsgTransmitter,
 };
 use over_there_transport::{tcp, udp};
+use over_there_utils::exec;
+use std::time::Duration;
 
 fn init() {
     let _ = env_logger::builder()
@@ -23,7 +25,7 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     client.send(msg, server.socket.local_addr()?)?;
 
     // Keep checking until we receive a complete message from the client
-    loop {
+    exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some((msg, addr)) = server.recv()? {
             match msg.get_request() {
@@ -35,12 +37,13 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 _ => panic!("Unexpected message {:?}", msg),
             }
-            break;
+            return Ok(true);
         }
-    }
+        Ok(false)
+    })?;
 
     // Now wait for client to receive response
-    loop {
+    exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some((msg, _addr)) = client.recv()? {
             match msg.get_response() {
@@ -50,9 +53,10 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 _ => panic!("Unexpected message {:?}", msg),
             }
-            break;
+            return Ok(true);
         }
-    }
+        Ok(false)
+    })?;
 
     Ok(())
 }
@@ -73,7 +77,7 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     client.send(msg)?;
 
     // Keep checking until we receive a complete message from the client
-    loop {
+    exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = server.recv()? {
             match msg.get_request() {
@@ -85,12 +89,13 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 _ => panic!("Unexpected message {:?}", msg),
             }
-            break;
+            return Ok(true);
         }
-    }
+        Ok(false)
+    })?;
 
     // Now wait for client to receive response
-    loop {
+    exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = client.recv()? {
             match msg.get_response() {
@@ -100,9 +105,10 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 _ => panic!("Unexpected message {:?}", msg),
             }
-            break;
+            return Ok(true);
         }
-    }
+        Ok(false)
+    })?;
 
     Ok(())
 }
@@ -113,6 +119,18 @@ fn test_file_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 
     let client_file = tempfile::tempfile()?;
     let server_file = tempfile::tempfile()?;
+    let client_file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open("/tmp/client.chip")?;
+    let server_file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open("/tmp/server.chip")?;
+    println!("CLIENT FILE {:?}", client_file);
+    println!("SERVER FILE {:?}", server_file);
     let mut client =
         FileMsgTransmitter::from_files(client_file.try_clone()?, server_file.try_clone()?);
     let mut server = FileMsgTransmitter::from_files(server_file, client_file);
@@ -123,7 +141,7 @@ fn test_file_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     client.send(msg)?;
 
     // Keep checking until we receive a complete message from the client
-    loop {
+    exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = server.recv()? {
             match msg.get_request() {
@@ -135,12 +153,13 @@ fn test_file_send_recv() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 _ => panic!("Unexpected message {:?}", msg),
             }
-            break;
+            return Ok(true);
         }
-    }
+        Ok(false)
+    })?;
 
     // Now wait for client to receive response
-    loop {
+    exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = client.recv()? {
             match msg.get_response() {
@@ -150,9 +169,10 @@ fn test_file_send_recv() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 _ => panic!("Unexpected message {:?}", msg),
             }
-            break;
+            return Ok(true);
         }
-    }
+        Ok(false)
+    })?;
 
     Ok(())
 }
