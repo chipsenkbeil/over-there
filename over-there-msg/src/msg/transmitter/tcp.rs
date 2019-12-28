@@ -19,7 +19,7 @@ impl TcpMsgTransmitter {
     }
 
     pub fn from_stream(stream: TcpStream) -> Self {
-        let transmitter = Transmitter::new(tcp::MTU_ETHERNET_SIZE as u32);
+        let transmitter = Transmitter::with_transmission_size(tcp::MTU_ETHERNET_SIZE);
         let msg_transmitter = MsgTransmitter::new(transmitter);
         Self::new(stream, msg_transmitter)
     }

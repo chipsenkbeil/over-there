@@ -2,7 +2,7 @@ use crate::packet::Packet;
 
 #[derive(Debug)]
 pub enum Error {
-    DesiredChunkSizeTooSmall(u32, u32),
+    DesiredChunkSizeTooSmall(usize, usize),
 }
 
 impl std::fmt::Display for Error {
@@ -25,7 +25,7 @@ impl Disassembler {
     pub fn make_packets_from_data(
         id: u32,
         data: Vec<u8>,
-        desired_chunk_size: u32,
+        desired_chunk_size: usize,
     ) -> Result<Vec<Packet>, Error> {
         // We assume that we have a desired chunk size that can fit our
         // metadata and data reasonably
@@ -79,7 +79,7 @@ mod tests {
         let data: Vec<u8> = vec![1, 2];
 
         // Make it so all the data fits in one packet
-        let chunk_size = Packet::metadata_size() + data.len() as u32;
+        let chunk_size = Packet::metadata_size() + data.len();
 
         let packets = Disassembler::make_packets_from_data(id, data.clone(), chunk_size).unwrap();
         assert_eq!(packets.len(), 1, "More than one packet produced");

@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn send_should_fail_if_unable_to_send_data() {
-        let m = MsgTransmitter::new(Transmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
         match m.send(msg, |_| {
@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn send_should_succeed_if_able_to_send_msg() {
-        let m = MsgTransmitter::new(Transmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
         assert_eq!(m.send(msg, |_| Ok(())).is_ok(), true);
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_receive_data() {
-        let m = MsgTransmitter::new(Transmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
 
         match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
             Err(Error::RecvData(_)) => (),
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_complete_data_to_msg() {
-        let m = MsgTransmitter::new(Transmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
 
         // Construct a data representation that is valid to read
         // but is not a msg
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn recv_should_succeed_if_able_to_receive_msg() {
-        let m = MsgTransmitter::new(Transmitter::new(100));
+        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
         let msg = Msg::new_request(Request::HeartbeatRequest);
 
         // Construct a data representation for our message

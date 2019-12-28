@@ -23,7 +23,7 @@ impl FileMsgTransmitter {
     }
 
     pub fn from_files(in_file: File, out_file: File) -> Self {
-        let transmitter = Transmitter::new(Self::MAX_FILE_TRANSMIT_CHUNK_SIZE as u32);
+        let transmitter = Transmitter::with_transmission_size(Self::MAX_FILE_TRANSMIT_CHUNK_SIZE);
         let msg_transmitter = MsgTransmitter::new(transmitter);
         Self::new(in_file, out_file, msg_transmitter)
     }

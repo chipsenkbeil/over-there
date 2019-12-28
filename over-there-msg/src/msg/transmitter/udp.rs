@@ -19,7 +19,7 @@ impl UdpMsgTransmitter {
     }
 
     pub fn from_socket(socket: UdpSocket) -> Self {
-        let transmitter = Transmitter::new(udp::MAX_IPV4_DATAGRAM_SIZE as u32);
+        let transmitter = Transmitter::with_transmission_size(udp::MAX_IPV4_DATAGRAM_SIZE);
         let msg_transmitter = MsgTransmitter::new(transmitter);
         Self::new(socket, msg_transmitter)
     }

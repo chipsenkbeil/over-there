@@ -36,10 +36,13 @@ impl std::error::Error for Error {}
 
 pub struct Transmitter {
     /// Maximum size allowed for a packet
-    max_data_per_packet: u32,
+    transmission_size: usize,
 
     /// Cache of packets belonging to a group that has not been completed
     cache: RefCell<TtlCache<u32, Assembler>>,
+
+    /// Maximum time for a cache entry to exist untouched before expiring
+    cache_duration: Duration,
 
     /// Buffer to contain bytes for temporary storage
     /// NOTE: Cannot use static array due to type constraints
@@ -48,14 +51,23 @@ pub struct Transmitter {
 
 impl Transmitter {
     const MAX_CACHE_SIZE: usize = 1500;
-    const MAX_CACHE_DURATION_SECS: u64 = 60 * 5;
+    const MAX_CACHE_DURATION_SECS: usize = 60 * 5;
 
-    pub fn new(max_data_per_packet: u32) -> Self {
+    pub fn new(transmission_size: usize, cache_capacity: usize, cache_duration: Duration) -> Self {
         Transmitter {
-            max_data_per_packet,
-            cache: RefCell::new(TtlCache::new(Self::MAX_CACHE_SIZE)),
-            buffer: RefCell::new(vec![0; max_data_per_packet as usize].into_boxed_slice()),
+            transmission_size,
+            cache_duration,
+            cache: RefCell::new(TtlCache::new(cache_capacity)),
+            buffer: RefCell::new(vec![0; transmission_size as usize].into_boxed_slice()),
         }
+    }
+
+    pub fn with_transmission_size(transmission_size: usize) -> Self {
+        Self::new(
+            transmission_size,
+            Self::MAX_CACHE_SIZE,
+            Duration::from_secs(Self::MAX_CACHE_DURATION_SECS as u64),
+        )
     }
 
     pub fn send(
@@ -65,7 +77,7 @@ impl Transmitter {
     ) -> Result<(), Error> {
         // Split message into multiple packets
         let id: u32 = random();
-        let packets = Disassembler::make_packets_from_data(id, data, self.max_data_per_packet)
+        let packets = Disassembler::make_packets_from_data(id, data, self.transmission_size)
             .map_err(Error::DisassembleData)?;
 
         // For each packet, serialize and send to specific address
@@ -112,28 +124,32 @@ impl Transmitter {
 
         // Retrieve the assembler associated with the packet or
         // create a new instance
-        let assembler = match map.get_mut(&p_id) {
-            Some(a) => a,
+        let maybe_assembler = match map.get_mut(&p_id) {
             None => {
-                let d = Duration::new(Self::MAX_CACHE_DURATION_SECS, 0);
-                map.insert(p.id(), Assembler::new(), d);
-                map.get_mut(&p.id()).unwrap()
+                map.insert(p.id(), Assembler::new(), self.cache_duration);
+                map.get_mut(&p.id())
             }
+            x => x,
         };
 
-        // Bubble up the error; we don't care about the success
-        assembler.add_packet(p).map_err(Error::AssembleData)?;
+        match maybe_assembler {
+            Some(assembler) => {
+                // Bubble up the error; we don't care about the success
+                assembler.add_packet(p).map_err(Error::AssembleData)?;
 
-        // Determine if time to assemble message
-        if assembler.verify() {
-            let data = assembler.assemble().map_err(Error::AssembleData)?;
+                // Determine if time to assemble message
+                if assembler.verify() {
+                    let data = assembler.assemble().map_err(Error::AssembleData)?;
 
-            // We also want to drop the assembler at this point
-            map.remove(&p_id);
+                    // We also want to drop the assembler at this point
+                    map.remove(&p_id);
 
-            Ok(Some(data))
-        } else {
-            Ok(None)
+                    Ok(Some(data))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Ok(None),
         }
     }
 }
@@ -146,7 +162,7 @@ mod tests {
     fn send_should_fail_if_unable_to_convert_bytes_to_packets() {
         // Produce a transmitter with a "bytes per packet" that is too
         // low, causing the process to fail
-        let m = Transmitter::new(0);
+        let m = Transmitter::with_transmission_size(0);
         let data = vec![1, 2, 3];
 
         match m.send(data, |_| Ok(())) {
@@ -157,7 +173,7 @@ mod tests {
 
     #[test]
     fn send_should_fail_if_fails_to_send_bytes() {
-        let m = Transmitter::new(100);
+        let m = Transmitter::with_transmission_size(100);
         let data = vec![1, 2, 3];
 
         match m.send(data, |_| {
@@ -170,7 +186,7 @@ mod tests {
 
     #[test]
     fn send_should_return_okay_if_successfully_sent_data() {
-        let m = Transmitter::new(100);
+        let m = Transmitter::with_transmission_size(100);
         let data = vec![1, 2, 3];
 
         let result = m.send(data, |_| Ok(()));
@@ -179,7 +195,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_socket_fails_to_get_bytes() {
-        let m = Transmitter::new(100);
+        let m = Transmitter::with_transmission_size(100);
 
         match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
             Err(Error::RecvBytes(_)) => (),
@@ -189,7 +205,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_bytes_to_packet() {
-        let m = Transmitter::new(100);
+        let m = Transmitter::with_transmission_size(100);
 
         // Force buffer to have a couple of early zeros, which is not
         // valid data when decoding
@@ -206,7 +222,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_add_packet_to_assembler() {
-        let m = Transmitter::new(100);
+        let m = Transmitter::with_transmission_size(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
@@ -243,7 +259,7 @@ mod tests {
 
     #[test]
     fn recv_should_return_none_if_zero_bytes_received() {
-        let m = Transmitter::new(100);
+        let m = Transmitter::with_transmission_size(100);
 
         match m.recv(|_| Ok(0)) {
             Ok(None) => (),
@@ -252,8 +268,48 @@ mod tests {
     }
 
     #[test]
+    fn recv_should_return_none_if_the_assembler_expired() {
+        // Make a transmitter that has a really short duration
+        let wait_duration = Duration::from_nanos(1);
+        let m = Transmitter::new(100, 100, wait_duration);
+
+        // Make several packets so that we don't send a single and last
+        // packet, which would result in a complete message
+        let packets = &mut Disassembler::make_packets_from_data(
+            0,
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            Packet::metadata_size() + 1,
+        )
+        .unwrap();
+
+        while !packets.is_empty() {
+            match m.recv(|buf| {
+                let p = packets.remove(0);
+                let data = p.to_vec().unwrap();
+                let l = data.len();
+                buf[..l].clone_from_slice(&data);
+                Ok(l)
+            }) {
+                Ok(Some(_)) if packets.is_empty() => {
+                    panic!("Unexpectedly got complete message! Expiration did not happen")
+                }
+                Ok(Some(_)) => panic!(
+                    "Unexpectedly got complete message with {} packets remaining",
+                    packets.len()
+                ),
+                Ok(None) => (),
+                x => panic!("Unexpected result: {:?}", x),
+            }
+
+            // Wait the same time as our expiration to make sure we throw
+            // out the old packets
+            std::thread::sleep(wait_duration);
+        }
+    }
+
+    #[test]
     fn recv_should_return_none_if_received_packet_does_not_complete_data() {
-        let m = Transmitter::new(100);
+        let m = Transmitter::with_transmission_size(100);
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
@@ -276,7 +332,7 @@ mod tests {
 
     #[test]
     fn recv_should_return_some_data_if_received_packet_does_complete_data() {
-        let m = Transmitter::new(100);
+        let m = Transmitter::with_transmission_size(100);
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
