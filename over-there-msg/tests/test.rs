@@ -1,5 +1,6 @@
 use over_there_msg::{
-    FileMsgTransmitter, Msg, Request, Response, TcpMsgTransmitter, UdpMsgTransmitter,
+    FileMsgTransmitter, Msg, StandardRequest as Request, StandardResponse as Response,
+    TcpMsgTransmitter, UdpMsgTransmitter,
 };
 use over_there_transport::{tcp, udp};
 use over_there_utils::exec;
@@ -21,21 +22,22 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 
     // Send message to server
     let req = Request::HeartbeatRequest;
-    let msg = Msg::new_request(req);
+    let msg = Msg::from_content(req);
     client.send(msg, server.socket.local_addr()?)?;
 
     // Keep checking until we receive a complete message from the client
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some((msg, addr)) = server.recv()? {
-            match msg.get_request() {
-                Some(req) => match req {
+            if msg.is_content::<Request>() {
+                match msg.to_content::<Request>().unwrap() {
                     Request::HeartbeatRequest => {
-                        server.send(Msg::new_response(Response::HeartbeatResponse, &msg), addr)?
+                        server.send(Msg::from_content(Response::HeartbeatResponse), addr)?
                     }
-                    _ => panic!("Unexpected request {:?}", req),
-                },
-                _ => panic!("Unexpected message {:?}", msg),
+                    x => panic!("Unexpected request {:?}", x),
+                }
+            } else {
+                panic!("Unexpected msg {:?}", msg);
             }
             return Ok(true);
         }
@@ -46,12 +48,13 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some((msg, _addr)) = client.recv()? {
-            match msg.get_response() {
-                Some(res) => match res {
+            if msg.is_content::<Response>() {
+                match msg.to_content::<Response>().unwrap() {
                     Response::HeartbeatResponse => (),
-                    _ => panic!("Unexpected response {:?}", res),
-                },
-                _ => panic!("Unexpected message {:?}", msg),
+                    x => panic!("Unexpected response {:?}", x),
+                }
+            } else {
+                panic!("Unexpected msg {:?}", msg);
             }
             return Ok(true);
         }
@@ -73,21 +76,22 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 
     // Send message to server
     let req = Request::HeartbeatRequest;
-    let msg = Msg::new_request(req);
+    let msg = Msg::from_content(req);
     client.send(msg)?;
 
     // Keep checking until we receive a complete message from the client
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = server.recv()? {
-            match msg.get_request() {
-                Some(req) => match req {
+            if msg.is_content::<Request>() {
+                match msg.to_content::<Request>().unwrap() {
                     Request::HeartbeatRequest => {
-                        server.send(Msg::new_response(Response::HeartbeatResponse, &msg))?
+                        server.send(Msg::from_content(Response::HeartbeatResponse))?
                     }
-                    _ => panic!("Unexpected request {:?}", req),
-                },
-                _ => panic!("Unexpected message {:?}", msg),
+                    x => panic!("Unexpected request {:?}", x),
+                }
+            } else {
+                panic!("Unexpected msg {:?}", msg);
             }
             return Ok(true);
         }
@@ -98,12 +102,13 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = client.recv()? {
-            match msg.get_response() {
-                Some(res) => match res {
+            if msg.is_content::<Response>() {
+                match msg.to_content::<Response>().unwrap() {
                     Response::HeartbeatResponse => (),
-                    _ => panic!("Unexpected response {:?}", res),
-                },
-                _ => panic!("Unexpected message {:?}", msg),
+                    x => panic!("Unexpected response {:?}", x),
+                }
+            } else {
+                panic!("Unexpected msg {:?}", msg);
             }
             return Ok(true);
         }
@@ -125,21 +130,22 @@ fn test_file_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 
     // Send message to server
     let req = Request::HeartbeatRequest;
-    let msg = Msg::new_request(req);
+    let msg = Msg::from_content(req);
     client.send(msg)?;
 
     // Keep checking until we receive a complete message from the client
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = server.recv()? {
-            match msg.get_request() {
-                Some(req) => match req {
+            if msg.is_content::<Request>() {
+                match msg.to_content::<Request>().unwrap() {
                     Request::HeartbeatRequest => {
-                        server.send(Msg::new_response(Response::HeartbeatResponse, &msg))?
+                        server.send(Msg::from_content(Response::HeartbeatResponse))?
                     }
-                    _ => panic!("Unexpected request {:?}", req),
-                },
-                _ => panic!("Unexpected message {:?}", msg),
+                    x => panic!("Unexpected request {:?}", x),
+                }
+            } else {
+                panic!("Unexpected msg {:?}", msg);
             }
             return Ok(true);
         }
@@ -150,12 +156,13 @@ fn test_file_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = client.recv()? {
-            match msg.get_response() {
-                Some(res) => match res {
+            if msg.is_content::<Response>() {
+                match msg.to_content::<Response>().unwrap() {
                     Response::HeartbeatResponse => (),
-                    _ => panic!("Unexpected response {:?}", res),
-                },
-                _ => panic!("Unexpected message {:?}", msg),
+                    x => panic!("Unexpected response {:?}", x),
+                }
+            } else {
+                panic!("Unexpected msg {:?}", msg);
             }
             return Ok(true);
         }

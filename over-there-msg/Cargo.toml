@@ -8,6 +8,8 @@ edition = "2018"
 serde = { version = "1.0.103", features = ["derive"] }
 serde_bytes = "0.11.3"
 rmp-serde = "0.14.0"
+typetag = "0.1.4"
+chrono = { version = "0.4.10", features = ["serde"] }
 log = "0.4.8"
 rand = "0.7.2"
 over-there-transport = { path = "../over-there-transport" }
