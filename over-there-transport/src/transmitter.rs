@@ -105,7 +105,10 @@ impl Transmitter {
         // Grab a reference to our cache of packet assemblers that we will use; also drop any
         // expired assemblers
         let mut map = self.cache.borrow_mut();
-        // TODO: Remove expired
+
+        // Trigger removal of expired items in cache
+        // NOTE: This is a hack given that the call to remove_expired is private
+        map.iter();
 
         // Retrieve the assembler associated with the packet or
         // create a new instance
