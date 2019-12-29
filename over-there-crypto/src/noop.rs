@@ -23,3 +23,30 @@ impl Decrypter for Bicrypter {
         Ok(Vec::from(data))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encrypt_should_return_a_copy_of_input_data() {
+        let bicrypter = Bicrypter::new();
+        let data = vec![1, 2, 3];
+
+        let encrypted_data = bicrypter
+            .encrypt(&data)
+            .expect("Encrypt failed unexpectedly");
+        assert_eq!(data, encrypted_data);
+    }
+
+    #[test]
+    fn decrypt_should_return_a_copy_of_input_data() {
+        let bicrypter = Bicrypter::new();
+        let data = vec![1, 2, 3];
+
+        let decrypted_data = bicrypter
+            .decrypt(&data)
+            .expect("Decrypt failed unexpectedly");
+        assert_eq!(data, decrypted_data);
+    }
+}

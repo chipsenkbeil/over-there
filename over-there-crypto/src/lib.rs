@@ -3,10 +3,8 @@
     feature = "include-aes-gcm-siv",
     feature = "include-aes-siv"
 ))]
-/// Provide AEAD-oriented crypto if we are using any of the associated features
 pub mod aead;
 
-/// Provides no-op implementations for encryption/decryption
 pub mod noop;
 
 mod error;

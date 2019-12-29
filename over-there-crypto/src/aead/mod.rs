@@ -1,16 +1,21 @@
-pub mod aes_gcm_siv;
+pub mod bicrypter;
+pub mod impls;
 
-use super::error::Error as CryptError;
-use super::{Bicrypter, Decrypter, Encrypter};
-use aead::{generic_array::GenericArray, Aead};
+pub mod nonce {
+    /// Represents a 96-bit nonce (12 bytes)
+    pub type Type = [u8; 12];
 
-/// Represents a 96-bit nonce (12 bytes)
-pub type Nonce = [u8; 12];
+    /// Produces a 96-bit nonce (12 bytes)
+    pub fn new() -> Type {
+        use rand::Rng;
+        rand::thread_rng().gen::<Type>()
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
     Aed(aead::Error),
-    NonceAlreadyUsed(Nonce),
+    NonceAlreadyUsed(nonce::Type),
 }
 
 impl std::error::Error for Error {}
@@ -21,28 +26,5 @@ impl std::fmt::Display for Error {
             Error::Aed(error) => write!(f, "AED: {:?}", error),
             Error::NonceAlreadyUsed(nonce) => write!(f, "Nonce already used: {:?}", nonce),
         }
-    }
-}
-
-pub struct CryptInstance<'a, T: Aead> {
-    aead: &'a T,
-    nonce: GenericArray<u8, T::NonceSize>,
-}
-
-impl<'a, T: Aead> Bicrypter for CryptInstance<'a, T> {}
-
-impl<'a, T: Aead> Encrypter for CryptInstance<'a, T> {
-    fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptError> {
-        self.aead
-            .encrypt(&self.nonce, data)
-            .map_err(|e| CryptError::Internal(Box::new(Error::Aed(e))))
-    }
-}
-
-impl<'a, T: Aead> Decrypter for CryptInstance<'a, T> {
-    fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptError> {
-        self.aead
-            .decrypt(&self.nonce, data)
-            .map_err(|e| CryptError::Internal(Box::new(Error::Aed(e))))
     }
 }
