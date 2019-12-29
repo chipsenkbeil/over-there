@@ -11,3 +11,9 @@ rmp-serde = "0.14.0"
 log = "0.4.8"
 rand = "0.7.2"
 ttl_cache = "0.5.1"
+over-there-sign = { path = "../over-there-sign" }
+
+[dependencies.over-there-crypto]
+path = "../over-there-crypto"
+default-features = false
+features = []

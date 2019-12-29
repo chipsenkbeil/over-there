@@ -1,9 +1,11 @@
 use super::Msg;
 use super::{Error, MsgTransmitter};
+use over_there_crypto::Bicrypter;
 use over_there_transport::udp;
 use over_there_transport::Transmitter;
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
+use std::time::Duration;
 
 pub struct UdpMsgTransmitter {
     pub socket: UdpSocket,
@@ -18,8 +20,18 @@ impl UdpMsgTransmitter {
         }
     }
 
-    pub fn from_socket(socket: UdpSocket) -> Self {
-        let transmitter = Transmitter::with_transmission_size(udp::MAX_IPV4_DATAGRAM_SIZE);
+    pub fn from_socket(
+        socket: UdpSocket,
+        cache_capacity: usize,
+        cache_duration: Duration,
+        bicrypter: Box<dyn Bicrypter>,
+    ) -> Self {
+        let transmitter = Transmitter::new(
+            udp::MAX_IPV4_DATAGRAM_SIZE,
+            cache_capacity,
+            cache_duration,
+            bicrypter,
+        );
         let msg_transmitter = MsgTransmitter::new(transmitter);
         Self::new(socket, msg_transmitter)
     }

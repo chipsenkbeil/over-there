@@ -1,8 +1,10 @@
 use super::Msg;
 use super::{Error, MsgTransmitter};
+use over_there_crypto::Bicrypter;
 use over_there_transport::Transmitter;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::time::Duration;
 
 pub struct FileMsgTransmitter {
     pub in_file: File,
@@ -22,8 +24,19 @@ impl FileMsgTransmitter {
         }
     }
 
-    pub fn from_files(in_file: File, out_file: File) -> Self {
-        let transmitter = Transmitter::with_transmission_size(Self::MAX_FILE_TRANSMIT_CHUNK_SIZE);
+    pub fn from_files(
+        in_file: File,
+        out_file: File,
+        cache_capacity: usize,
+        cache_duration: Duration,
+        bicrypter: Box<dyn Bicrypter>,
+    ) -> Self {
+        let transmitter = Transmitter::new(
+            Self::MAX_FILE_TRANSMIT_CHUNK_SIZE,
+            cache_capacity,
+            cache_duration,
+            bicrypter,
+        );
         let msg_transmitter = MsgTransmitter::new(transmitter);
         Self::new(in_file, out_file, msg_transmitter)
     }

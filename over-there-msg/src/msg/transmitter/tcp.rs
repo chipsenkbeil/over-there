@@ -1,9 +1,11 @@
 use super::Msg;
 use super::{Error, MsgTransmitter};
+use over_there_crypto::Bicrypter;
 use over_there_transport::tcp;
 use over_there_transport::Transmitter;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
+use std::time::Duration;
 
 pub struct TcpMsgTransmitter {
     pub stream: TcpStream,
@@ -18,8 +20,18 @@ impl TcpMsgTransmitter {
         }
     }
 
-    pub fn from_stream(stream: TcpStream) -> Self {
-        let transmitter = Transmitter::with_transmission_size(tcp::MTU_ETHERNET_SIZE);
+    pub fn from_stream(
+        stream: TcpStream,
+        cache_capacity: usize,
+        cache_duration: Duration,
+        bicrypter: Box<dyn Bicrypter>,
+    ) -> Self {
+        let transmitter = Transmitter::new(
+            tcp::MTU_ETHERNET_SIZE,
+            cache_capacity,
+            cache_duration,
+            bicrypter,
+        );
         let msg_transmitter = MsgTransmitter::new(transmitter);
         Self::new(stream, msg_transmitter)
     }

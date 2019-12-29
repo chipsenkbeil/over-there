@@ -65,9 +65,23 @@ mod tests {
     use super::*;
     use crate::msg::types::request::StandardRequest as Request;
 
+    fn new_msg_transmitter(transmission_size: usize) -> MsgTransmitter {
+        use over_there_crypto::noop::Bicrypter;
+        use std::time::Duration;
+        let cache_capacity = 1500;
+        let cache_duration = Duration::from_secs(5 * 60);
+        let bicrypter = Box::new(Bicrypter::new());
+        MsgTransmitter::new(Transmitter::new(
+            transmission_size,
+            cache_capacity,
+            cache_duration,
+            bicrypter,
+        ))
+    }
+
     #[test]
     fn send_should_fail_if_unable_to_send_data() {
-        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
+        let m = new_msg_transmitter(100);
         let msg = Msg::from_content(Request::HeartbeatRequest);
 
         match m.send(msg, |_| {
@@ -80,7 +94,7 @@ mod tests {
 
     #[test]
     fn send_should_succeed_if_able_to_send_msg() {
-        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
+        let m = new_msg_transmitter(100);
         let msg = Msg::from_content(Request::HeartbeatRequest);
 
         assert_eq!(m.send(msg, |_| Ok(())).is_ok(), true);
@@ -88,7 +102,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_receive_data() {
-        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
+        let m = new_msg_transmitter(100);
 
         match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
             Err(Error::RecvData(_)) => (),
@@ -98,7 +112,7 @@ mod tests {
 
     #[test]
     fn recv_should_fail_if_unable_to_convert_complete_data_to_msg() {
-        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
+        let m = new_msg_transmitter(100);
 
         // Construct a data representation that is valid to read
         // but is not a msg
@@ -125,7 +139,7 @@ mod tests {
 
     #[test]
     fn recv_should_succeed_if_able_to_receive_msg() {
-        let m = MsgTransmitter::new(Transmitter::with_transmission_size(100));
+        let m = new_msg_transmitter(100);
         let msg = Msg::from_content(Request::HeartbeatRequest);
 
         // Construct a data representation for our message

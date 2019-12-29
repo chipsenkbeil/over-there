@@ -1,0 +1,25 @@
+[package]
+name = "over-there-crypto"
+version = "0.1.0"
+authors = ["Chip Senkbeil <chip@senkbeil.org>"]
+edition = "2018"
+
+[features]
+default = [
+    "include-aes-gcm",
+    "include-aes-gcm-siv",
+    "include-aes-siv",
+    "include-nonce-validation",
+]
+include-aes-gcm = ["aead", "aes-gcm"]
+include-aes-gcm-siv = ["aead", "aes-gcm-siv"]
+include-aes-siv = ["aead", "aes-siv"]
+include-nonce-validation = ["rand", "lru"]
+
+[dependencies]
+rand = { version = "0.7.2", optional = true }
+aead = { version = "0.2.0", optional = true }
+aes-gcm = { version = "0.3.0", optional = true }
+aes-gcm-siv = { version = "0.3.0", optional = true }
+aes-siv = { version = "0.2.0", optional = true }
+lru = { version = "0.4.3", optional = true }
