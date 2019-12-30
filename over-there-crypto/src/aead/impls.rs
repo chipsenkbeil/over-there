@@ -1,5 +1,13 @@
-#[cfg(feature = "aes_gcm")]
-pub fn new_aes_256_gcm(key: &[u8]) -> aes_gcm::Aes256Gcm {
+pub fn new_aes_128_gcm(key: &[u8; 16]) -> aes_gcm::Aes128Gcm {
+    use aead::generic_array::GenericArray;
+    use aead::NewAead;
+    use aes_gcm::Aes128Gcm;
+
+    let key = GenericArray::clone_from_slice(key);
+    Aes128Gcm::new(key)
+}
+
+pub fn new_aes_256_gcm(key: &[u8; 32]) -> aes_gcm::Aes256Gcm {
     use aead::generic_array::GenericArray;
     use aead::NewAead;
     use aes_gcm::Aes256Gcm;
@@ -8,8 +16,16 @@ pub fn new_aes_256_gcm(key: &[u8]) -> aes_gcm::Aes256Gcm {
     Aes256Gcm::new(key)
 }
 
-#[cfg(feature = "aes_gcm_siv")]
-pub fn new_aes_256_gcm_siv(key: &[u8]) -> aes_gcm_siv::Aes256GcmSiv {
+pub fn new_aes_128_gcm_siv(key: &[u8; 16]) -> aes_gcm_siv::Aes128GcmSiv {
+    use aead::generic_array::GenericArray;
+    use aead::NewAead;
+    use aes_gcm_siv::Aes128GcmSiv;
+
+    let key = GenericArray::clone_from_slice(key);
+    Aes128GcmSiv::new(key)
+}
+
+pub fn new_aes_256_gcm_siv(key: &[u8; 32]) -> aes_gcm_siv::Aes256GcmSiv {
     use aead::generic_array::GenericArray;
     use aead::NewAead;
     use aes_gcm_siv::Aes256GcmSiv;
@@ -18,12 +34,119 @@ pub fn new_aes_256_gcm_siv(key: &[u8]) -> aes_gcm_siv::Aes256GcmSiv {
     Aes256GcmSiv::new(key)
 }
 
-#[cfg(feature = "aes_siv")]
-pub fn new_aes_256_siv(key: &[u8]) -> aes_siv::Aes256Siv {
+pub fn new_aes_128_siv(key: &[u8; 32]) -> aes_siv::Aes128SivAead {
+    use aead::generic_array::GenericArray;
+    use aead::NewAead;
+    use aes_siv::Aes128SivAead;
+
+    // NOTE: Key needs to be 256-bit (32-byte); the
+    //       number here is 128-bit security with a
+    //       256-bit key
+    let key = GenericArray::clone_from_slice(key);
+    Aes128SivAead::new(key)
+}
+
+pub fn new_aes_256_siv(key: &[u8; 64]) -> aes_siv::Aes256SivAead {
     use aead::generic_array::GenericArray;
     use aead::NewAead;
     use aes_siv::Aes256SivAead;
 
+    // NOTE: Key needs to be 512-bit (64-byte); the
+    //       number here is 256-bit security with a
+    //       512-bit key
     let key = GenericArray::clone_from_slice(key);
-    Aes256GcmSiv::new(key)
+    Aes256SivAead::new(key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::aead::bicrypter::Bicrypter;
+    use crate::aead::nonce;
+    use crate::{Decrypter, Encrypter};
+
+    #[test]
+    fn aes_128_gcm_can_encrypt_and_decrypt() {
+        let aead = new_aes_128_gcm(b"some 128-bit key");
+
+        // Make bicrypter that holds on to a single nonce
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length96Bits);
+
+        let result = bicrypter.encrypt(&nonce::new_96bit());
+        assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
+
+        let result = bicrypter.decrypt(&nonce::new_96bit());
+        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+    }
+
+    #[test]
+    fn aes_256_gcm_can_encrypt_and_decrypt() {
+        let aead = new_aes_256_gcm(b"some 256-bit (32-byte) key------");
+
+        // Make bicrypter that holds on to a single nonce
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length96Bits);
+
+        let result = bicrypter.encrypt(&nonce::new_96bit());
+        assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
+
+        let result = bicrypter.decrypt(&nonce::new_96bit());
+        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+    }
+
+    #[test]
+    fn aes_128_gcm_siv_can_encrypt_and_decrypt() {
+        let aead = new_aes_128_gcm_siv(b"some 128-bit key");
+
+        // Make bicrypter that holds on to a single nonce
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length96Bits);
+
+        let result = bicrypter.encrypt(&nonce::new_96bit());
+        assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
+
+        let result = bicrypter.decrypt(&nonce::new_96bit());
+        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+    }
+
+    #[test]
+    fn aes_256_gcm_siv_can_encrypt_and_decrypt() {
+        let aead = new_aes_256_gcm_siv(b"some 256-bit (32-byte) key------");
+
+        // Make bicrypter that holds on to a single nonce
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length96Bits);
+
+        let result = bicrypter.encrypt(&nonce::new_96bit());
+        assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
+
+        let result = bicrypter.decrypt(&nonce::new_96bit());
+        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+    }
+
+    #[test]
+    fn aes_128_siv_can_encrypt_and_decrypt() {
+        let aead = new_aes_128_siv(b"some 256-bit (32-byte) key------");
+
+        // Make bicrypter that holds on to a single nonce
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length128Bits);
+
+        let result = bicrypter.encrypt(&nonce::new_128bit());
+        assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
+
+        let result = bicrypter.decrypt(&nonce::new_128bit());
+        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+    }
+
+    #[test]
+    fn aes_256_siv_can_encrypt_and_decrypt() {
+        let key = b"some 512-bit (64-byte) key------some 512-bit (64-byte) key------";
+        let aead = new_aes_256_siv(key);
+
+        // Make bicrypter that holds on to a single nonce
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length128Bits);
+
+        let result = bicrypter.encrypt(&nonce::new_128bit());
+        assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
+
+        let result = bicrypter.decrypt(&nonce::new_128bit());
+        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+    }
 }

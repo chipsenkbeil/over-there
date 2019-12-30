@@ -1,10 +1,4 @@
-#[cfg(any(
-    feature = "include-aes-gcm",
-    feature = "include-aes-gcm-siv",
-    feature = "include-aes-siv"
-))]
 pub mod aead;
-
 pub mod noop;
 
 mod error;

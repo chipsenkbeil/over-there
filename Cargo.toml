@@ -14,13 +14,6 @@ members = [
     "over-there-utils",
 ]
 
-[features]
-default = ["include-aes-gcm-siv", "include-nonce-validation"]
-include-aes-gcm = ["over-there-crypto/include-aes-gcm"]
-include-aes-gcm-siv = ["over-there-crypto/include-aes-gcm-siv"]
-include-aes-siv = ["over-there-crypto/include-aes-siv"]
-include-nonce-validation = ["over-there-crypto/include-nonce-validation"]
-
 # TODO: Currently, there is not a way to mark a dependency as binary-only
 #       and the workarounds suggested are:
 #
@@ -33,7 +26,7 @@ include-nonce-validation = ["over-there-crypto/include-nonce-validation"]
 #       I'll ignore the problem and bring everything in to the library.
 [dependencies]
 clap = "~2.33.0"
-over-there-crypto = { path = "./over-there-crypto", default-features = false }
+over-there-crypto = { path = "./over-there-crypto" }
 over-there-msg = { path = "./over-there-msg" }
 
 [dev-dependencies]
