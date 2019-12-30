@@ -390,12 +390,12 @@ mod tests {
         impl Bicrypter for BadBicrypter {}
         impl Encrypter for BadBicrypter {
             fn encrypt(&self, _data: &[u8]) -> Result<Vec<u8>, Error> {
-                Err(Error::Internal(From::from("Some error")))
+                Err(Error::Encrypt(From::from("Some error")))
             }
         }
         impl Decrypter for BadBicrypter {
             fn decrypt(&self, _data: &[u8]) -> Result<Vec<u8>, Error> {
-                Err(Error::Internal(From::from("Some error")))
+                Err(Error::Decrypt(From::from("Some error")))
             }
         }
 
