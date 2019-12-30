@@ -1,4 +1,4 @@
-use super::{Decrypter, Encrypter, Error};
+use super::{AssociatedData, CryptError, Decrypter, Encrypter};
 
 pub struct Bicrypter;
 
@@ -12,15 +12,15 @@ impl super::Bicrypter for Bicrypter {}
 
 impl Encrypter for Bicrypter {
     /// Does nothing but return existing data - NoOp
-    fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, Error> {
-        Ok(Vec::from(data))
+    fn encrypt(&self, buffer: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
+        Ok(Vec::from(buffer))
     }
 }
 
 impl Decrypter for Bicrypter {
     /// Does nothing but return existing data - NoOp
-    fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, Error> {
-        Ok(Vec::from(data))
+    fn decrypt(&self, buffer: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
+        Ok(Vec::from(buffer))
     }
 }
 
@@ -34,7 +34,7 @@ mod tests {
         let data = vec![1, 2, 3];
 
         let encrypted_data = bicrypter
-            .encrypt(&data)
+            .encrypt(&data, AssociatedData::None)
             .expect("Encrypt failed unexpectedly");
         assert_eq!(data, encrypted_data);
     }
@@ -45,7 +45,7 @@ mod tests {
         let data = vec![1, 2, 3];
 
         let decrypted_data = bicrypter
-            .decrypt(&data)
+            .decrypt(&data, AssociatedData::None)
             .expect("Decrypt failed unexpectedly");
         assert_eq!(data, decrypted_data);
     }

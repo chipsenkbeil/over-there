@@ -62,21 +62,25 @@ pub fn new_aes_256_siv(key: &[u8; 64]) -> aes_siv::Aes256SivAead {
 mod tests {
     use super::*;
     use crate::aead::bicrypter::Bicrypter;
-    use crate::aead::nonce;
-    use crate::{Decrypter, Encrypter};
+    use crate::nonce::{self, NonceSize};
+    use crate::{AssociatedData, Decrypter, Encrypter};
 
     #[test]
     fn aes_128_gcm_can_encrypt_and_decrypt() {
         let aead = new_aes_128_gcm(b"some 128-bit key");
 
         // Make bicrypter that holds on to a single nonce
-        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length96Bits);
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, NonceSize::Nonce96Bits);
+        let plaintext = b"some message";
+        let nonce = nonce::new_96bit_nonce();
 
-        let result = bicrypter.encrypt(&nonce::new_96bit());
+        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce96Bits(nonce));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
-        let result = bicrypter.decrypt(&nonce::new_96bit());
-        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+        let result = bicrypter
+            .decrypt(&result.unwrap(), AssociatedData::Nonce96Bits(nonce))
+            .expect("Failed to decrypt");
+        assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }
 
     #[test]
@@ -84,13 +88,17 @@ mod tests {
         let aead = new_aes_256_gcm(b"some 256-bit (32-byte) key------");
 
         // Make bicrypter that holds on to a single nonce
-        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length96Bits);
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, NonceSize::Nonce96Bits);
+        let plaintext = b"some message";
+        let nonce = nonce::new_96bit_nonce();
 
-        let result = bicrypter.encrypt(&nonce::new_96bit());
+        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce96Bits(nonce));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
-        let result = bicrypter.decrypt(&nonce::new_96bit());
-        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+        let result = bicrypter
+            .decrypt(&result.unwrap(), AssociatedData::Nonce96Bits(nonce))
+            .expect("Failed to decrypt");
+        assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }
 
     #[test]
@@ -98,13 +106,17 @@ mod tests {
         let aead = new_aes_128_gcm_siv(b"some 128-bit key");
 
         // Make bicrypter that holds on to a single nonce
-        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length96Bits);
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, NonceSize::Nonce96Bits);
+        let plaintext = b"some message";
+        let nonce = nonce::new_96bit_nonce();
 
-        let result = bicrypter.encrypt(&nonce::new_96bit());
+        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce96Bits(nonce));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
-        let result = bicrypter.decrypt(&nonce::new_96bit());
-        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+        let result = bicrypter
+            .decrypt(&result.unwrap(), AssociatedData::Nonce96Bits(nonce))
+            .expect("Failed to decrypt");
+        assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }
 
     #[test]
@@ -112,13 +124,17 @@ mod tests {
         let aead = new_aes_256_gcm_siv(b"some 256-bit (32-byte) key------");
 
         // Make bicrypter that holds on to a single nonce
-        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length96Bits);
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, NonceSize::Nonce96Bits);
+        let plaintext = b"some message";
+        let nonce = nonce::new_96bit_nonce();
 
-        let result = bicrypter.encrypt(&nonce::new_96bit());
+        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce96Bits(nonce));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
-        let result = bicrypter.decrypt(&nonce::new_96bit());
-        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+        let result = bicrypter
+            .decrypt(&result.unwrap(), AssociatedData::Nonce96Bits(nonce))
+            .expect("Failed to decrypt");
+        assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }
 
     #[test]
@@ -126,13 +142,17 @@ mod tests {
         let aead = new_aes_128_siv(b"some 256-bit (32-byte) key------");
 
         // Make bicrypter that holds on to a single nonce
-        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length128Bits);
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, NonceSize::Nonce128Bits);
+        let plaintext = b"some message";
+        let nonce = nonce::new_128bit_nonce();
 
-        let result = bicrypter.encrypt(&nonce::new_128bit());
+        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce128Bits(nonce));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
-        let result = bicrypter.decrypt(&nonce::new_128bit());
-        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+        let result = bicrypter
+            .decrypt(&result.unwrap(), AssociatedData::Nonce128Bits(nonce))
+            .expect("Failed to decrypt");
+        assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }
 
     #[test]
@@ -141,12 +161,16 @@ mod tests {
         let aead = new_aes_256_siv(key);
 
         // Make bicrypter that holds on to a single nonce
-        let bicrypter = Bicrypter::with_no_nonce_cache(aead, nonce::Size::Length128Bits);
+        let bicrypter = Bicrypter::with_no_nonce_cache(aead, NonceSize::Nonce128Bits);
+        let plaintext = b"some message";
+        let nonce = nonce::new_128bit_nonce();
 
-        let result = bicrypter.encrypt(&nonce::new_128bit());
+        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce128Bits(nonce));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
-        let result = bicrypter.decrypt(&nonce::new_128bit());
-        assert!(result.is_ok(), "Failed to decrypt: {:?}", result);
+        let result = bicrypter
+            .decrypt(&result.unwrap(), AssociatedData::Nonce128Bits(nonce))
+            .expect("Failed to decrypt");
+        assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }
 }
