@@ -1,8 +1,7 @@
-pub mod aead;
-
 pub mod nonce;
 pub use nonce::{Nonce128Bits, Nonce96Bits, NonceSize};
 
+pub mod key;
 pub mod noop;
 
 mod error;

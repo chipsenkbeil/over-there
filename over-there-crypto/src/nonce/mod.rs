@@ -1,3 +1,9 @@
+pub mod aead;
+
+pub mod cache;
+pub use cache::NonceCacheBicrypter;
+
+use super::CryptError;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -38,4 +44,17 @@ pub fn new_96bit_nonce() -> Nonce96Bits {
 /// Produces a 128-bit nonce (16 bytes)
 pub fn new_128bit_nonce() -> Nonce128Bits {
     rand::thread_rng().gen::<Nonce128Bits>()
+}
+
+/// Can both encrypt and decrypt
+pub trait NonceBicrypter: NonceEncrypter + NonceDecrypter {}
+
+/// Capable of encrypting data
+pub trait NonceEncrypter {
+    fn encrypt_with_nonce(&self, buffer: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CryptError>;
+}
+
+/// Capable of decrypting data
+pub trait NonceDecrypter {
+    fn decrypt_with_nonce(&self, buffer: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CryptError>;
 }
