@@ -12,6 +12,7 @@ members = [
     "over-there-transport",
     "over-there-sign",
     "over-there-utils",
+    "over-there-derive",
 ]
 
 # TODO: Currently, there is not a way to mark a dependency as binary-only

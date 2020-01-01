@@ -10,6 +10,12 @@ struct Metadata {
 
     /// Indicates if this is the final packet in a message
     is_last: bool,
+    // TODO: Add nonce; should we use an enum and combine with last?
+    //       E.g. type:
+    // nonce: Option<...>,
+
+    // TODO: Add signature
+    // signature: Option<...>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

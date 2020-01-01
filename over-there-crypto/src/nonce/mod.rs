@@ -1,9 +1,6 @@
-pub mod aead;
-
 pub mod cache;
-pub use cache::NonceCacheBicrypter;
 
-use super::CryptError;
+use super::{AssociatedData, CryptError};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -20,20 +17,33 @@ pub enum NonceSize {
     Nonce128Bits,
 }
 
-/// Produces a dynamically-sized nonce
-pub fn new_nonce_vec(nonce_size: NonceSize) -> Vec<u8> {
-    match nonce_size {
-        NonceSize::Nonce96Bits => new_96bit_nonce().to_vec(),
-        NonceSize::Nonce128Bits => new_128bit_nonce().to_vec(),
+impl From<NonceSize> for usize {
+    fn from(nonce_size: NonceSize) -> Self {
+        match nonce_size {
+            NonceSize::Nonce96Bits => 12,
+            NonceSize::Nonce128Bits => 16,
+        }
     }
 }
 
-/// Converts nonce size to physical byte size
-pub fn nonce_size_to_byte_length(nonce_size: NonceSize) -> usize {
-    match nonce_size {
-        NonceSize::Nonce96Bits => 12,
-        NonceSize::Nonce128Bits => 16,
+impl From<NonceSize> for Vec<u8> {
+    fn from(nonce_size: NonceSize) -> Self {
+        match nonce_size {
+            NonceSize::Nonce96Bits => new_96bit_nonce().to_vec(),
+            NonceSize::Nonce128Bits => new_128bit_nonce().to_vec(),
+        }
     }
+}
+
+/// Validates the size of a nonce with a desired size
+pub fn validate_nonce_size(nonce_size: NonceSize, desired_size: usize) -> Result<(), CryptError> {
+    if desired_size != From::from(nonce_size) {
+        return Err(CryptError::NonceWrongSize {
+            provided_size: desired_size,
+        });
+    }
+
+    Ok(())
 }
 
 /// Produces a 96-bit nonce (12 bytes)
@@ -44,17 +54,4 @@ pub fn new_96bit_nonce() -> Nonce96Bits {
 /// Produces a 128-bit nonce (16 bytes)
 pub fn new_128bit_nonce() -> Nonce128Bits {
     rand::thread_rng().gen::<Nonce128Bits>()
-}
-
-/// Can both encrypt and decrypt
-pub trait NonceBicrypter: NonceEncrypter + NonceDecrypter {}
-
-/// Capable of encrypting data
-pub trait NonceEncrypter {
-    fn encrypt_with_nonce(&self, buffer: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CryptError>;
-}
-
-/// Capable of decrypting data
-pub trait NonceDecrypter {
-    fn decrypt_with_nonce(&self, buffer: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CryptError>;
 }

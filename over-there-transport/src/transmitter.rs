@@ -4,7 +4,7 @@ use crate::{
     packet::Packet,
 };
 use log::debug;
-use over_there_crypto::{Bicrypter, Error as CryptError};
+use over_there_crypto::{AssociatedData, Bicrypter, CryptError};
 use rand::random;
 use std::cell::RefCell;
 use std::time::Duration;
@@ -84,7 +84,10 @@ impl Transmitter {
         // Encrypt entire dataset before splitting as it will grow in size
         // and it's difficult to predict if we can stay under our transmission
         // limit if encrypting at the individual packet level
-        let data = self.bicrypter.encrypt(&data).map_err(Error::EncryptData)?;
+        let data = self
+            .bicrypter
+            .encrypt(&data, AssociatedData::None)
+            .map_err(Error::EncryptData)?;
 
         // Produce a unique id used to group our packets
         let id: u32 = random();
@@ -155,7 +158,10 @@ impl Transmitter {
                     // Assemble and decrypt our collective data
                     let data = self
                         .bicrypter
-                        .decrypt(&assembler.assemble().map_err(Error::AssembleData)?)
+                        .decrypt(
+                            &assembler.assemble().map_err(Error::AssembleData)?,
+                            AssociatedData::None,
+                        )
                         .map_err(Error::DecryptData)?;
 
                     // We also want to drop the assembler at this point
@@ -384,18 +390,18 @@ mod tests {
     #[cfg(test)]
     mod crypt {
         use super::*;
-        use over_there_crypto::{Decrypter, Encrypter, Error};
+        use over_there_crypto::{CryptError, Decrypter, Encrypter};
 
-        struct BadBicrypter {}
+        struct BadBicrypter;
         impl Bicrypter for BadBicrypter {}
         impl Encrypter for BadBicrypter {
-            fn encrypt(&self, _data: &[u8]) -> Result<Vec<u8>, Error> {
-                Err(Error::Encrypt(From::from("Some error")))
+            fn encrypt(&self, _: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
+                Err(CryptError::EncryptFailed(From::from("Some error")))
             }
         }
         impl Decrypter for BadBicrypter {
-            fn decrypt(&self, _data: &[u8]) -> Result<Vec<u8>, Error> {
-                Err(Error::Decrypt(From::from("Some error")))
+            fn decrypt(&self, _: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
+                Err(CryptError::DecryptFailed(From::from("Some error")))
             }
         }
 

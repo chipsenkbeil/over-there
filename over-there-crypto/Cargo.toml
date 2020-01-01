@@ -12,3 +12,4 @@ aes-gcm-siv = "0.3.0"
 aes-siv = "0.2.0"
 lru = "0.4.3"
 serde = { version = "1.0.103", features = ["derive"] }
+over-there-derive = { path = "../over-there-derive" }

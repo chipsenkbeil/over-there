@@ -1,23 +1,23 @@
-use super::{AssociatedData, CryptError, Decrypter, Encrypter};
+use super::{AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter};
 
-pub struct Bicrypter;
+pub struct NoopBicrypter;
 
-impl Bicrypter {
+impl NoopBicrypter {
     pub fn new() -> Self {
         Self {}
     }
 }
 
-impl super::Bicrypter for Bicrypter {}
+impl Bicrypter for NoopBicrypter {}
 
-impl Encrypter for Bicrypter {
+impl Encrypter for NoopBicrypter {
     /// Does nothing but return existing data - NoOp
     fn encrypt(&self, buffer: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
         Ok(Vec::from(buffer))
     }
 }
 
-impl Decrypter for Bicrypter {
+impl Decrypter for NoopBicrypter {
     /// Does nothing but return existing data - NoOp
     fn decrypt(&self, buffer: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
         Ok(Vec::from(buffer))
@@ -30,7 +30,7 @@ mod tests {
 
     #[test]
     fn encrypt_should_return_a_copy_of_input_data() {
-        let bicrypter = Bicrypter::new();
+        let bicrypter = NoopBicrypter::new();
         let data = vec![1, 2, 3];
 
         let encrypted_data = bicrypter
@@ -41,7 +41,7 @@ mod tests {
 
     #[test]
     fn decrypt_should_return_a_copy_of_input_data() {
-        let bicrypter = Bicrypter::new();
+        let bicrypter = NoopBicrypter::new();
         let data = vec![1, 2, 3];
 
         let decrypted_data = bicrypter
