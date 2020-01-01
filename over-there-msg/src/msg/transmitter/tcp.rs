@@ -7,14 +7,20 @@ use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-pub struct TcpMsgTransmitter {
+pub struct TcpMsgTransmitter<B>
+where
+    B: Bicrypter,
+{
     pub stream: TcpStream,
-    msg_transmitter: MsgTransmitter,
+    msg_transmitter: MsgTransmitter<B>,
 }
 
-impl TcpMsgTransmitter {
-    pub fn new(stream: TcpStream, msg_transmitter: MsgTransmitter) -> Self {
-        TcpMsgTransmitter {
+impl<B> TcpMsgTransmitter<B>
+where
+    B: Bicrypter,
+{
+    pub fn new(stream: TcpStream, msg_transmitter: MsgTransmitter<B>) -> Self {
+        Self {
             stream,
             msg_transmitter,
         }
@@ -24,7 +30,7 @@ impl TcpMsgTransmitter {
         stream: TcpStream,
         cache_capacity: usize,
         cache_duration: Duration,
-        bicrypter: Box<dyn Bicrypter>,
+        bicrypter: B,
     ) -> Self {
         let transmitter = Transmitter::new(
             tcp::MTU_ETHERNET_SIZE,

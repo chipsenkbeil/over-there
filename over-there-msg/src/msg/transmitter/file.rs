@@ -6,18 +6,24 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::time::Duration;
 
-pub struct FileMsgTransmitter {
+pub struct FileMsgTransmitter<B>
+where
+    B: Bicrypter,
+{
     pub in_file: File,
     pub out_file: File,
-    msg_transmitter: MsgTransmitter,
+    msg_transmitter: MsgTransmitter<B>,
 }
 
-impl FileMsgTransmitter {
+impl<B> FileMsgTransmitter<B>
+where
+    B: Bicrypter,
+{
     /// 1KB read/write at a time
     pub const MAX_FILE_TRANSMIT_CHUNK_SIZE: usize = 1024;
 
-    pub fn new(in_file: File, out_file: File, msg_transmitter: MsgTransmitter) -> Self {
-        FileMsgTransmitter {
+    pub fn new(in_file: File, out_file: File, msg_transmitter: MsgTransmitter<B>) -> Self {
+        Self {
             in_file,
             out_file,
             msg_transmitter,
@@ -29,7 +35,7 @@ impl FileMsgTransmitter {
         out_file: File,
         cache_capacity: usize,
         cache_duration: Duration,
-        bicrypter: Box<dyn Bicrypter>,
+        bicrypter: B,
     ) -> Self {
         let transmitter = Transmitter::new(
             Self::MAX_FILE_TRANSMIT_CHUNK_SIZE,

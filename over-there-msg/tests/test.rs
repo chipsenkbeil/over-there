@@ -14,12 +14,12 @@ fn init() {
         .try_init();
 }
 
-fn new_msg_transmitter(transmission_size: usize) -> MsgTransmitter {
+fn new_msg_transmitter(transmission_size: usize) -> MsgTransmitter<NoopBicrypter> {
     MsgTransmitter::new(Transmitter::new(
         transmission_size,
         1500,
         Duration::from_secs(5 * 60),
-        Box::new(NoopBicrypter::new()),
+        NoopBicrypter::new(),
     ))
 }
 

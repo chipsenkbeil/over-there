@@ -7,14 +7,20 @@ use std::io;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Duration;
 
-pub struct UdpMsgTransmitter {
+pub struct UdpMsgTransmitter<B>
+where
+    B: Bicrypter,
+{
     pub socket: UdpSocket,
-    msg_transmitter: MsgTransmitter,
+    msg_transmitter: MsgTransmitter<B>,
 }
 
-impl UdpMsgTransmitter {
-    pub fn new(socket: UdpSocket, msg_transmitter: MsgTransmitter) -> Self {
-        UdpMsgTransmitter {
+impl<B> UdpMsgTransmitter<B>
+where
+    B: Bicrypter,
+{
+    pub fn new(socket: UdpSocket, msg_transmitter: MsgTransmitter<B>) -> Self {
+        Self {
             socket,
             msg_transmitter,
         }
@@ -24,7 +30,7 @@ impl UdpMsgTransmitter {
         socket: UdpSocket,
         cache_capacity: usize,
         cache_duration: Duration,
-        bicrypter: Box<dyn Bicrypter>,
+        bicrypter: B,
     ) -> Self {
         let transmitter = Transmitter::new(
             udp::MAX_IPV4_DATAGRAM_SIZE,

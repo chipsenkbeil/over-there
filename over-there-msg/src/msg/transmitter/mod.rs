@@ -3,6 +3,7 @@ pub mod tcp;
 pub mod udp;
 
 use super::Msg;
+use over_there_crypto::Bicrypter;
 use over_there_derive::Error;
 use over_there_transport::{Transmitter, TransmitterError};
 
@@ -14,13 +15,19 @@ pub enum MsgTransmitterError {
     RecvData(TransmitterError),
 }
 
-pub struct MsgTransmitter {
-    transmitter: Transmitter,
+pub struct MsgTransmitter<B>
+where
+    B: Bicrypter,
+{
+    transmitter: Transmitter<B>,
 }
 
-impl MsgTransmitter {
-    pub fn new(transmitter: Transmitter) -> Self {
-        MsgTransmitter { transmitter }
+impl<B> MsgTransmitter<B>
+where
+    B: Bicrypter,
+{
+    pub fn new(transmitter: Transmitter<B>) -> Self {
+        Self { transmitter }
     }
 
     pub fn send(
@@ -51,13 +58,13 @@ impl MsgTransmitter {
 mod tests {
     use super::*;
     use crate::msg::types::request::StandardRequest as Request;
+    use over_there_crypto::NoopBicrypter;
 
-    fn new_msg_transmitter(transmission_size: usize) -> MsgTransmitter {
-        use over_there_crypto::NoopBicrypter;
+    fn new_msg_transmitter(transmission_size: usize) -> MsgTransmitter<NoopBicrypter> {
         use std::time::Duration;
         let cache_capacity = 1500;
         let cache_duration = Duration::from_secs(5 * 60);
-        let bicrypter = Box::new(NoopBicrypter::new());
+        let bicrypter = NoopBicrypter::new();
         MsgTransmitter::new(Transmitter::new(
             transmission_size,
             cache_capacity,

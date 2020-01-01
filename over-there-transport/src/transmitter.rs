@@ -24,7 +24,10 @@ pub enum TransmitterError {
     RecvBytes(IoError),
 }
 
-pub struct Transmitter {
+pub struct Transmitter<B>
+where
+    B: Bicrypter,
+{
     /// Maximum size allowed for a packet
     transmission_size: usize,
 
@@ -39,16 +42,19 @@ pub struct Transmitter {
     buffer: RefCell<Box<[u8]>>,
 
     /// Performs encryption/decryption on data
-    bicrypter: Box<dyn Bicrypter>,
+    bicrypter: B,
 }
 
-impl Transmitter {
+impl<B> Transmitter<B>
+where
+    B: Bicrypter,
+{
     /// Begins building a transmitter, enabling us to specify options
     pub fn new(
         transmission_size: usize,
         cache_capacity: usize,
         cache_duration: Duration,
-        bicrypter: Box<dyn Bicrypter>,
+        bicrypter: B,
     ) -> Self {
         let cache = RefCell::new(TtlCache::new(cache_capacity));
         let buffer = RefCell::new(vec![0; transmission_size as usize].into_boxed_slice());
@@ -176,12 +182,12 @@ mod tests {
     const MAX_CACHE_DURATION_IN_SECS: u64 = 5 * 60;
 
     /// Uses no encryption or signing
-    fn transmitter_with_transmission_size(transmission_size: usize) -> Transmitter {
+    fn transmitter_with_transmission_size(transmission_size: usize) -> Transmitter<NoopBicrypter> {
         Transmitter::new(
             transmission_size,
             MAX_CACHE_CAPACITY,
             Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
-            Box::new(NoopBicrypter::new()),
+            NoopBicrypter::new(),
         )
     }
 
@@ -296,7 +302,7 @@ mod tests {
     fn recv_should_return_none_if_the_assembler_expired() {
         // Make a transmitter that has a really short duration
         let wait_duration = Duration::from_nanos(1);
-        let m = Transmitter::new(100, 100, wait_duration, Box::new(NoopBicrypter::new()));
+        let m = Transmitter::new(100, 100, wait_duration, NoopBicrypter::new());
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
@@ -399,7 +405,7 @@ mod tests {
                 100,
                 MAX_CACHE_CAPACITY,
                 Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
-                Box::new(BadBicrypter {}),
+                BadBicrypter,
             );
             let data = vec![1, 2, 3];
 
@@ -442,7 +448,7 @@ mod tests {
                 100,
                 MAX_CACHE_CAPACITY,
                 Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
-                Box::new(BadBicrypter {}),
+                BadBicrypter,
             );
             let data = vec![1, 2, 3];
 
