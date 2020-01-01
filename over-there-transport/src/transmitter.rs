@@ -5,7 +5,7 @@ use crate::{
 };
 use log::debug;
 use over_there_crypto::{AssociatedData, Bicrypter, CryptError};
-use over_there_derive::*;
+use over_there_derive::Error;
 use rand::random;
 use std::cell::RefCell;
 use std::io::Error as IoError;

@@ -7,7 +7,7 @@ use super::{
     AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter,
 };
 use aead::{generic_array::GenericArray, Aead};
-use over_there_derive::*;
+use over_there_derive::Error;
 
 #[derive(Debug, Error)]
 pub enum AeadError {

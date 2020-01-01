@@ -1,4 +1,4 @@
-pub mod msg;
+mod msg;
 
 pub use msg::transmitter::file::FileMsgTransmitter;
 pub use msg::transmitter::tcp::TcpMsgTransmitter;

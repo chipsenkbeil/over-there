@@ -1,5 +1,5 @@
 use crate::packet::Packet;
-use over_there_derive::*;
+use over_there_derive::Error;
 use std::collections::HashMap;
 
 #[derive(Debug, Error)]

@@ -1,5 +1,5 @@
 use crate::packet::Packet;
-use over_there_derive::*;
+use over_there_derive::Error;
 
 #[derive(Debug, Error)]
 pub enum DisassemblerError {

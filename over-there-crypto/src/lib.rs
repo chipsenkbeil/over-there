@@ -10,7 +10,7 @@ pub use key::{Key128Bits, Key256Bits, Key512Bits, KeySize};
 mod noop;
 pub use noop::NoopBicrypter;
 
-use over_there_derive::*;
+use over_there_derive::Error;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Error)]

@@ -3,7 +3,7 @@ pub mod tcp;
 pub mod udp;
 
 use super::Msg;
-use over_there_derive::*;
+use over_there_derive::Error;
 use over_there_transport::{Transmitter, TransmitterError};
 
 #[derive(Debug, Error)]
