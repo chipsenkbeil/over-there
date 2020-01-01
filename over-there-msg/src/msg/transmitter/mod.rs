@@ -3,29 +3,17 @@ pub mod tcp;
 pub mod udp;
 
 use super::Msg;
+use over_there_derive::*;
 use over_there_transport::transmitter;
 use over_there_transport::Transmitter;
 
-#[derive(Debug)]
-pub enum Error {
+#[derive(Debug, Error)]
+pub enum TransmitterError {
     EncodeMsg(rmp_serde::encode::Error),
     DecodeMsg(rmp_serde::decode::Error),
     SendData(transmitter::Error),
     RecvData(transmitter::Error),
 }
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match &*self {
-            Error::EncodeMsg(error) => write!(f, "Failed to encode message: {:?}", error),
-            Error::DecodeMsg(error) => write!(f, "Failed to decode message: {:?}", error),
-            Error::SendData(error) => write!(f, "Failed to send data: {:?}", error),
-            Error::RecvData(error) => write!(f, "Failed to receive data: {:?}", error),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub struct MsgTransmitter {
     transmitter: Transmitter,
@@ -40,23 +28,23 @@ impl MsgTransmitter {
         &self,
         msg: Msg,
         send_handler: impl FnMut(Vec<u8>) -> Result<(), std::io::Error>,
-    ) -> Result<(), Error> {
-        let data = msg.to_vec().map_err(Error::EncodeMsg)?;
+    ) -> Result<(), TransmitterError> {
+        let data = msg.to_vec().map_err(TransmitterError::EncodeMsg)?;
         self.transmitter
             .send(data, send_handler)
-            .map_err(Error::SendData)
+            .map_err(TransmitterError::SendData)
     }
 
     pub fn recv(
         &self,
         recv_handler: impl FnMut(&mut [u8]) -> Result<usize, std::io::Error>,
-    ) -> Result<Option<Msg>, Error> {
+    ) -> Result<Option<Msg>, TransmitterError> {
         self.transmitter
             .recv(recv_handler)
-            .map_err(Error::RecvData)?
+            .map_err(TransmitterError::RecvData)?
             .map(|v| Msg::from_slice(&v))
             .transpose()
-            .map_err(Error::DecodeMsg)
+            .map_err(TransmitterError::DecodeMsg)
     }
 }
 
@@ -66,11 +54,11 @@ mod tests {
     use crate::msg::types::request::StandardRequest as Request;
 
     fn new_msg_transmitter(transmission_size: usize) -> MsgTransmitter {
-        use over_there_crypto::noop::Bicrypter;
+        use over_there_crypto::NoopBicrypter;
         use std::time::Duration;
         let cache_capacity = 1500;
         let cache_duration = Duration::from_secs(5 * 60);
-        let bicrypter = Box::new(Bicrypter::new());
+        let bicrypter = Box::new(NoopBicrypter::new());
         MsgTransmitter::new(Transmitter::new(
             transmission_size,
             cache_capacity,
@@ -87,7 +75,7 @@ mod tests {
         match m.send(msg, |_| {
             Err(std::io::Error::from(std::io::ErrorKind::Other))
         }) {
-            Err(Error::SendData(_)) => (),
+            Err(TransmitterError::SendData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -105,7 +93,7 @@ mod tests {
         let m = new_msg_transmitter(100);
 
         match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
-            Err(Error::RecvData(_)) => (),
+            Err(TransmitterError::RecvData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -132,7 +120,7 @@ mod tests {
             buf[..l].clone_from_slice(&data);
             Ok(l)
         }) {
-            Err(Error::DecodeMsg(_)) => (),
+            Err(TransmitterError::DecodeMsg(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }

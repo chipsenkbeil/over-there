@@ -1,4 +1,4 @@
-use over_there_crypto::noop;
+use over_there_crypto::NoopBicrypter;
 use over_there_msg::{
     Msg, MsgTransmitter, StandardRequest as Request, StandardResponse as Response,
     TcpMsgTransmitter, UdpMsgTransmitter,
@@ -19,7 +19,7 @@ fn new_msg_transmitter(transmission_size: usize) -> MsgTransmitter {
         transmission_size,
         1500,
         Duration::from_secs(5 * 60),
-        Box::new(noop::Bicrypter::new()),
+        Box::new(NoopBicrypter::new()),
     ))
 }
 

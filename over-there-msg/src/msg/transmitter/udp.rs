@@ -1,5 +1,5 @@
 use super::Msg;
-use super::{Error, MsgTransmitter};
+use super::{MsgTransmitter, TransmitterError};
 use over_there_crypto::Bicrypter;
 use over_there_transport::udp;
 use over_there_transport::Transmitter;
@@ -37,7 +37,7 @@ impl UdpMsgTransmitter {
     }
 
     /// Sends a message to the specified address using the underlying socket
-    pub fn send(&self, msg: Msg, addr: SocketAddr) -> Result<(), Error> {
+    pub fn send(&self, msg: Msg, addr: SocketAddr) -> Result<(), TransmitterError> {
         self.msg_transmitter.send(msg, |data| {
             // TODO: Support sending remaining bytes in loop? Would need to
             //       support collecting bytes for a packet in multiple receives,
@@ -60,7 +60,7 @@ impl UdpMsgTransmitter {
 
     /// Receives data from the underlying socket, yielding a message and
     /// origin address if the final packet has been received
-    pub fn recv(&self) -> Result<Option<(Msg, SocketAddr)>, Error> {
+    pub fn recv(&self) -> Result<Option<(Msg, SocketAddr)>, TransmitterError> {
         let mut addr: Option<SocketAddr> = None;
         let msg = self.msg_transmitter.recv(|buf| {
             let (size, src) = self.socket.recv_from(buf)?;

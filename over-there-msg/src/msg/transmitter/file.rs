@@ -1,5 +1,5 @@
 use super::Msg;
-use super::{Error, MsgTransmitter};
+use super::{MsgTransmitter, TransmitterError};
 use over_there_crypto::Bicrypter;
 use over_there_transport::Transmitter;
 use std::fs::File;
@@ -45,7 +45,7 @@ impl FileMsgTransmitter {
     /// NOTE: This will cause problems if the msg is larger than our max
     ///       size per packet as each call to send underneath will reset
     ///       to the beginning of the file and overwrite the previous chunk
-    pub fn send(&mut self, msg: Msg) -> Result<(), Error> {
+    pub fn send(&mut self, msg: Msg) -> Result<(), TransmitterError> {
         let mut f = &self.out_file;
         self.msg_transmitter.send(msg, |data| {
             // Clear any existing content in file
@@ -65,7 +65,7 @@ impl FileMsgTransmitter {
     /// NOTE: This will cause problems if the file contains more than one
     ///       chunk of data as it attempts to read the entire file and
     ///       treat it as one chunk rather than multiple
-    pub fn recv(&mut self) -> Result<Option<Msg>, Error> {
+    pub fn recv(&mut self) -> Result<Option<Msg>, TransmitterError> {
         let mut f = &self.in_file;
         self.msg_transmitter.recv(|buf| {
             // Start at the beginning so we read properly
