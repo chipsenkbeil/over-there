@@ -13,3 +13,4 @@ rand = "0.7.2"
 ttl_cache = "0.5.1"
 over-there-crypto = { path = "../over-there-crypto" }
 over-there-sign = { path = "../over-there-sign" }
+over-there-derive = { path = "../over-there-derive" }

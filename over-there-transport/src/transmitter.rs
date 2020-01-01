@@ -5,12 +5,13 @@ use crate::{
 };
 use log::debug;
 use over_there_crypto::{AssociatedData, Bicrypter, CryptError};
+use over_there_derive::*;
 use rand::random;
 use std::cell::RefCell;
 use std::time::Duration;
 use ttl_cache::TtlCache;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
     EncodePacket(rmp_serde::encode::Error),
     DecodePacket(rmp_serde::decode::Error),
@@ -21,23 +22,6 @@ pub enum Error {
     SendBytes(std::io::Error),
     RecvBytes(std::io::Error),
 }
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match &*self {
-            Error::EncodePacket(error) => write!(f, "Failed to encode packet: {:?}", error),
-            Error::DecodePacket(error) => write!(f, "Failed to decode packet: {:?}", error),
-            Error::AssembleData(error) => write!(f, "Failed to assemble data: {:?}", error),
-            Error::DisassembleData(error) => write!(f, "Failed to disassemble data: {:?}", error),
-            Error::EncryptData(error) => write!(f, "Failed to encrypt data: {:?}", error),
-            Error::DecryptData(error) => write!(f, "Failed to decrypt data: {:?}", error),
-            Error::SendBytes(error) => write!(f, "Failed to send bytes: {:?}", error),
-            Error::RecvBytes(error) => write!(f, "Failed to receive bytes: {:?}", error),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub struct Transmitter {
     /// Maximum size allowed for a packet
@@ -180,7 +164,7 @@ impl Transmitter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use over_there_crypto::noop;
+    use over_there_crypto::NoopBicrypter;
 
     const MAX_CACHE_CAPACITY: usize = 1500;
     const MAX_CACHE_DURATION_IN_SECS: u64 = 5 * 60;
@@ -191,7 +175,7 @@ mod tests {
             transmission_size,
             MAX_CACHE_CAPACITY,
             Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
-            Box::new(noop::Bicrypter::new()),
+            Box::new(NoopBicrypter::new()),
         )
     }
 
@@ -308,7 +292,7 @@ mod tests {
     fn recv_should_return_none_if_the_assembler_expired() {
         // Make a transmitter that has a really short duration
         let wait_duration = Duration::from_nanos(1);
-        let m = Transmitter::new(100, 100, wait_duration, Box::new(noop::Bicrypter::new()));
+        let m = Transmitter::new(100, 100, wait_duration, Box::new(NoopBicrypter::new()));
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message

@@ -1,23 +1,10 @@
 use crate::packet::Packet;
+use over_there_derive::*;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
     DesiredChunkSizeTooSmall(usize, usize),
 }
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match *self {
-            Error::DesiredChunkSizeTooSmall(size, min_size) => write!(
-                f,
-                "Desired chunk size of {} is not {} or greater",
-                size, min_size
-            ),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 pub(crate) struct Disassembler {}
 

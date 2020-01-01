@@ -1,39 +1,14 @@
 use crate::packet::Packet;
+use over_there_derive::*;
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
-    PacketExists(u32, u32),
-    PacketBeyondLastIndex(u32, u32),
-    PacketHasDifferentId(u32, u32),
-    FinalPacketAlreadyExists(u32),
+    PacketExists { id: u32, index: u32 },
+    PacketBeyondLastIndex { id: u32, index: u32 },
+    PacketHasDifferentId { id: u32, expected_id: u32 },
+    FinalPacketAlreadyExists { final_packet_index: u32 },
     IncompletePacketCollection,
-}
-
-impl std::error::Error for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match *self {
-            Error::PacketExists(id, index) => write!(f, "Packet {}:{} already exists", id, index),
-            Error::PacketBeyondLastIndex(id, index) => {
-                write!(f, "Packet {}:{} beyond last index", id, index)
-            }
-            Error::PacketHasDifferentId(id, expected_id) => write!(
-                f,
-                "Packet has id {} whereas expected id {}",
-                id, expected_id
-            ),
-            Error::FinalPacketAlreadyExists(final_packet_index) => write!(
-                f,
-                "Packet at index {} is already marked as the last packet",
-                final_packet_index
-            ),
-            Error::IncompletePacketCollection => {
-                write!(f, "Attempted to assemble without all packets!")
-            }
-        }
-    }
 }
 
 pub(crate) struct Assembler {
@@ -58,25 +33,36 @@ impl Assembler {
 
         // Check if we already have this packet
         if self.packets.contains_key(&index) {
-            return Err(Error::PacketExists(packet.id(), packet.index()));
+            return Err(Error::PacketExists {
+                id: packet.id(),
+                index: packet.index(),
+            });
         }
 
         // Check if we are adding a last packet when we already have one
         if let Some(last_index) = self.final_packet_index {
             if packet.is_last() {
-                return Err(Error::FinalPacketAlreadyExists(last_index));
+                return Err(Error::FinalPacketAlreadyExists {
+                    final_packet_index: last_index,
+                });
             }
         }
 
         // Check if we are trying to add a packet beyond the final one
         if self.final_packet_index.map(|i| index > i).unwrap_or(false) {
-            return Err(Error::PacketBeyondLastIndex(packet.id(), packet.index()));
+            return Err(Error::PacketBeyondLastIndex {
+                id: packet.id(),
+                index: packet.index(),
+            });
         }
 
         // Check if id does not match existing id
         if let Some(id) = self.id_for_packets {
             if packet.id() != id {
-                return Err(Error::PacketHasDifferentId(packet.id(), id));
+                return Err(Error::PacketHasDifferentId {
+                    id: packet.id(),
+                    expected_id: id,
+                });
             }
         }
 
@@ -153,7 +139,10 @@ mod tests {
             .add_packet(make_empty_packet(id, index, false))
             .unwrap_err()
         {
-            Error::PacketExists(eid, eindex) => {
+            Error::PacketExists {
+                id: eid,
+                index: eindex,
+            } => {
                 assert_eq!(id, eid, "Unexpected index returned in error");
                 assert_eq!(index, eindex, "Unexpected index returned in error");
             }
@@ -177,7 +166,10 @@ mod tests {
 
         // Fail if adding packet after final packet
         match a.add_packet(make_empty_packet(id, 1, false)).unwrap_err() {
-            Error::PacketBeyondLastIndex(eid, eindex) => {
+            Error::PacketBeyondLastIndex {
+                id: eid,
+                index: eindex,
+            } => {
                 assert_eq!(id, eid, "Beyond packet id was different");
                 assert_eq!(eindex, 1, "Beyond packet index was wrong");
             }
@@ -204,7 +196,10 @@ mod tests {
             .add_packet(make_empty_packet(id + 1, 1, false))
             .unwrap_err()
         {
-            Error::PacketHasDifferentId(actual_id, expected_id) => {
+            Error::PacketHasDifferentId {
+                id: actual_id,
+                expected_id,
+            } => {
                 assert_eq!(actual_id, id + 1, "Actual id was different than provided");
                 assert_eq!(expected_id, id, "Expected id was different from tracked");
             }
@@ -228,9 +223,9 @@ mod tests {
         // Fail if making the first packet (index) be the last packet
         // when we already have a last packet
         match a.add_packet(make_empty_packet(0, 0, true)).unwrap_err() {
-            Error::FinalPacketAlreadyExists(actual_last_index) => {
+            Error::FinalPacketAlreadyExists { final_packet_index } => {
                 assert_eq!(
-                    actual_last_index, 1,
+                    final_packet_index, 1,
                     "Last packet index different than expected"
                 );
             }
