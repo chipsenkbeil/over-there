@@ -4,15 +4,14 @@ pub mod udp;
 
 use super::Msg;
 use over_there_derive::*;
-use over_there_transport::transmitter;
-use over_there_transport::Transmitter;
+use over_there_transport::{Transmitter, TransmitterError};
 
 #[derive(Debug, Error)]
-pub enum TransmitterError {
+pub enum MsgTransmitterError {
     EncodeMsg(rmp_serde::encode::Error),
     DecodeMsg(rmp_serde::decode::Error),
-    SendData(transmitter::Error),
-    RecvData(transmitter::Error),
+    SendData(TransmitterError),
+    RecvData(TransmitterError),
 }
 
 pub struct MsgTransmitter {
@@ -28,23 +27,23 @@ impl MsgTransmitter {
         &self,
         msg: Msg,
         send_handler: impl FnMut(Vec<u8>) -> Result<(), std::io::Error>,
-    ) -> Result<(), TransmitterError> {
-        let data = msg.to_vec().map_err(TransmitterError::EncodeMsg)?;
+    ) -> Result<(), MsgTransmitterError> {
+        let data = msg.to_vec().map_err(MsgTransmitterError::EncodeMsg)?;
         self.transmitter
             .send(data, send_handler)
-            .map_err(TransmitterError::SendData)
+            .map_err(MsgTransmitterError::SendData)
     }
 
     pub fn recv(
         &self,
         recv_handler: impl FnMut(&mut [u8]) -> Result<usize, std::io::Error>,
-    ) -> Result<Option<Msg>, TransmitterError> {
+    ) -> Result<Option<Msg>, MsgTransmitterError> {
         self.transmitter
             .recv(recv_handler)
-            .map_err(TransmitterError::RecvData)?
+            .map_err(MsgTransmitterError::RecvData)?
             .map(|v| Msg::from_slice(&v))
             .transpose()
-            .map_err(TransmitterError::DecodeMsg)
+            .map_err(MsgTransmitterError::DecodeMsg)
     }
 }
 
@@ -75,7 +74,7 @@ mod tests {
         match m.send(msg, |_| {
             Err(std::io::Error::from(std::io::ErrorKind::Other))
         }) {
-            Err(TransmitterError::SendData(_)) => (),
+            Err(MsgTransmitterError::SendData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -93,7 +92,7 @@ mod tests {
         let m = new_msg_transmitter(100);
 
         match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
-            Err(TransmitterError::RecvData(_)) => (),
+            Err(MsgTransmitterError::RecvData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -120,7 +119,7 @@ mod tests {
             buf[..l].clone_from_slice(&data);
             Ok(l)
         }) {
-            Err(TransmitterError::DecodeMsg(_)) => (),
+            Err(MsgTransmitterError::DecodeMsg(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }

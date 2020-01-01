@@ -1,5 +1,5 @@
 use super::Msg;
-use super::{MsgTransmitter, TransmitterError};
+use super::{MsgTransmitter, MsgTransmitterError};
 use over_there_crypto::Bicrypter;
 use over_there_transport::tcp;
 use over_there_transport::Transmitter;
@@ -37,7 +37,7 @@ impl TcpMsgTransmitter {
     }
 
     /// Sends a message using the underlying stream
-    pub fn send(&mut self, msg: Msg) -> Result<(), TransmitterError> {
+    pub fn send(&mut self, msg: Msg) -> Result<(), MsgTransmitterError> {
         let mut s = &self.stream;
         self.msg_transmitter.send(msg, |data| {
             // TODO: Support sending remaining bytes in loop? Would need to
@@ -60,7 +60,7 @@ impl TcpMsgTransmitter {
 
     /// Receives data from the underlying stream, yielding a message if
     /// the final packet has been received
-    pub fn recv(&mut self) -> Result<Option<Msg>, TransmitterError> {
+    pub fn recv(&mut self) -> Result<Option<Msg>, MsgTransmitterError> {
         let mut s = &self.stream;
         self.msg_transmitter.recv(|buf| s.read(buf))
     }

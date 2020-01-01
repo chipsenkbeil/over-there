@@ -2,7 +2,7 @@ use crate::packet::Packet;
 use over_there_derive::*;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum DisassemblerError {
     DesiredChunkSizeTooSmall(usize, usize),
 }
 
@@ -13,11 +13,11 @@ impl Disassembler {
         id: u32,
         data: Vec<u8>,
         desired_chunk_size: usize,
-    ) -> Result<Vec<Packet>, Error> {
+    ) -> Result<Vec<Packet>, DisassemblerError> {
         // We assume that we have a desired chunk size that can fit our
         // metadata and data reasonably
         if desired_chunk_size <= Packet::metadata_size() {
-            return Err(Error::DesiredChunkSizeTooSmall(
+            return Err(DisassemblerError::DesiredChunkSizeTooSmall(
                 desired_chunk_size,
                 Packet::metadata_size() + 1,
             ));
@@ -54,7 +54,7 @@ mod tests {
         // Needs to accommodate metadata & data, which this does not
         let chunk_size = Packet::metadata_size();
 
-        let Error::DesiredChunkSizeTooSmall(size, min_size) =
+        let DisassemblerError::DesiredChunkSizeTooSmall(size, min_size) =
             Disassembler::make_packets_from_data(0, vec![1, 2, 3], chunk_size).unwrap_err();
         assert_eq!(size, chunk_size);
         assert_eq!(min_size, Packet::metadata_size() + 1);

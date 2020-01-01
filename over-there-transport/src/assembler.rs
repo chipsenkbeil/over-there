@@ -3,7 +3,7 @@ use over_there_derive::*;
 use std::collections::HashMap;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum AssemblerError {
     PacketExists { id: u32, index: u32 },
     PacketBeyondLastIndex { id: u32, index: u32 },
     PacketHasDifferentId { id: u32, expected_id: u32 },
@@ -28,12 +28,12 @@ impl Assembler {
     }
 
     /// Adds a new packet to the assembler, consuming it for reconstruction
-    pub fn add_packet(&mut self, packet: Packet) -> Result<(), Error> {
+    pub fn add_packet(&mut self, packet: Packet) -> Result<(), AssemblerError> {
         let index = packet.index();
 
         // Check if we already have this packet
         if self.packets.contains_key(&index) {
-            return Err(Error::PacketExists {
+            return Err(AssemblerError::PacketExists {
                 id: packet.id(),
                 index: packet.index(),
             });
@@ -42,7 +42,7 @@ impl Assembler {
         // Check if we are adding a last packet when we already have one
         if let Some(last_index) = self.final_packet_index {
             if packet.is_last() {
-                return Err(Error::FinalPacketAlreadyExists {
+                return Err(AssemblerError::FinalPacketAlreadyExists {
                     final_packet_index: last_index,
                 });
             }
@@ -50,7 +50,7 @@ impl Assembler {
 
         // Check if we are trying to add a packet beyond the final one
         if self.final_packet_index.map(|i| index > i).unwrap_or(false) {
-            return Err(Error::PacketBeyondLastIndex {
+            return Err(AssemblerError::PacketBeyondLastIndex {
                 id: packet.id(),
                 index: packet.index(),
             });
@@ -59,7 +59,7 @@ impl Assembler {
         // Check if id does not match existing id
         if let Some(id) = self.id_for_packets {
             if packet.id() != id {
-                return Err(Error::PacketHasDifferentId {
+                return Err(AssemblerError::PacketHasDifferentId {
                     id: packet.id(),
                     expected_id: id,
                 });
@@ -93,10 +93,10 @@ impl Assembler {
     /// Reconstructs the data represented by the packets
     /// NOTE: This currently produces a copy of all data instead of passing
     ///       back out ownership
-    pub fn assemble(&self) -> Result<Vec<u8>, Error> {
+    pub fn assemble(&self) -> Result<Vec<u8>, AssemblerError> {
         // Verify that we have all packets
         if !self.verify() {
-            return Err(Error::IncompletePacketCollection);
+            return Err(AssemblerError::IncompletePacketCollection);
         }
 
         // Gather references to packets in proper order
@@ -139,7 +139,7 @@ mod tests {
             .add_packet(make_empty_packet(id, index, false))
             .unwrap_err()
         {
-            Error::PacketExists {
+            AssemblerError::PacketExists {
                 id: eid,
                 index: eindex,
             } => {
@@ -166,7 +166,7 @@ mod tests {
 
         // Fail if adding packet after final packet
         match a.add_packet(make_empty_packet(id, 1, false)).unwrap_err() {
-            Error::PacketBeyondLastIndex {
+            AssemblerError::PacketBeyondLastIndex {
                 id: eid,
                 index: eindex,
             } => {
@@ -196,7 +196,7 @@ mod tests {
             .add_packet(make_empty_packet(id + 1, 1, false))
             .unwrap_err()
         {
-            Error::PacketHasDifferentId {
+            AssemblerError::PacketHasDifferentId {
                 id: actual_id,
                 expected_id,
             } => {
@@ -223,7 +223,7 @@ mod tests {
         // Fail if making the first packet (index) be the last packet
         // when we already have a last packet
         match a.add_packet(make_empty_packet(0, 0, true)).unwrap_err() {
-            Error::FinalPacketAlreadyExists { final_packet_index } => {
+            AssemblerError::FinalPacketAlreadyExists { final_packet_index } => {
                 assert_eq!(
                     final_packet_index, 1,
                     "Last packet index different than expected"
@@ -304,7 +304,7 @@ mod tests {
         let result = a.assemble();
 
         match result.unwrap_err() {
-            Error::IncompletePacketCollection => (),
+            AssemblerError::IncompletePacketCollection => (),
             e => panic!("Unexpected error {} received", e),
         }
     }

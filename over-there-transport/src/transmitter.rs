@@ -8,19 +8,20 @@ use over_there_crypto::{AssociatedData, Bicrypter, CryptError};
 use over_there_derive::*;
 use rand::random;
 use std::cell::RefCell;
+use std::io::Error as IoError;
 use std::time::Duration;
 use ttl_cache::TtlCache;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum TransmitterError {
     EncodePacket(rmp_serde::encode::Error),
     DecodePacket(rmp_serde::decode::Error),
-    AssembleData(assembler::Error),
-    DisassembleData(disassembler::Error),
+    AssembleData(assembler::AssemblerError),
+    DisassembleData(disassembler::DisassemblerError),
     EncryptData(CryptError),
     DecryptData(CryptError),
-    SendBytes(std::io::Error),
-    RecvBytes(std::io::Error),
+    SendBytes(IoError),
+    RecvBytes(IoError),
 }
 
 pub struct Transmitter {
@@ -63,27 +64,27 @@ impl Transmitter {
     pub fn send(
         &self,
         data: Vec<u8>,
-        mut send_handler: impl FnMut(Vec<u8>) -> Result<(), std::io::Error>,
-    ) -> Result<(), Error> {
+        mut send_handler: impl FnMut(Vec<u8>) -> Result<(), IoError>,
+    ) -> Result<(), TransmitterError> {
         // Encrypt entire dataset before splitting as it will grow in size
         // and it's difficult to predict if we can stay under our transmission
         // limit if encrypting at the individual packet level
         let data = self
             .bicrypter
             .encrypt(&data, AssociatedData::None)
-            .map_err(Error::EncryptData)?;
+            .map_err(TransmitterError::EncryptData)?;
 
         // Produce a unique id used to group our packets
         let id: u32 = random();
 
         // Split data into multiple packets
         let packets = Disassembler::make_packets_from_data(id, data, self.transmission_size)
-            .map_err(Error::DisassembleData)?;
+            .map_err(TransmitterError::DisassembleData)?;
 
         // For each packet, serialize and send to specific address
         for packet in packets.iter() {
-            let packet_data = packet.to_vec().map_err(Error::EncodePacket)?;
-            send_handler(packet_data).map_err(Error::SendBytes)?;
+            let packet_data = packet.to_vec().map_err(TransmitterError::EncodePacket)?;
+            send_handler(packet_data).map_err(TransmitterError::SendBytes)?;
         }
 
         Ok(())
@@ -91,10 +92,10 @@ impl Transmitter {
 
     pub fn recv(
         &self,
-        mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, std::io::Error>,
-    ) -> Result<Option<Vec<u8>>, Error> {
+        mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, IoError>,
+    ) -> Result<Option<Vec<u8>>, TransmitterError> {
         let mut buf = self.buffer.borrow_mut();
-        let size = recv_handler(&mut buf).map_err(Error::RecvBytes)?;
+        let size = recv_handler(&mut buf).map_err(TransmitterError::RecvBytes)?;
 
         // If we don't receive any bytes, we treat it as there are no bytes
         // available, which is not an error but also does not warrant trying
@@ -105,7 +106,7 @@ impl Transmitter {
         debug!("{} incoming bytes", size);
 
         // Process the received packet
-        let p = Packet::from_slice(&buf[..size]).map_err(Error::DecodePacket)?;
+        let p = Packet::from_slice(&buf[..size]).map_err(TransmitterError::DecodePacket)?;
         let p_id = p.id();
         debug!(
             "Packet [id: {} | index: {} | is_last: {}]",
@@ -135,7 +136,9 @@ impl Transmitter {
         match maybe_assembler {
             Some(assembler) => {
                 // Bubble up the error; we don't care about the success
-                assembler.add_packet(p).map_err(Error::AssembleData)?;
+                assembler
+                    .add_packet(p)
+                    .map_err(TransmitterError::AssembleData)?;
 
                 // Determine if time to assemble message
                 if assembler.verify() {
@@ -143,10 +146,12 @@ impl Transmitter {
                     let data = self
                         .bicrypter
                         .decrypt(
-                            &assembler.assemble().map_err(Error::AssembleData)?,
+                            &assembler
+                                .assemble()
+                                .map_err(TransmitterError::AssembleData)?,
                             AssociatedData::None,
                         )
-                        .map_err(Error::DecryptData)?;
+                        .map_err(TransmitterError::DecryptData)?;
 
                     // We also want to drop the assembler at this point
                     map.remove(&p_id);
@@ -165,6 +170,7 @@ impl Transmitter {
 mod tests {
     use super::*;
     use over_there_crypto::NoopBicrypter;
+    use std::io::ErrorKind as IoErrorKind;
 
     const MAX_CACHE_CAPACITY: usize = 1500;
     const MAX_CACHE_DURATION_IN_SECS: u64 = 5 * 60;
@@ -187,7 +193,7 @@ mod tests {
         let data = vec![1, 2, 3];
 
         match m.send(data, |_| Ok(())) {
-            Err(Error::DisassembleData(_)) => (),
+            Err(TransmitterError::DisassembleData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -197,10 +203,8 @@ mod tests {
         let m = transmitter_with_transmission_size(100);
         let data = vec![1, 2, 3];
 
-        match m.send(data, |_| {
-            Err(std::io::Error::from(std::io::ErrorKind::Other))
-        }) {
-            Err(Error::SendBytes(_)) => (),
+        match m.send(data, |_| Err(IoError::from(IoErrorKind::Other))) {
+            Err(TransmitterError::SendBytes(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -218,8 +222,8 @@ mod tests {
     fn recv_should_fail_if_socket_fails_to_get_bytes() {
         let m = transmitter_with_transmission_size(100);
 
-        match m.recv(|_| Err(std::io::Error::from(std::io::ErrorKind::Other))) {
-            Err(Error::RecvBytes(_)) => (),
+        match m.recv(|_| Err(IoError::from(IoErrorKind::Other))) {
+            Err(TransmitterError::RecvBytes(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -236,7 +240,7 @@ mod tests {
             buf[2] = 0;
             Ok(buf.len())
         }) {
-            Err(Error::DecodePacket(_)) => (),
+            Err(TransmitterError::DecodePacket(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -273,7 +277,7 @@ mod tests {
             buf[..l].clone_from_slice(&data);
             Ok(l)
         }) {
-            Err(Error::AssembleData(_)) => (),
+            Err(TransmitterError::AssembleData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -427,7 +431,7 @@ mod tests {
                 buf[..l].clone_from_slice(&pdata);
                 Ok(l)
             }) {
-                Err(super::Error::DecryptData(_)) => (),
+                Err(super::TransmitterError::DecryptData(_)) => (),
                 x => panic!("Unexpected result: {:?}", x),
             }
         }
@@ -443,7 +447,7 @@ mod tests {
             let data = vec![1, 2, 3];
 
             match m.send(data, |_| Ok(())) {
-                Err(super::Error::EncryptData(_)) => (),
+                Err(super::TransmitterError::EncryptData(_)) => (),
                 x => panic!("Unexpected result: {:?}", x),
             }
         }

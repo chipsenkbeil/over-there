@@ -1,8 +1,10 @@
-pub mod assembler;
-pub mod disassembler;
+mod assembler;
+mod disassembler;
 mod packet;
 pub mod tcp;
-pub mod transmitter;
+mod transmitter;
 pub mod udp;
 
-pub use transmitter::Transmitter;
+pub use assembler::AssemblerError;
+pub use disassembler::DisassemblerError;
+pub use transmitter::{Transmitter, TransmitterError};
