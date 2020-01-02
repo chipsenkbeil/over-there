@@ -2,7 +2,7 @@ pub mod aes_gcm;
 pub mod aes_gcm_siv;
 pub mod aes_siv;
 
-use super::{
+use crate::{
     nonce::{self, NonceSize},
     AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter,
 };
@@ -34,11 +34,18 @@ impl<T: Aead> Encrypter for AesNonceBicrypter<T> {
         buffer: &[u8],
         associated_data: AssociatedData,
     ) -> Result<Vec<u8>, CryptError> {
-        let nonce = associated_data.to_nonce().ok_or(CryptError::MissingNonce)?;
+        let nonce = associated_data
+            .nonce_slice()
+            .ok_or(CryptError::MissingNonce)?;
         nonce::validate_nonce_size(self.nonce_size, nonce.len())?;
         self.aead
             .encrypt(GenericArray::from_slice(nonce), buffer)
             .map_err(|e| CryptError::EncryptFailed(Box::new(AeadError::Generic(e))))
+    }
+
+    /// Returns a new nonce to be associated when encrypting
+    fn new_encrypt_associated_data(&self) -> AssociatedData {
+        AssociatedData::from(self.nonce_size)
     }
 }
 
@@ -48,7 +55,9 @@ impl<T: Aead> Decrypter for AesNonceBicrypter<T> {
         buffer: &[u8],
         associated_data: AssociatedData,
     ) -> Result<Vec<u8>, CryptError> {
-        let nonce = associated_data.to_nonce().ok_or(CryptError::MissingNonce)?;
+        let nonce = associated_data
+            .nonce_slice()
+            .ok_or(CryptError::MissingNonce)?;
         nonce::validate_nonce_size(self.nonce_size, nonce.len())?;
         self.aead
             .decrypt(GenericArray::from_slice(nonce), buffer)

@@ -1,4 +1,4 @@
-use super::{AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter};
+use crate::{AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter};
 
 pub struct NoopBicrypter;
 
@@ -14,6 +14,11 @@ impl Encrypter for NoopBicrypter {
     /// Does nothing but return existing data - NoOp
     fn encrypt(&self, buffer: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
         Ok(Vec::from(buffer))
+    }
+
+    /// Returns no associated data
+    fn new_encrypt_associated_data(&self) -> AssociatedData {
+        AssociatedData::None
     }
 }
 

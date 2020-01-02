@@ -1,4 +1,27 @@
+use over_there_crypto::Nonce;
 use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug)]
+pub(crate) enum PacketType {
+    NotFinal,
+    Final { nonce: Option<Nonce> },
+}
+
+impl PacketType {
+    pub fn nonce(&self) -> Option<&Nonce> {
+        match self {
+            Self::NotFinal => None,
+            Self::Final { nonce } => nonce.as_ref(),
+        }
+    }
+
+    pub fn is_final(&self) -> bool {
+        match self {
+            Self::NotFinal => false,
+            Self::Final { nonce: _ } => true,
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Metadata {
@@ -8,14 +31,9 @@ struct Metadata {
     /// Position within a collection of packets, starting at base 0
     index: u32,
 
-    /// Indicates if this is the final packet in a message
-    is_last: bool,
-    // TODO: Add nonce; should we use an enum and combine with last?
-    //       E.g. type:
-    // nonce: Option<...>,
-
-    // TODO: Add signature
-    // signature: Option<...>,
+    /// Type of packet, indicating if it is the final packet and any
+    /// extra data associated with the final packet
+    r#type: PacketType,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -29,9 +47,9 @@ pub(crate) struct Packet {
 }
 
 impl Packet {
-    pub fn new(id: u32, index: u32, is_last: bool, data: Vec<u8>) -> Self {
+    pub fn new(id: u32, index: u32, r#type: PacketType, data: Vec<u8>) -> Self {
         Packet {
-            metadata: Metadata { id, index, is_last },
+            metadata: Metadata { id, index, r#type },
             data,
         }
     }
@@ -53,8 +71,13 @@ impl Packet {
     }
 
     /// Returns whether or not this packet is the last in a multi-part collection
-    pub fn is_last(&self) -> bool {
-        self.metadata.is_last
+    pub fn is_final(&self) -> bool {
+        self.metadata.r#type.is_final()
+    }
+
+    /// Returns the nonce contained in the packet, if it has one
+    pub fn nonce(&self) -> Option<&Nonce> {
+        self.metadata.r#type.nonce()
     }
 
     /// Returns the bytes data held within the packet

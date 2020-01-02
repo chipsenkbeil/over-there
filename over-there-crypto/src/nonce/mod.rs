@@ -10,6 +10,21 @@ pub type Nonce96Bits = [u8; 12];
 /// Represents a 128-bit nonce (16 bytes)
 pub type Nonce128Bits = [u8; 16];
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub enum Nonce {
+    Nonce96Bits(Nonce96Bits),
+    Nonce128Bits(Nonce128Bits),
+}
+
+impl Nonce {
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Nonce96Bits(nonce) => nonce,
+            Self::Nonce128Bits(nonce) => nonce,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 /// Represents the size of a nonce
 pub enum NonceSize {
@@ -26,11 +41,20 @@ impl From<NonceSize> for usize {
     }
 }
 
-impl From<NonceSize> for Vec<u8> {
+impl From<Nonce> for NonceSize {
+    fn from(nonce: Nonce) -> Self {
+        match nonce {
+            Nonce::Nonce96Bits(_) => Self::Nonce96Bits,
+            Nonce::Nonce128Bits(_) => Self::Nonce128Bits,
+        }
+    }
+}
+
+impl From<NonceSize> for Nonce {
     fn from(nonce_size: NonceSize) -> Self {
         match nonce_size {
-            NonceSize::Nonce96Bits => new_96bit_nonce().to_vec(),
-            NonceSize::Nonce128Bits => new_128bit_nonce().to_vec(),
+            NonceSize::Nonce96Bits => Self::Nonce96Bits(new_96bit_nonce()),
+            NonceSize::Nonce128Bits => Self::Nonce128Bits(new_128bit_nonce()),
         }
     }
 }

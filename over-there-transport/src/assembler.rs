@@ -41,7 +41,7 @@ impl Assembler {
 
         // Check if we are adding a last packet when we already have one
         if let Some(last_index) = self.final_packet_index {
-            if packet.is_last() {
+            if packet.is_final() {
                 return Err(AssemblerError::FinalPacketAlreadyExists {
                     final_packet_index: last_index,
                 });
@@ -75,7 +75,7 @@ impl Assembler {
         self.packets.insert(pindex, packet);
 
         // If we are adding the final packet, mark it
-        if self.packets.get(&pindex).unwrap().is_last() {
+        if self.packets.get(&pindex).unwrap().is_final() {
             self.final_packet_index = Some(pindex);
         }
 
@@ -105,18 +105,28 @@ impl Assembler {
 
         // Collect packet data into one unified binary representation
         // TODO: Improve by NOT cloning data
-        let data: Vec<u8> = packets.iter().flat_map(|p| p.data().clone()).collect();
-
-        Ok(data)
+        Ok(packets.iter().flat_map(|p| p.data().clone()).collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::packet::PacketType;
 
+    /// Make a packet with data; if last, mark as so with no nonce
+    fn make_packet(id: u32, index: u32, is_last: bool, data: Vec<u8>) -> Packet {
+        let r#type = if is_last {
+            PacketType::Final { nonce: None }
+        } else {
+            PacketType::NotFinal
+        };
+        Packet::new(id, index, r#type, data)
+    }
+
+    /// Make an empty packet; if last, mark as so with no nonce
     fn make_empty_packet(id: u32, index: u32, is_last: bool) -> Packet {
-        Packet::new(id, index, is_last, vec![])
+        make_packet(id, index, is_last, vec![])
     }
 
     #[test]
@@ -315,7 +325,7 @@ mod tests {
         let data: Vec<u8> = vec![1, 2, 3];
 
         // Try a single packet and collecting data
-        let _ = a.add_packet(Packet::new(0, 0, true, data.clone()));
+        let _ = a.add_packet(make_packet(0, 0, true, data.clone()));
 
         let collected_data = a.assemble().unwrap();
         assert_eq!(data, collected_data);
@@ -327,9 +337,9 @@ mod tests {
         let data: Vec<u8> = vec![1, 2, 3, 4, 5];
 
         // Try a multiple packets and collecting data
-        let _ = a.add_packet(Packet::new(0, 2, true, data[3..].to_vec()));
-        let _ = a.add_packet(Packet::new(0, 0, false, data[0..1].to_vec()));
-        let _ = a.add_packet(Packet::new(0, 1, false, data[1..3].to_vec()));
+        let _ = a.add_packet(make_packet(0, 2, true, data[3..].to_vec()));
+        let _ = a.add_packet(make_packet(0, 0, false, data[0..1].to_vec()));
+        let _ = a.add_packet(make_packet(0, 1, false, data[1..3].to_vec()));
 
         let collected_data = a.assemble().unwrap();
         assert_eq!(data, collected_data);

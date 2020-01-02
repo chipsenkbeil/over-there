@@ -50,10 +50,15 @@ impl<T: Bicrypter> Encrypter for NonceCacheBicrypter<T> {
     ) -> Result<Vec<u8>, CryptError> {
         // Register the nonce if provided, and then pass on to the underlying
         // encrypter
-        if let Some(nonce) = associated_data.to_nonce() {
+        if let Some(nonce) = associated_data.nonce_slice() {
             self.register_nonce(nonce)?;
         }
         self.bicrypter.encrypt(buffer, associated_data)
+    }
+
+    /// Returns underlying bicrypter's associated data
+    fn new_encrypt_associated_data(&self) -> AssociatedData {
+        self.bicrypter.new_encrypt_associated_data()
     }
 }
 
@@ -65,7 +70,7 @@ impl<T: Bicrypter> Decrypter for NonceCacheBicrypter<T> {
     ) -> Result<Vec<u8>, CryptError> {
         // Register the nonce if provided, and then pass on to the underlying
         // decrypter
-        if let Some(nonce) = associated_data.to_nonce() {
+        if let Some(nonce) = associated_data.nonce_slice() {
             self.register_nonce(nonce)?;
         }
         self.bicrypter.decrypt(buffer, associated_data)
@@ -75,7 +80,7 @@ impl<T: Bicrypter> Decrypter for NonceCacheBicrypter<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::nonce;
+    use crate::nonce::{self, Nonce};
     use crate::{AssociatedData, CryptError};
 
     struct StubBicrypter(fn(&[u8], AssociatedData) -> Result<Vec<u8>, CryptError>);
@@ -87,6 +92,10 @@ mod tests {
             associated_data: AssociatedData,
         ) -> Result<Vec<u8>, CryptError> {
             (self.0)(buffer, associated_data)
+        }
+
+        fn new_encrypt_associated_data(&self) -> AssociatedData {
+            AssociatedData::None
         }
     }
     impl Decrypter for StubBicrypter {
@@ -105,14 +114,14 @@ mod tests {
         let buffer = vec![1, 2, 3];
         let nonce = nonce::new_96bit_nonce();
 
-        let result = bicrypter.encrypt(&buffer, AssociatedData::Nonce96Bits(nonce));
+        let result = bicrypter.encrypt(&buffer, AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)));
         assert!(
             result.is_ok(),
             "First encrypt unexpectedly failed: {:?}",
             result
         );
 
-        let result = bicrypter.encrypt(&buffer, AssociatedData::Nonce96Bits(nonce));
+        let result = bicrypter.encrypt(&buffer, AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)));
         match result {
             Err(CryptError::NonceAlreadyUsed { nonce: _ }) => (),
             x => panic!("Unexpected result: {:?}", x),
@@ -127,7 +136,7 @@ mod tests {
         );
         let buffer = vec![1, 2, 3];
 
-        let nonce = AssociatedData::Nonce96Bits(nonce::new_96bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce96Bits(nonce::new_96bit_nonce()));
         let result = bicrypter.encrypt(&buffer, nonce);
         match result {
             Err(CryptError::EncryptFailed(_)) => (),
@@ -140,7 +149,7 @@ mod tests {
         let bicrypter = NonceCacheBicrypter::new(StubBicrypter(|_, _| Ok(vec![])), 1);
         let buffer = vec![1, 2, 3];
 
-        let nonce = AssociatedData::Nonce96Bits(nonce::new_96bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce96Bits(nonce::new_96bit_nonce()));
         let result = bicrypter.encrypt(&buffer, nonce);
         assert!(
             result.is_ok(),
@@ -148,7 +157,7 @@ mod tests {
             result
         );
 
-        let nonce = AssociatedData::Nonce96Bits(nonce::new_96bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce96Bits(nonce::new_96bit_nonce()));
         let result = bicrypter.encrypt(&buffer, nonce);
         assert!(
             result.is_ok(),
@@ -163,14 +172,14 @@ mod tests {
         let buffer = vec![1, 2, 3];
         let nonce = nonce::new_96bit_nonce();
 
-        let result = bicrypter.decrypt(&buffer, AssociatedData::Nonce96Bits(nonce));
+        let result = bicrypter.decrypt(&buffer, AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)));
         assert!(
             result.is_ok(),
             "First encrypt unexpectedly failed: {:?}",
             result
         );
 
-        let result = bicrypter.decrypt(&buffer, AssociatedData::Nonce96Bits(nonce));
+        let result = bicrypter.decrypt(&buffer, AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)));
         match result {
             Err(CryptError::NonceAlreadyUsed { nonce: _ }) => (),
             x => panic!("Unexpected result: {:?}", x),
@@ -185,7 +194,7 @@ mod tests {
         );
         let buffer = vec![1, 2, 3];
 
-        let nonce = AssociatedData::Nonce96Bits(nonce::new_96bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce96Bits(nonce::new_96bit_nonce()));
         let result = bicrypter.decrypt(&buffer, nonce);
         match result {
             Err(CryptError::DecryptFailed(_)) => (),
@@ -198,7 +207,7 @@ mod tests {
         let bicrypter = NonceCacheBicrypter::new(StubBicrypter(|_, _| Ok(vec![])), 1);
         let buffer = vec![1, 2, 3];
 
-        let nonce = AssociatedData::Nonce96Bits(nonce::new_96bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce96Bits(nonce::new_96bit_nonce()));
         let result = bicrypter.decrypt(&buffer, nonce);
         assert!(
             result.is_ok(),
@@ -206,7 +215,7 @@ mod tests {
             result
         );
 
-        let nonce = AssociatedData::Nonce96Bits(nonce::new_96bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce96Bits(nonce::new_96bit_nonce()));
         let result = bicrypter.decrypt(&buffer, nonce);
         assert!(
             result.is_ok(),

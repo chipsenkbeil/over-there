@@ -19,7 +19,7 @@ pub fn new_aes_256_gcm_bicrypter(key: &Key256Bits) -> AesNonceBicrypter<Aes256Gc
 mod tests {
     use super::*;
     use crate::key;
-    use crate::nonce;
+    use crate::nonce::{self, Nonce};
     use crate::{AssociatedData, CryptError, Decrypter, Encrypter};
 
     #[test]
@@ -27,7 +27,7 @@ mod tests {
         // Uses 96-bit nonce
         let bicrypter = new_aes_128_gcm_bicrypter(&key::new_128bit_key());
         let buffer = vec![1, 2, 3];
-        let nonce = AssociatedData::Nonce128Bits(nonce::new_128bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce128Bits(nonce::new_128bit_nonce()));
 
         let result = bicrypter.encrypt(&buffer, nonce);
         match result {
@@ -41,7 +41,7 @@ mod tests {
         // Uses 96-bit nonce
         let bicrypter = new_aes_128_gcm_bicrypter(&key::new_128bit_key());
         let buffer = vec![1, 2, 3];
-        let nonce = AssociatedData::Nonce128Bits(nonce::new_128bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce128Bits(nonce::new_128bit_nonce()));
 
         let result = bicrypter.decrypt(&buffer, nonce);
         match result {
@@ -55,7 +55,7 @@ mod tests {
         // Uses 96-bit nonce
         let bicrypter = new_aes_256_gcm_bicrypter(&key::new_256bit_key());
         let buffer = vec![1, 2, 3];
-        let nonce = AssociatedData::Nonce128Bits(nonce::new_128bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce128Bits(nonce::new_128bit_nonce()));
 
         let result = bicrypter.encrypt(&buffer, nonce);
         match result {
@@ -69,7 +69,7 @@ mod tests {
         // Uses 96-bit nonce
         let bicrypter = new_aes_256_gcm_bicrypter(&key::new_256bit_key());
         let buffer = vec![1, 2, 3];
-        let nonce = AssociatedData::Nonce128Bits(nonce::new_128bit_nonce());
+        let nonce = AssociatedData::Nonce(Nonce::Nonce128Bits(nonce::new_128bit_nonce()));
 
         let result = bicrypter.decrypt(&buffer, nonce);
         match result {
@@ -85,11 +85,14 @@ mod tests {
         let plaintext = b"some message";
         let nonce = nonce::new_96bit_nonce();
 
-        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce96Bits(nonce));
+        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
         let result = bicrypter
-            .decrypt(&result.unwrap(), AssociatedData::Nonce96Bits(nonce))
+            .decrypt(
+                &result.unwrap(),
+                AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)),
+            )
             .expect("Failed to decrypt");
         assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }
@@ -101,11 +104,14 @@ mod tests {
         let plaintext = b"some message";
         let nonce = nonce::new_96bit_nonce();
 
-        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce96Bits(nonce));
+        let result = bicrypter.encrypt(plaintext, AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
         let result = bicrypter
-            .decrypt(&result.unwrap(), AssociatedData::Nonce96Bits(nonce))
+            .decrypt(
+                &result.unwrap(),
+                AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)),
+            )
             .expect("Failed to decrypt");
         assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }

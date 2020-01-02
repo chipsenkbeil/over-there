@@ -75,16 +75,18 @@ where
         // Encrypt entire dataset before splitting as it will grow in size
         // and it's difficult to predict if we can stay under our transmission
         // limit if encrypting at the individual packet level
+        let associated_data = self.bicrypter.new_encrypt_associated_data();
+        let nonce = associated_data.nonce().cloned();
         let data = self
             .bicrypter
-            .encrypt(&data, AssociatedData::None)
+            .encrypt(&data, associated_data)
             .map_err(TransmitterError::EncryptData)?;
 
         // Produce a unique id used to group our packets
         let id: u32 = random();
 
         // Split data into multiple packets
-        let packets = Disassembler::make_packets_from_data(id, data, self.transmission_size)
+        let packets = Disassembler::make_packets_from_data(id, nonce, data, self.transmission_size)
             .map_err(TransmitterError::DisassembleData)?;
 
         // For each packet, serialize and send to specific address
@@ -118,7 +120,7 @@ where
             "Packet [id: {} | index: {} | is_last: {}]",
             p_id,
             p.index(),
-            p.is_last()
+            p.is_final()
         );
 
         // Grab a reference to our cache of packet assemblers that we will use; also drop any
@@ -141,6 +143,7 @@ where
 
         match maybe_assembler {
             Some(assembler) => {
+                let nonce = p.nonce().cloned();
                 // Bubble up the error; we don't care about the success
                 assembler
                     .add_packet(p)
@@ -155,7 +158,7 @@ where
                             &assembler
                                 .assemble()
                                 .map_err(TransmitterError::AssembleData)?,
-                            AssociatedData::None,
+                            AssociatedData::from(nonce),
                         )
                         .map_err(TransmitterError::DecryptData)?;
 
@@ -260,6 +263,7 @@ mod tests {
         // us to re-add a packet with the same id & index
         let p = &Disassembler::make_packets_from_data(
             0,
+            None,
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             Packet::metadata_size() + 1,
         )
@@ -308,6 +312,7 @@ mod tests {
         // packet, which would result in a complete message
         let packets = &mut Disassembler::make_packets_from_data(
             0,
+            None,
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             Packet::metadata_size() + 1,
         )
@@ -346,6 +351,7 @@ mod tests {
         // packet, which would result in a complete message
         let p = &Disassembler::make_packets_from_data(
             0,
+            None,
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             Packet::metadata_size() + 1,
         )
@@ -367,7 +373,7 @@ mod tests {
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
-        let p = &Disassembler::make_packets_from_data(0, data.clone(), 100).unwrap()[0];
+        let p = &Disassembler::make_packets_from_data(0, None, data.clone(), 100).unwrap()[0];
         let pdata = p.to_vec().unwrap();
         match m.recv(|buf| {
             let l = pdata.len();
@@ -392,6 +398,10 @@ mod tests {
             fn encrypt(&self, _: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
                 Err(CryptError::EncryptFailed(From::from("Some error")))
             }
+
+            fn new_encrypt_associated_data(&self) -> AssociatedData {
+                AssociatedData::None
+            }
         }
         impl Decrypter for BadBicrypter {
             fn decrypt(&self, _: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
@@ -410,9 +420,13 @@ mod tests {
             let data = vec![1, 2, 3];
 
             // Make a new packet per element in data
-            let packets =
-                Disassembler::make_packets_from_data(0, data.clone(), Packet::metadata_size() + 1)
-                    .unwrap();
+            let packets = Disassembler::make_packets_from_data(
+                0,
+                None,
+                data.clone(),
+                Packet::metadata_size() + 1,
+            )
+            .unwrap();
 
             // First N-1 packets should succeed
             for p in packets[..packets.len() - 1].iter() {
