@@ -17,11 +17,36 @@ pub enum Nonce {
 }
 
 impl Nonce {
+    /// Converts slice of bytes to a nonce if it is the right size,
+    /// otherwise returns nothing
+    pub fn from_slice(&self, slice: &[u8]) -> Option<Self> {
+        use std::convert::TryInto;
+        if slice.len() == NonceSize::Nonce96Bits.size_in_bytes() {
+            slice.try_into().map(Self::Nonce96Bits).ok()
+        } else if slice.len() == NonceSize::Nonce128Bits.size_in_bytes() {
+            slice.try_into().map(Self::Nonce128Bits).ok()
+        } else {
+            None
+        }
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         match self {
             Self::Nonce96Bits(nonce) => nonce,
             Self::Nonce128Bits(nonce) => nonce,
         }
+    }
+}
+
+impl From<Nonce96Bits> for Nonce {
+    fn from(buffer: Nonce96Bits) -> Self {
+        Self::Nonce96Bits(buffer)
+    }
+}
+
+impl From<Nonce128Bits> for Nonce {
+    fn from(buffer: Nonce128Bits) -> Self {
+        Self::Nonce128Bits(buffer)
     }
 }
 
@@ -32,9 +57,9 @@ pub enum NonceSize {
     Nonce128Bits,
 }
 
-impl From<NonceSize> for usize {
-    fn from(nonce_size: NonceSize) -> Self {
-        match nonce_size {
+impl NonceSize {
+    pub fn size_in_bytes(&self) -> usize {
+        match self {
             NonceSize::Nonce96Bits => 12,
             NonceSize::Nonce128Bits => 16,
         }
@@ -61,7 +86,7 @@ impl From<NonceSize> for Nonce {
 
 /// Validates the size of a nonce with a desired size
 pub fn validate_nonce_size(nonce_size: NonceSize, desired_size: usize) -> Result<(), CryptError> {
-    if desired_size != From::from(nonce_size) {
+    if desired_size != nonce_size.size_in_bytes() {
         return Err(CryptError::NonceWrongSize {
             provided_size: desired_size,
         });

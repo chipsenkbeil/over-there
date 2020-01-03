@@ -79,7 +79,7 @@ where
         let nonce = associated_data.nonce().cloned();
         let data = self
             .bicrypter
-            .encrypt(&data, associated_data)
+            .encrypt(&data, &associated_data)
             .map_err(TransmitterError::EncryptData)?;
 
         // Produce a unique id used to group our packets
@@ -158,7 +158,7 @@ where
                             &assembler
                                 .assemble()
                                 .map_err(TransmitterError::AssembleData)?,
-                            AssociatedData::from(nonce),
+                            &AssociatedData::from(nonce),
                         )
                         .map_err(TransmitterError::DecryptData)?;
 
@@ -395,7 +395,7 @@ mod tests {
         struct BadBicrypter;
         impl Bicrypter for BadBicrypter {}
         impl Encrypter for BadBicrypter {
-            fn encrypt(&self, _: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
+            fn encrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
                 Err(CryptError::EncryptFailed(From::from("Some error")))
             }
 
@@ -404,7 +404,7 @@ mod tests {
             }
         }
         impl Decrypter for BadBicrypter {
-            fn decrypt(&self, _: &[u8], _: AssociatedData) -> Result<Vec<u8>, CryptError> {
+            fn decrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
                 Err(CryptError::DecryptFailed(From::from("Some error")))
             }
         }

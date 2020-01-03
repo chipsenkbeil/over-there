@@ -79,7 +79,7 @@ pub trait Encrypter {
     fn encrypt(
         &self,
         buffer: &[u8],
-        associated_data: AssociatedData,
+        associated_data: &AssociatedData,
     ) -> Result<Vec<u8>, CryptError>;
 
     /// Encrypter generates its own associated data, useful for producing
@@ -92,6 +92,6 @@ pub trait Decrypter {
     fn decrypt(
         &self,
         buffer: &[u8],
-        associated_data: AssociatedData,
+        associated_data: &AssociatedData,
     ) -> Result<Vec<u8>, CryptError>;
 }

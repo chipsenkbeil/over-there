@@ -32,7 +32,7 @@ impl<T: Aead> Encrypter for AesNonceBicrypter<T> {
     fn encrypt(
         &self,
         buffer: &[u8],
-        associated_data: AssociatedData,
+        associated_data: &AssociatedData,
     ) -> Result<Vec<u8>, CryptError> {
         let nonce = associated_data
             .nonce_slice()
@@ -53,7 +53,7 @@ impl<T: Aead> Decrypter for AesNonceBicrypter<T> {
     fn decrypt(
         &self,
         buffer: &[u8],
-        associated_data: AssociatedData,
+        associated_data: &AssociatedData,
     ) -> Result<Vec<u8>, CryptError> {
         let nonce = associated_data
             .nonce_slice()
@@ -80,7 +80,7 @@ mod tests {
         let buffer = vec![1, 2, 3];
         let nonce = AssociatedData::None;
 
-        let result = bicrypter.encrypt(&buffer, nonce);
+        let result = bicrypter.encrypt(&buffer, &nonce);
         match result {
             Err(CryptError::MissingNonce) => (),
             x => panic!("Unexpected result: {:?}", x),
@@ -97,7 +97,7 @@ mod tests {
         let buffer = vec![1, 2, 3];
         let nonce = AssociatedData::None;
 
-        let result = bicrypter.decrypt(&buffer, nonce);
+        let result = bicrypter.decrypt(&buffer, &nonce);
         match result {
             Err(CryptError::MissingNonce) => (),
             x => panic!("Unexpected result: {:?}", x),
