@@ -3,8 +3,7 @@ use crate::{
     disassembler::{self, Disassembler},
     packet::Packet,
 };
-use log::debug;
-use over_there_crypto::{AssociatedData, Bicrypter, CryptError};
+use over_there_crypto::{AssociatedData, Bicrypter, CryptError, Nonce};
 use over_there_derive::Error;
 use rand::random;
 use std::cell::RefCell;
@@ -111,67 +110,85 @@ where
         if size == 0 {
             return Ok(None);
         }
-        debug!("{} incoming bytes", size);
 
         // Process the received packet
         let p = Packet::from_slice(&buf[..size]).map_err(TransmitterError::DecodePacket)?;
-        let p_id = p.id();
-        debug!(
-            "Packet [id: {} | index: {} | is_last: {}]",
-            p_id,
-            p.index(),
-            p.is_final()
-        );
+        let id = p.id();
+        let nonce = p.nonce().cloned();
 
-        // Grab a reference to our cache of packet assemblers that we will use; also drop any
-        // expired assemblers
-        let mut map = self.cache.borrow_mut();
-
-        // Trigger removal of expired items in cache
-        // NOTE: This is a hack given that the call to remove_expired is private
-        map.iter();
-
-        // Retrieve the assembler associated with the packet or
-        // create a new instance
-        let maybe_assembler = match map.get_mut(&p_id) {
-            None => {
-                map.insert(p.id(), Assembler::new(), self.cache_duration);
-                map.get_mut(&p.id())
-            }
-            x => x,
-        };
-
-        match maybe_assembler {
+        // Retrieve or create assembler for packet group
+        let mut cache = self.cache.borrow_mut();
+        match Self::get_or_new_assembler(&mut cache, id, self.cache_duration) {
             Some(assembler) => {
-                let nonce = p.nonce().cloned();
-                // Bubble up the error; we don't care about the success
-                assembler
-                    .add_packet(p)
-                    .map_err(TransmitterError::AssembleData)?;
-
-                // Determine if time to assemble message
-                if assembler.verify() {
-                    // Assemble and decrypt our collective data
-                    let data = self
-                        .bicrypter
-                        .decrypt(
-                            &assembler
-                                .assemble()
-                                .map_err(TransmitterError::AssembleData)?,
-                            &AssociatedData::from(nonce),
-                        )
-                        .map_err(TransmitterError::DecryptData)?;
+                let do_assemble = Self::add_packet_and_verify(assembler, p)?;
+                if do_assemble {
+                    let data = Self::assemble_and_decrypt(assembler, &self.bicrypter, nonce)
+                        .map(|d| Some(d));
 
                     // We also want to drop the assembler at this point
-                    map.remove(&p_id);
+                    cache.remove(&id);
 
-                    Ok(Some(data))
+                    data
                 } else {
                     Ok(None)
                 }
             }
-            _ => Ok(None),
+            None => Ok(None),
         }
+    }
+
+    /// Retrieves an assembler using its id, or creates a new assembler;
+    /// can yield None in the off chance that the assembler expires inbetween
+    /// the time that it is created and returned
+    fn get_or_new_assembler(
+        cache: &mut TtlCache<u32, Assembler>,
+        id: u32,
+        cache_duration: Duration,
+    ) -> Option<&mut Assembler> {
+        // Trigger removal of expired items in cache
+        // NOTE: This is a hack given that the call to remove_expired is private
+        cache.iter();
+
+        // TODO: Extend entry of ttl_cache to include .or_insert(), which
+        // should fix issue returning mutable reference in another approaches
+        if !cache.contains_key(&id) {
+            cache.insert(id, Assembler::new(), cache_duration);
+        }
+        cache.get_mut(&id)
+    }
+
+    /// Adds the packet to our internal cache and checks to see if we
+    /// are ready to assemble the packet
+    fn add_packet_and_verify(
+        assembler: &mut Assembler,
+        packet: Packet,
+    ) -> Result<bool, TransmitterError> {
+        // Bubble up the error; we don't care about the success
+        assembler
+            .add_packet(packet)
+            .map_err(TransmitterError::AssembleData)?;
+
+        Ok(assembler.verify())
+    }
+
+    /// Assembles the complete data held by the assembler and decrypts it
+    /// using the internal bicrypter
+    fn assemble_and_decrypt(
+        assembler: &Assembler,
+        bicrypter: &B,
+        nonce: Option<Nonce>,
+    ) -> Result<Vec<u8>, TransmitterError> {
+        // Assemble our data, which could be encrypted
+        let data = assembler
+            .assemble()
+            .map_err(TransmitterError::AssembleData)?;
+
+        // Decrypt our collective data
+        let data = bicrypter
+            .decrypt(&data, &AssociatedData::from(nonce))
+            .map_err(TransmitterError::DecryptData)?;
+
+        Ok(data)
     }
 }
 
