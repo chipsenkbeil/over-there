@@ -89,11 +89,14 @@ mod tests {
             bicrypter.encrypt(plaintext, &AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
+        let result = result.unwrap();
+        assert_ne!(
+            result, plaintext,
+            "Encryption did not alter original message"
+        );
+
         let result = bicrypter
-            .decrypt(
-                &result.unwrap(),
-                &AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)),
-            )
+            .decrypt(&result, &AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)))
             .expect("Failed to decrypt");
         assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }
@@ -109,11 +112,14 @@ mod tests {
             bicrypter.encrypt(plaintext, &AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)));
         assert!(result.is_ok(), "Failed to encrypt: {:?}", result);
 
+        let result = result.unwrap();
+        assert_ne!(
+            result, plaintext,
+            "Encryption did not alter original message"
+        );
+
         let result = bicrypter
-            .decrypt(
-                &result.unwrap(),
-                &AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)),
-            )
+            .decrypt(&result, &AssociatedData::Nonce(Nonce::Nonce96Bits(nonce)))
             .expect("Failed to decrypt");
         assert_eq!(result, plaintext, "Decrypted data is wrong: {:?}", result);
     }
