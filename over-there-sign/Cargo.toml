@@ -7,3 +7,6 @@ edition = "2018"
 [dependencies]
 hmac = "0.7.1"
 sha2 = "0.8.0"
+serde = { version = "1.0.103", features = ["derive"] }
+serde-big-array = "0.2.0"
+over-there-utils = { path = "../over-there-utils" }

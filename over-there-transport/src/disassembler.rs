@@ -1,21 +1,46 @@
-use crate::packet::{Packet, PacketType};
+use crate::packet::{Metadata, Packet, PacketType};
 use over_there_crypto::Nonce;
 use over_there_derive::Error;
+use over_there_sign::Authenticator;
+
+pub struct DisassembleInfo<'data, 'a, A: Authenticator> {
+    /// ID used to group created packets together
+    pub id: u32,
+
+    /// Nonce used to encrypt provided data; if None, implies there was no encryption
+    pub nonce: Option<Nonce>,
+
+    /// Desired maximum size of each packet (including metadata)
+    pub desired_chunk_size: usize,
+
+    /// Key used to generate signatures
+    pub authenticator: &'a A,
+
+    /// The data to build packets around; encryption should have already happened
+    /// by this point
+    pub data: &'data [u8],
+}
 
 #[derive(Debug, Error)]
 pub enum DisassemblerError {
     DesiredChunkSizeTooSmall(usize, usize),
+    FailedToSignPacket,
 }
 
 pub(crate) struct Disassembler {}
 
 impl Disassembler {
-    pub fn make_packets_from_data(
-        id: u32,
-        nonce: Option<Nonce>,
-        data: Vec<u8>,
-        desired_chunk_size: usize,
+    pub fn make_packets_from_data<A: Authenticator>(
+        info: DisassembleInfo<A>,
     ) -> Result<Vec<Packet>, DisassemblerError> {
+        let DisassembleInfo {
+            id,
+            nonce,
+            desired_chunk_size,
+            authenticator,
+            data,
+        } = info;
+
         // We assume that we have a desired chunk size that can fit our
         // metadata and data reasonably
         if desired_chunk_size <= Packet::metadata_size() {
@@ -39,18 +64,36 @@ impl Disassembler {
         let mut packets = chunks
             .enumerate()
             .map(|(index, chunk)| {
-                Packet::new(id, index as u32, PacketType::NotFinal, chunk.to_vec())
+                let metadata = Metadata {
+                    id,
+                    index: index as u32,
+                    r#type: PacketType::NotFinal,
+                };
+                metadata.to_vec().map(|md| {
+                    let sig = authenticator.sign(&[md, chunk.to_vec()].concat());
+                    Packet::new(metadata, sig, chunk.to_vec())
+                })
             })
-            .collect::<Vec<Packet>>();
+            .collect::<Result<Vec<Packet>, _>>()
+            .map_err(|_| DisassemblerError::FailedToSignPacket)?;
 
         // Modify the last packet to be final
         if let Some(p) = packets.last_mut() {
-            *p = Packet::new(
-                p.id(),
-                p.index(),
-                PacketType::Final { nonce },
-                p.data().to_vec(),
-            )
+            let metadata = Metadata {
+                id: p.id(),
+                index: p.index(),
+                r#type: PacketType::Final { nonce },
+            };
+            let sig = authenticator.sign(
+                &[
+                    metadata
+                        .to_vec()
+                        .map_err(|_| DisassemblerError::FailedToSignPacket)?,
+                    p.data().to_vec(),
+                ]
+                .concat(),
+            );
+            *p = Packet::new(metadata, sig, p.data().to_vec());
         }
 
         Ok(packets)
@@ -61,16 +104,28 @@ impl Disassembler {
 mod tests {
     use super::*;
     use over_there_crypto::nonce;
+    use over_there_sign::NoopAuthenticator;
 
     #[test]
     fn fails_if_desired_chunk_size_is_too_low() {
         // Needs to accommodate metadata & data, which this does not
         let chunk_size = Packet::metadata_size();
+        let err = Disassembler::make_packets_from_data(DisassembleInfo {
+            id: 0,
+            nonce: None,
+            data: &vec![1, 2, 3],
+            desired_chunk_size: chunk_size,
+            authenticator: &NoopAuthenticator,
+        })
+        .unwrap_err();
 
-        let DisassemblerError::DesiredChunkSizeTooSmall(size, min_size) =
-            Disassembler::make_packets_from_data(0, None, vec![1, 2, 3], chunk_size).unwrap_err();
-        assert_eq!(size, chunk_size);
-        assert_eq!(min_size, Packet::metadata_size() + 1);
+        match err {
+            DisassemblerError::DesiredChunkSizeTooSmall(size, min_size) => {
+                assert_eq!(size, chunk_size);
+                assert_eq!(min_size, Packet::metadata_size() + 1);
+            }
+            x => panic!("Unexpected error: {:?}", x),
+        }
     }
 
     #[test]
@@ -82,8 +137,14 @@ mod tests {
         // Make it so all the data fits in one packet
         let chunk_size = Packet::metadata_size() + data.len();
 
-        let packets =
-            Disassembler::make_packets_from_data(id, nonce, data.clone(), chunk_size).unwrap();
+        let packets = Disassembler::make_packets_from_data(DisassembleInfo {
+            id,
+            nonce,
+            data: &data,
+            desired_chunk_size: chunk_size,
+            authenticator: &NoopAuthenticator,
+        })
+        .unwrap();
         assert_eq!(packets.len(), 1, "More than one packet produced");
 
         let p = &packets[0];
@@ -106,8 +167,14 @@ mod tests {
         // Make it so not all of the data fits in one packet
         let chunk_size = Packet::metadata_size() + 2;
 
-        let packets =
-            Disassembler::make_packets_from_data(id, nonce, data.clone(), chunk_size).unwrap();
+        let packets = Disassembler::make_packets_from_data(DisassembleInfo {
+            id,
+            nonce,
+            data: &data,
+            desired_chunk_size: chunk_size,
+            authenticator: &NoopAuthenticator,
+        })
+        .unwrap();
         assert_eq!(packets.len(), 2, "Unexpected number of packets");
 
         // Check data quality of first packet

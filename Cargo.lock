@@ -453,6 +453,7 @@ dependencies = [
  "over-there-derive 0.1.0",
  "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde-big-array 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -473,6 +474,7 @@ dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "over-there-crypto 0.1.0",
  "over-there-derive 0.1.0",
+ "over-there-sign 0.1.0",
  "over-there-transport 0.1.0",
  "over-there-utils 0.1.0",
  "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -488,6 +490,9 @@ name = "over-there-sign"
 version = "0.1.0"
 dependencies = [
  "hmac 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "over-there-utils 0.1.0",
+ "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde-big-array 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -647,6 +652,15 @@ name = "serde"
 version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
+ "serde_derive 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "serde-big-array"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -933,6 +947,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum rmp 0.8.8 (registry+https://github.com/rust-lang/crates.io-index)" = "0f594cb7ff8f1c5a7907f6be91f15795c8301e0d5718eb007fb5832723dd716e"
 "checksum rmp-serde 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)" = "4a31c0798045f039ace94e0166f76478b3ba83116ec7c9d4bc934c5b13b8df21"
 "checksum serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)" = "1217f97ab8e8904b57dd22eb61cde455fa7446a9c1cf43966066da047c1f3702"
+"checksum serde-big-array 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "883eee5198ea51720eab8be52a36cf6c0164ac90eea0ed95b649d5e35382404e"
 "checksum serde_bytes 0.11.3 (registry+https://github.com/rust-lang/crates.io-index)" = "325a073952621257820e7a3469f55ba4726d8b28657e7e36653d1c36dc2c84ae"
 "checksum serde_derive 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)" = "a8c6faef9a2e64b0064f48570289b4bf8823b7581f1d6157c1b52152306651d0"
 "checksum sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)" = "7b4d8bfd0e469f417657573d8451fb33d16cfe0989359b93baf3a1ffc639543d"

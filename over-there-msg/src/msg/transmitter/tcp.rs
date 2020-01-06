@@ -1,25 +1,28 @@
 use super::Msg;
 use super::{MsgTransmitter, MsgTransmitterError};
 use over_there_crypto::Bicrypter;
+use over_there_sign::Authenticator;
 use over_there_transport::tcp;
 use over_there_transport::Transmitter;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-pub struct TcpMsgTransmitter<B>
+pub struct TcpMsgTransmitter<A, B>
 where
+    A: Authenticator,
     B: Bicrypter,
 {
     pub stream: TcpStream,
-    msg_transmitter: MsgTransmitter<B>,
+    msg_transmitter: MsgTransmitter<A, B>,
 }
 
-impl<B> TcpMsgTransmitter<B>
+impl<A, B> TcpMsgTransmitter<A, B>
 where
+    A: Authenticator,
     B: Bicrypter,
 {
-    pub fn new(stream: TcpStream, msg_transmitter: MsgTransmitter<B>) -> Self {
+    pub fn new(stream: TcpStream, msg_transmitter: MsgTransmitter<A, B>) -> Self {
         Self {
             stream,
             msg_transmitter,
@@ -30,12 +33,14 @@ where
         stream: TcpStream,
         cache_capacity: usize,
         cache_duration: Duration,
+        authenticator: A,
         bicrypter: B,
     ) -> Self {
         let transmitter = Transmitter::new(
             tcp::MTU_ETHERNET_SIZE,
             cache_capacity,
             cache_duration,
+            authenticator,
             bicrypter,
         );
         let msg_transmitter = MsgTransmitter::new(transmitter);

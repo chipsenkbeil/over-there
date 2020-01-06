@@ -1,10 +1,11 @@
 use crate::{
     assembler::{self, Assembler},
-    disassembler::{self, Disassembler},
+    disassembler::{self, DisassembleInfo, Disassembler},
     packet::Packet,
 };
 use over_there_crypto::{AssociatedData, Bicrypter, CryptError, Nonce};
 use over_there_derive::Error;
+use over_there_sign::Authenticator;
 use rand::random;
 use std::cell::RefCell;
 use std::io::Error as IoError;
@@ -15,6 +16,8 @@ use ttl_cache::TtlCache;
 pub enum TransmitterError {
     EncodePacket(rmp_serde::encode::Error),
     DecodePacket(rmp_serde::decode::Error),
+    UnableToVerifySignature,
+    InvalidPacketSignature,
     AssembleData(assembler::AssemblerError),
     DisassembleData(disassembler::DisassemblerError),
     EncryptData(CryptError),
@@ -23,8 +26,9 @@ pub enum TransmitterError {
     RecvBytes(IoError),
 }
 
-pub struct Transmitter<B>
+pub struct Transmitter<A, B>
 where
+    A: Authenticator,
     B: Bicrypter,
 {
     /// Maximum size allowed for a packet
@@ -40,12 +44,16 @@ where
     /// NOTE: Cannot use static array due to type constraints
     buffer: RefCell<Box<[u8]>>,
 
+    /// Performs authentication on data
+    authenticator: A,
+
     /// Performs encryption/decryption on data
     bicrypter: B,
 }
 
-impl<B> Transmitter<B>
+impl<A, B> Transmitter<A, B>
 where
+    A: Authenticator,
     B: Bicrypter,
 {
     /// Begins building a transmitter, enabling us to specify options
@@ -53,16 +61,18 @@ where
         transmission_size: usize,
         cache_capacity: usize,
         cache_duration: Duration,
+        authenticator: A,
         bicrypter: B,
     ) -> Self {
         let cache = RefCell::new(TtlCache::new(cache_capacity));
         let buffer = RefCell::new(vec![0; transmission_size as usize].into_boxed_slice());
         Transmitter {
             transmission_size,
+            cache_duration,
             cache,
             buffer,
+            authenticator,
             bicrypter,
-            cache_duration,
         }
     }
 
@@ -85,8 +95,14 @@ where
         let id: u32 = random();
 
         // Split data into multiple packets
-        let packets = Disassembler::make_packets_from_data(id, nonce, data, self.transmission_size)
-            .map_err(TransmitterError::DisassembleData)?;
+        let packets = Disassembler::make_packets_from_data(DisassembleInfo {
+            id,
+            nonce,
+            data: &data,
+            desired_chunk_size: self.transmission_size,
+            authenticator: &self.authenticator,
+        })
+        .map_err(TransmitterError::DisassembleData)?;
 
         // For each packet, serialize and send to specific address
         for packet in packets.iter() {
@@ -113,6 +129,13 @@ where
 
         // Process the received packet
         let p = Packet::from_slice(&buf[..size]).map_err(TransmitterError::DecodePacket)?;
+
+        // Verify the packet's signature, skipping any form of assembly if
+        // it is not a legit packet
+        if !Self::verify_packet(&self.authenticator, &p)? {
+            return Err(TransmitterError::InvalidPacketSignature);
+        }
+
         let id = p.id();
         let nonce = p.nonce().cloned();
 
@@ -135,6 +158,14 @@ where
             }
             None => Ok(None),
         }
+    }
+
+    fn verify_packet(authenticator: &A, packet: &Packet) -> Result<bool, TransmitterError> {
+        let signature = packet.signature();
+        let content = packet
+            .content_for_signature()
+            .map_err(|_| TransmitterError::UnableToVerifySignature)?;
+        Ok(authenticator.verify(&content, signature))
     }
 
     /// Retrieves an assembler using its id, or creates a new assembler;
@@ -196,18 +227,22 @@ where
 mod tests {
     use super::*;
     use over_there_crypto::NoopBicrypter;
+    use over_there_sign::NoopAuthenticator;
     use std::io::ErrorKind as IoErrorKind;
 
     const MAX_CACHE_CAPACITY: usize = 1500;
     const MAX_CACHE_DURATION_IN_SECS: u64 = 5 * 60;
 
     /// Uses no encryption or signing
-    fn transmitter_with_transmission_size(transmission_size: usize) -> Transmitter<NoopBicrypter> {
+    fn transmitter_with_transmission_size(
+        transmission_size: usize,
+    ) -> Transmitter<NoopAuthenticator, NoopBicrypter> {
         Transmitter::new(
             transmission_size,
             MAX_CACHE_CAPACITY,
             Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
-            NoopBicrypter::new(),
+            NoopAuthenticator,
+            NoopBicrypter,
         )
     }
 
@@ -278,12 +313,13 @@ mod tests {
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
         // us to re-add a packet with the same id & index
-        let p = &Disassembler::make_packets_from_data(
-            0,
-            None,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            Packet::metadata_size() + 1,
-        )
+        let p = &Disassembler::make_packets_from_data(DisassembleInfo {
+            id: 0,
+            nonce: None,
+            data: &vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            desired_chunk_size: Packet::metadata_size() + 1,
+            authenticator: &NoopAuthenticator,
+        })
         .unwrap()[0];
         let data = p.to_vec().unwrap();
         assert_eq!(
@@ -323,16 +359,17 @@ mod tests {
     fn recv_should_return_none_if_the_assembler_expired() {
         // Make a transmitter that has a really short duration
         let wait_duration = Duration::from_nanos(1);
-        let m = Transmitter::new(100, 100, wait_duration, NoopBicrypter::new());
+        let m = Transmitter::new(100, 100, wait_duration, NoopAuthenticator, NoopBicrypter);
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
-        let packets = &mut Disassembler::make_packets_from_data(
-            0,
-            None,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            Packet::metadata_size() + 1,
-        )
+        let packets = &mut Disassembler::make_packets_from_data(DisassembleInfo {
+            id: 0,
+            nonce: None,
+            data: &vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            desired_chunk_size: Packet::metadata_size() + 1,
+            authenticator: &NoopAuthenticator,
+        })
         .unwrap();
 
         while !packets.is_empty() {
@@ -366,12 +403,13 @@ mod tests {
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
-        let p = &Disassembler::make_packets_from_data(
-            0,
-            None,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            Packet::metadata_size() + 1,
-        )
+        let p = &Disassembler::make_packets_from_data(DisassembleInfo {
+            id: 0,
+            nonce: None,
+            data: &vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            desired_chunk_size: Packet::metadata_size() + 1,
+            authenticator: &NoopAuthenticator,
+        })
         .unwrap()[0];
         let data = p.to_vec().unwrap();
         match m.recv(|buf| {
@@ -390,7 +428,14 @@ mod tests {
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
-        let p = &Disassembler::make_packets_from_data(0, None, data.clone(), 100).unwrap()[0];
+        let p = &Disassembler::make_packets_from_data(DisassembleInfo {
+            id: 0,
+            nonce: None,
+            data: &data,
+            desired_chunk_size: 100,
+            authenticator: &NoopAuthenticator,
+        })
+        .unwrap()[0];
         let pdata = p.to_vec().unwrap();
         match m.recv(|buf| {
             let l = pdata.len();
@@ -432,17 +477,19 @@ mod tests {
                 100,
                 MAX_CACHE_CAPACITY,
                 Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
+                NoopAuthenticator,
                 BadBicrypter,
             );
             let data = vec![1, 2, 3];
 
             // Make a new packet per element in data
-            let packets = Disassembler::make_packets_from_data(
-                0,
-                None,
-                data.clone(),
-                Packet::metadata_size() + 1,
-            )
+            let packets = Disassembler::make_packets_from_data(DisassembleInfo {
+                id: 0,
+                nonce: None,
+                data: &data.clone(),
+                desired_chunk_size: Packet::metadata_size() + 1,
+                authenticator: &NoopAuthenticator,
+            })
             .unwrap();
 
             // First N-1 packets should succeed
@@ -479,6 +526,7 @@ mod tests {
                 100,
                 MAX_CACHE_CAPACITY,
                 Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
+                NoopAuthenticator,
                 BadBicrypter,
             );
             let data = vec![1, 2, 3];

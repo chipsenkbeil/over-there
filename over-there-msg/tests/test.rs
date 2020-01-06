@@ -3,6 +3,7 @@ use over_there_msg::{
     Msg, MsgTransmitter, StandardRequest as Request, StandardResponse as Response,
     TcpMsgTransmitter, UdpMsgTransmitter,
 };
+use over_there_sign::NoopAuthenticator;
 use over_there_transport::{tcp, udp, Transmitter};
 use over_there_utils::exec;
 use std::time::Duration;
@@ -14,12 +15,15 @@ fn init() {
         .try_init();
 }
 
-fn new_msg_transmitter(transmission_size: usize) -> MsgTransmitter<NoopBicrypter> {
+fn new_msg_transmitter(
+    transmission_size: usize,
+) -> MsgTransmitter<NoopAuthenticator, NoopBicrypter> {
     MsgTransmitter::new(Transmitter::new(
         transmission_size,
         1500,
         Duration::from_secs(5 * 60),
-        NoopBicrypter::new(),
+        NoopAuthenticator,
+        NoopBicrypter,
     ))
 }
 

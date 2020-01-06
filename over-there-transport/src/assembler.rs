@@ -112,7 +112,7 @@ impl Assembler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::packet::PacketType;
+    use crate::packet::{Metadata, PacketType};
 
     /// Make a packet with data; if last, mark as so with no nonce
     fn make_packet(id: u32, index: u32, is_last: bool, data: Vec<u8>) -> Packet {
@@ -121,7 +121,8 @@ mod tests {
         } else {
             PacketType::NotFinal
         };
-        Packet::new(id, index, r#type, data)
+        let metadata = Metadata { id, index, r#type };
+        Packet::new(metadata, Default::default(), data)
     }
 
     /// Make an empty packet; if last, mark as so with no nonce

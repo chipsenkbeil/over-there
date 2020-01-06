@@ -1,25 +1,28 @@
 use super::Msg;
 use super::{MsgTransmitter, MsgTransmitterError};
 use over_there_crypto::Bicrypter;
+use over_there_sign::Authenticator;
 use over_there_transport::udp;
 use over_there_transport::Transmitter;
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
 use std::time::Duration;
 
-pub struct UdpMsgTransmitter<B>
+pub struct UdpMsgTransmitter<A, B>
 where
+    A: Authenticator,
     B: Bicrypter,
 {
     pub socket: UdpSocket,
-    msg_transmitter: MsgTransmitter<B>,
+    msg_transmitter: MsgTransmitter<A, B>,
 }
 
-impl<B> UdpMsgTransmitter<B>
+impl<A, B> UdpMsgTransmitter<A, B>
 where
+    A: Authenticator,
     B: Bicrypter,
 {
-    pub fn new(socket: UdpSocket, msg_transmitter: MsgTransmitter<B>) -> Self {
+    pub fn new(socket: UdpSocket, msg_transmitter: MsgTransmitter<A, B>) -> Self {
         Self {
             socket,
             msg_transmitter,
@@ -30,12 +33,14 @@ where
         socket: UdpSocket,
         cache_capacity: usize,
         cache_duration: Duration,
+        authenticator: A,
         bicrypter: B,
     ) -> Self {
         let transmitter = Transmitter::new(
             udp::MAX_IPV4_DATAGRAM_SIZE,
             cache_capacity,
             cache_duration,
+            authenticator,
             bicrypter,
         );
         let msg_transmitter = MsgTransmitter::new(transmitter);

@@ -2,12 +2,6 @@ use crate::{AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter};
 
 pub struct NoopBicrypter;
 
-impl NoopBicrypter {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
 impl Bicrypter for NoopBicrypter {}
 
 impl Encrypter for NoopBicrypter {
@@ -35,7 +29,7 @@ mod tests {
 
     #[test]
     fn encrypt_should_return_a_copy_of_input_data() {
-        let bicrypter = NoopBicrypter::new();
+        let bicrypter = NoopBicrypter;
         let data = vec![1, 2, 3];
 
         let encrypted_data = bicrypter
@@ -46,7 +40,7 @@ mod tests {
 
     #[test]
     fn decrypt_should_return_a_copy_of_input_data() {
-        let bicrypter = NoopBicrypter::new();
+        let bicrypter = NoopBicrypter;
         let data = vec![1, 2, 3];
 
         let decrypted_data = bicrypter

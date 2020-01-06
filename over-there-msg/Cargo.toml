@@ -13,6 +13,7 @@ chrono = { version = "0.4.10", features = ["serde"] }
 log = "0.4.8"
 rand = "0.7.2"
 over-there-crypto = { path = "../over-there-crypto" }
+over-there-sign = { path = "../over-there-sign" }
 over-there-transport = { path = "../over-there-transport" }
 over-there-utils = { path = "../over-there-utils" }
 over-there-derive = { path = "../over-there-derive" }

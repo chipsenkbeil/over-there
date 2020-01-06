@@ -1,10 +1,10 @@
-pub mod file;
 pub mod tcp;
 pub mod udp;
 
 use super::Msg;
 use over_there_crypto::Bicrypter;
 use over_there_derive::Error;
+use over_there_sign::Authenticator;
 use over_there_transport::{Transmitter, TransmitterError};
 
 #[derive(Debug, Error)]
@@ -15,18 +15,20 @@ pub enum MsgTransmitterError {
     RecvData(TransmitterError),
 }
 
-pub struct MsgTransmitter<B>
+pub struct MsgTransmitter<A, B>
 where
+    A: Authenticator,
     B: Bicrypter,
 {
-    transmitter: Transmitter<B>,
+    transmitter: Transmitter<A, B>,
 }
 
-impl<B> MsgTransmitter<B>
+impl<A, B> MsgTransmitter<A, B>
 where
+    A: Authenticator,
     B: Bicrypter,
 {
-    pub fn new(transmitter: Transmitter<B>) -> Self {
+    pub fn new(transmitter: Transmitter<A, B>) -> Self {
         Self { transmitter }
     }
 
@@ -59,17 +61,20 @@ mod tests {
     use super::*;
     use crate::msg::types::request::StandardRequest as Request;
     use over_there_crypto::NoopBicrypter;
+    use over_there_sign::NoopAuthenticator;
 
-    fn new_msg_transmitter(transmission_size: usize) -> MsgTransmitter<NoopBicrypter> {
+    fn new_msg_transmitter(
+        transmission_size: usize,
+    ) -> MsgTransmitter<NoopAuthenticator, NoopBicrypter> {
         use std::time::Duration;
         let cache_capacity = 1500;
         let cache_duration = Duration::from_secs(5 * 60);
-        let bicrypter = NoopBicrypter::new();
         MsgTransmitter::new(Transmitter::new(
             transmission_size,
             cache_capacity,
             cache_duration,
-            bicrypter,
+            NoopAuthenticator,
+            NoopBicrypter,
         ))
     }
 
@@ -133,12 +138,15 @@ mod tests {
 
     #[test]
     fn recv_should_succeed_if_able_to_receive_msg() {
-        let m = new_msg_transmitter(100);
+        let m = new_msg_transmitter(200);
         let msg = Msg::from_content(Request::HeartbeatRequest);
 
         // Construct a data representation for our message
-        let data: [u8; 100] = {
-            let mut tmp = [0; 100];
+        // NOTE: With addition of a 256-bit (32 byte) message signature,
+        //       we've moved from a message of ~90 bytes to ~120 bytes,
+        //       so we have to increase the data buffer beyond 100
+        let data: [u8; 200] = {
+            let mut tmp = [0; 200];
             m.transmitter
                 .send(msg.to_vec().unwrap(), |msg_data| {
                     tmp[..msg_data.len()].clone_from_slice(&msg_data);
