@@ -45,14 +45,14 @@ impl Default for Digest {
 impl std::fmt::Debug for Digest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Digest256Bits(d) => write!(f, "Digest {:?}", d),
+            Self::Digest256Bits(d) => write!(f, "Digest256Bits({:?})", d),
             Self::Digest512Bits(d) => {
                 let d_str = d
                     .iter()
                     .map(|n| n.to_string())
                     .collect::<Vec<String>>()
                     .join(", ");
-                write!(f, "Digest [{}]", d_str)
+                write!(f, "Digest512Bits([{}])", d_str)
             }
         }
     }
@@ -126,25 +126,25 @@ mod tests {
         let digest = Digest::try_from(digest).unwrap();
         assert_eq!(
             format!("{:?}", digest),
-            "Digest [\
+            "Digest256Bits([\
              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, \
              10, 11, 12, 13, 14, 15, 16, 17, 18, 19, \
              20, 21, 22, 23, 24, 25, 26, 27, 28, 29, \
-             30, 31]"
+             30, 31])"
         );
 
         let digest: &[u8] = &(0..64).collect::<Vec<u8>>();
         let digest = Digest::try_from(digest).unwrap();
         assert_eq!(
             format!("{:?}", digest),
-            "Digest [\
+            "Digest512Bits([\
              0, 1, 2, 3, 4, 5, 6, 7, 8, 9, \
              10, 11, 12, 13, 14, 15, 16, 17, 18, 19, \
              20, 21, 22, 23, 24, 25, 26, 27, 28, 29, \
              30, 31, 32, 33, 34, 35, 36, 37, 38, 39, \
              40, 41, 42, 43, 44, 45, 46, 47, 48, 49, \
              50, 51, 52, 53, 54, 55, 56, 57, 58, 59, \
-             60, 61, 62, 63]"
+             60, 61, 62, 63])"
         );
     }
 
