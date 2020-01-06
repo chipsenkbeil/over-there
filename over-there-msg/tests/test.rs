@@ -1,9 +1,9 @@
-use over_there_crypto::NoopBicrypter;
+use over_there_crypto::{self as crypto, aes_gcm, Bicrypter};
 use over_there_msg::{
     Msg, MsgTransmitter, StandardRequest as Request, StandardResponse as Response,
     TcpMsgTransmitter, UdpMsgTransmitter,
 };
-use over_there_sign::NoopAuthenticator;
+use over_there_sign::{Authenticator, Sha256Authenticator};
 use over_there_transport::{tcp, udp, Transmitter};
 use over_there_utils::exec;
 use std::time::Duration;
@@ -15,29 +15,41 @@ fn init() {
         .try_init();
 }
 
-fn new_msg_transmitter(
+fn new_msg_transmitter<A: Authenticator, B: Bicrypter>(
     transmission_size: usize,
-) -> MsgTransmitter<NoopAuthenticator, NoopBicrypter> {
+    authenticator: A,
+    bicrypter: B,
+) -> MsgTransmitter<A, B> {
     MsgTransmitter::new(Transmitter::new(
         transmission_size,
         1500,
         Duration::from_secs(5 * 60),
-        NoopAuthenticator,
-        NoopBicrypter,
+        authenticator,
+        bicrypter,
     ))
 }
 
 #[test]
 fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     init();
+    let encrypt_key = crypto::key::new_256bit_key();
+    let sign_key = b"my signature key";
 
     let client = UdpMsgTransmitter::new(
         udp::local()?,
-        new_msg_transmitter(udp::MAX_IPV4_DATAGRAM_SIZE),
+        new_msg_transmitter(
+            udp::MAX_IPV4_DATAGRAM_SIZE,
+            Sha256Authenticator::new(sign_key),
+            aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+        ),
     );
     let server = UdpMsgTransmitter::new(
         udp::local()?,
-        new_msg_transmitter(udp::MAX_IPV4_DATAGRAM_SIZE),
+        new_msg_transmitter(
+            udp::MAX_IPV4_DATAGRAM_SIZE,
+            Sha256Authenticator::new(sign_key),
+            aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+        ),
     );
 
     // Send message to server
@@ -87,15 +99,27 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     init();
+    let encrypt_key = crypto::key::new_256bit_key();
+    let sign_key = b"my signature key";
 
     let server_listener = tcp::local()?;
     let client_stream = std::net::TcpStream::connect(server_listener.local_addr()?)?;
 
-    let mut client =
-        TcpMsgTransmitter::new(client_stream, new_msg_transmitter(tcp::MTU_ETHERNET_SIZE));
+    let mut client = TcpMsgTransmitter::new(
+        client_stream,
+        new_msg_transmitter(
+            tcp::MTU_ETHERNET_SIZE,
+            Sha256Authenticator::new(sign_key),
+            aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+        ),
+    );
     let mut server = TcpMsgTransmitter::new(
         server_listener.accept()?.0,
-        new_msg_transmitter(tcp::MTU_ETHERNET_SIZE),
+        new_msg_transmitter(
+            tcp::MTU_ETHERNET_SIZE,
+            Sha256Authenticator::new(sign_key),
+            aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+        ),
     );
 
     // Send message to server
