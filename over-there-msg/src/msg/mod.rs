@@ -1,4 +1,3 @@
-pub mod transmitter;
 pub mod types;
 
 use chrono::prelude::{DateTime, Utc};
