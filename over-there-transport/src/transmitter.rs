@@ -37,6 +37,9 @@ where
     /// Cache of packets belonging to a group that has not been completed
     cache: RefCell<TtlCache<u32, Assembler>>,
 
+    /// Disassembler used to break up data into packets
+    disassembler: RefCell<Disassembler>,
+
     /// Maximum time for a cache entry to exist untouched before expiring
     cache_duration: Duration,
 
@@ -73,13 +76,14 @@ where
             buffer,
             authenticator,
             bicrypter,
+            disassembler: RefCell::new(Disassembler::new()),
         }
     }
 
     pub fn send(
         &self,
-        data: Vec<u8>,
-        mut send_handler: impl FnMut(Vec<u8>) -> Result<(), IoError>,
+        data: &[u8],
+        mut send_handler: impl FnMut(&[u8]) -> Result<(), IoError>,
     ) -> Result<(), TransmitterError> {
         // Encrypt entire dataset before splitting as it will grow in size
         // and it's difficult to predict if we can stay under our transmission
@@ -88,26 +92,29 @@ where
         let nonce = associated_data.nonce().cloned();
         let data = self
             .bicrypter
-            .encrypt(&data, &associated_data)
+            .encrypt(data, &associated_data)
             .map_err(TransmitterError::EncryptData)?;
 
         // Produce a unique id used to group our packets
         let id: u32 = random();
 
         // Split data into multiple packets
-        let packets = Disassembler::make_packets_from_data(DisassembleInfo {
-            id,
-            nonce,
-            data: &data,
-            desired_chunk_size: self.transmission_size,
-            authenticator: &self.authenticator,
-        })
-        .map_err(TransmitterError::DisassembleData)?;
+        let packets = self
+            .disassembler
+            .borrow_mut()
+            .make_packets_from_data(DisassembleInfo {
+                id,
+                nonce,
+                data: &data,
+                desired_chunk_size: self.transmission_size,
+                authenticator: &self.authenticator,
+            })
+            .map_err(TransmitterError::DisassembleData)?;
 
         // For each packet, serialize and send to specific address
         for packet in packets.iter() {
             let packet_data = packet.to_vec().map_err(TransmitterError::EncodePacket)?;
-            send_handler(packet_data).map_err(TransmitterError::SendBytes)?;
+            send_handler(&packet_data).map_err(TransmitterError::SendBytes)?;
         }
 
         Ok(())
@@ -226,6 +233,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::packet::PacketType;
     use over_there_crypto::NoopBicrypter;
     use over_there_sign::NoopAuthenticator;
     use std::io::ErrorKind as IoErrorKind;
@@ -253,7 +261,7 @@ mod tests {
         let m = transmitter_with_transmission_size(0);
         let data = vec![1, 2, 3];
 
-        match m.send(data, |_| Ok(())) {
+        match m.send(&data, |_| Ok(())) {
             Err(TransmitterError::DisassembleData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
@@ -264,7 +272,7 @@ mod tests {
         let m = transmitter_with_transmission_size(100);
         let data = vec![1, 2, 3];
 
-        match m.send(data, |_| Err(IoError::from(IoErrorKind::Other))) {
+        match m.send(&data, |_| Err(IoError::from(IoErrorKind::Other))) {
             Err(TransmitterError::SendBytes(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
@@ -275,7 +283,7 @@ mod tests {
         let m = transmitter_with_transmission_size(100);
         let data = vec![1, 2, 3];
 
-        let result = m.send(data, |_| Ok(()));
+        let result = m.send(&data, |_| Ok(()));
         assert_eq!(result.is_ok(), true);
     }
 
@@ -309,18 +317,32 @@ mod tests {
     #[test]
     fn recv_should_fail_if_unable_to_add_packet_to_assembler() {
         let m = transmitter_with_transmission_size(100);
+        let id = 0;
+        let nonce = None;
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let authenticator = NoopAuthenticator;
+
+        // Calculate the bigger of the two overhead sizes (final packet)
+        // and ensure that we can fit data in it
+        let overhead_size = Disassembler::estimate_packet_overhead_size(
+            /* data size */ 1,
+            PacketType::Final { nonce },
+            &authenticator,
+        )
+        .unwrap();
 
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
         // us to re-add a packet with the same id & index
-        let p = &Disassembler::make_packets_from_data(DisassembleInfo {
-            id: 0,
-            nonce: None,
-            data: &vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            desired_chunk_size: Packet::metadata_size() + 1,
-            authenticator: &NoopAuthenticator,
-        })
-        .unwrap()[0];
+        let p = &Disassembler::new()
+            .make_packets_from_data(DisassembleInfo {
+                id,
+                nonce,
+                data: &data,
+                desired_chunk_size: overhead_size + 1,
+                authenticator: &authenticator,
+            })
+            .unwrap()[0];
         let data = p.to_vec().unwrap();
         assert_eq!(
             m.recv(|buf| {
@@ -361,16 +383,31 @@ mod tests {
         let wait_duration = Duration::from_nanos(1);
         let m = Transmitter::new(100, 100, wait_duration, NoopAuthenticator, NoopBicrypter);
 
+        let id = 0;
+        let nonce = None;
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let authenticator = NoopAuthenticator;
+
+        // Calculate the bigger of the two overhead sizes (final packet)
+        // and ensure that we can fit data in it
+        let overhead_size = Disassembler::estimate_packet_overhead_size(
+            /* data size */ 1,
+            PacketType::Final { nonce },
+            &authenticator,
+        )
+        .unwrap();
+
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
-        let packets = &mut Disassembler::make_packets_from_data(DisassembleInfo {
-            id: 0,
-            nonce: None,
-            data: &vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            desired_chunk_size: Packet::metadata_size() + 1,
-            authenticator: &NoopAuthenticator,
-        })
-        .unwrap();
+        let packets = &mut Disassembler::new()
+            .make_packets_from_data(DisassembleInfo {
+                id,
+                nonce,
+                data: &data,
+                desired_chunk_size: overhead_size + 1,
+                authenticator: &NoopAuthenticator,
+            })
+            .unwrap();
 
         while !packets.is_empty() {
             match m.recv(|buf| {
@@ -401,16 +438,31 @@ mod tests {
     fn recv_should_return_none_if_received_packet_does_not_complete_data() {
         let m = transmitter_with_transmission_size(100);
 
+        let id = 0;
+        let nonce = None;
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let authenticator = NoopAuthenticator;
+
+        // Calculate the bigger of the two overhead sizes (final packet)
+        // and ensure that we can fit data in it
+        let overhead_size = Disassembler::estimate_packet_overhead_size(
+            /* data size */ 1,
+            PacketType::Final { nonce },
+            &authenticator,
+        )
+        .unwrap();
+
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
-        let p = &Disassembler::make_packets_from_data(DisassembleInfo {
-            id: 0,
-            nonce: None,
-            data: &vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            desired_chunk_size: Packet::metadata_size() + 1,
-            authenticator: &NoopAuthenticator,
-        })
-        .unwrap()[0];
+        let p = &Disassembler::new()
+            .make_packets_from_data(DisassembleInfo {
+                id,
+                nonce,
+                data: &data,
+                desired_chunk_size: overhead_size + 1,
+                authenticator: &NoopAuthenticator,
+            })
+            .unwrap()[0];
         let data = p.to_vec().unwrap();
         match m.recv(|buf| {
             let l = data.len();
@@ -428,14 +480,15 @@ mod tests {
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
-        let p = &Disassembler::make_packets_from_data(DisassembleInfo {
-            id: 0,
-            nonce: None,
-            data: &data,
-            desired_chunk_size: 100,
-            authenticator: &NoopAuthenticator,
-        })
-        .unwrap()[0];
+        let p = &Disassembler::new()
+            .make_packets_from_data(DisassembleInfo {
+                id: 0,
+                nonce: None,
+                data: &data,
+                desired_chunk_size: 100,
+                authenticator: &NoopAuthenticator,
+            })
+            .unwrap()[0];
         let pdata = p.to_vec().unwrap();
         match m.recv(|buf| {
             let l = pdata.len();
@@ -480,17 +533,31 @@ mod tests {
                 NoopAuthenticator,
                 BadBicrypter,
             );
+
+            let id = 0;
+            let nonce = None;
             let data = vec![1, 2, 3];
+            let authenticator = NoopAuthenticator;
+
+            // Calculate the bigger of the two overhead sizes (final packet)
+            // and ensure that we can fit data in it
+            let overhead_size = Disassembler::estimate_packet_overhead_size(
+                /* data size */ 1,
+                PacketType::Final { nonce },
+                &authenticator,
+            )
+            .unwrap();
 
             // Make a new packet per element in data
-            let packets = Disassembler::make_packets_from_data(DisassembleInfo {
-                id: 0,
-                nonce: None,
-                data: &data.clone(),
-                desired_chunk_size: Packet::metadata_size() + 1,
-                authenticator: &NoopAuthenticator,
-            })
-            .unwrap();
+            let packets = Disassembler::new()
+                .make_packets_from_data(DisassembleInfo {
+                    id,
+                    nonce,
+                    data: &data.clone(),
+                    desired_chunk_size: overhead_size + 1,
+                    authenticator: &NoopAuthenticator,
+                })
+                .unwrap();
 
             // First N-1 packets should succeed
             for p in packets[..packets.len() - 1].iter() {
@@ -531,7 +598,7 @@ mod tests {
             );
             let data = vec![1, 2, 3];
 
-            match m.send(data, |_| Ok(())) {
+            match m.send(&data, |_| Ok(())) {
                 Err(super::TransmitterError::EncryptData(_)) => (),
                 x => panic!("Unexpected result: {:?}", x),
             }

@@ -69,11 +69,6 @@ impl Packet {
         }
     }
 
-    /// Returns the size of metadata for packets
-    pub fn metadata_size() -> usize {
-        std::mem::size_of::<Metadata>()
-    }
-
     /// Returns the id associated with the packet
     pub fn id(&self) -> u32 {
         self.metadata.id

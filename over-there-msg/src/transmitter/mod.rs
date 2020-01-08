@@ -35,11 +35,11 @@ where
     pub fn send(
         &self,
         msg: Msg,
-        send_handler: impl FnMut(Vec<u8>) -> Result<(), std::io::Error>,
+        send_handler: impl FnMut(&[u8]) -> Result<(), std::io::Error>,
     ) -> Result<(), MsgTransmitterError> {
         let data = msg.to_vec().map_err(MsgTransmitterError::EncodeMsg)?;
         self.transmitter
-            .send(data, send_handler)
+            .send(&data, send_handler)
             .map_err(MsgTransmitterError::SendData)
     }
 
@@ -118,7 +118,7 @@ mod tests {
         let data: [u8; 100] = {
             let mut tmp = [0; 100];
             m.transmitter
-                .send(vec![1, 2, 3], |msg_data| {
+                .send(&vec![1, 2, 3], |msg_data| {
                     tmp[..msg_data.len()].clone_from_slice(&msg_data);
                     Ok(())
                 })
@@ -148,7 +148,7 @@ mod tests {
         let data: [u8; 200] = {
             let mut tmp = [0; 200];
             m.transmitter
-                .send(msg.to_vec().unwrap(), |msg_data| {
+                .send(&msg.to_vec().unwrap(), |msg_data| {
                     tmp[..msg_data.len()].clone_from_slice(&msg_data);
                     Ok(())
                 })
