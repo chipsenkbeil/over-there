@@ -4,6 +4,21 @@ version = "0.1.0"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 edition = "2018"
 
+[features]
+default = ["custom", "exec", "file-system", "forward"]
+
+# Ability to send custom messages with arbitrary handlers
+custom = []
+
+# Ability to execute programs remotely and retrieve results
+exec = []
+
+# Ability to manipulate the file system
+file-system = []
+
+# Ability to forward messages to other over-there instances
+forward = []
+
 [dependencies]
 serde = { version = "1.0.103", features = ["derive"] }
 serde_bytes = "0.11.3"

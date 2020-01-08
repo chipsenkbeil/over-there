@@ -1,10 +1,10 @@
-pub mod types;
+pub mod content;
 
 use chrono::prelude::{DateTime, Utc};
 use rand::random;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct Msg {
     /// ID associated with a request or response
     pub id: u32,
@@ -13,26 +13,10 @@ pub struct Msg {
     pub creation_date: DateTime<Utc>,
 
     /// Content within the message
-    content: Box<dyn types::Content>,
+    pub content: content::Content,
 }
 
 impl Msg {
-    pub fn from_content<T: types::Content + 'static>(content: T) -> Self {
-        Self {
-            id: random(),
-            creation_date: Utc::now(),
-            content: Box::new(content),
-        }
-    }
-
-    pub fn is_content<T: types::Content + 'static>(&self) -> bool {
-        self.content.as_any().is::<T>()
-    }
-
-    pub fn to_content<T: types::Content + 'static>(&self) -> Option<&T> {
-        self.content.as_any().downcast_ref::<T>()
-    }
-
     pub fn to_vec(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
         rmp_serde::to_vec(&self)
     }
@@ -41,79 +25,121 @@ impl Msg {
         rmp_serde::from_read_ref(slice)
     }
 }
+//
+// GENERAL CONTENT CONVERSION
+//
+
+impl From<content::Content> for Msg {
+    fn from(content: content::Content) -> Self {
+        Self {
+            id: random(),
+            creation_date: Utc::now(),
+            content,
+        }
+    }
+}
+
+//
+// GENERAL REQUEST/RESPONSE CONVERSIONS
+//
+
+impl From<content::request::Request> for Msg {
+    fn from(request: content::request::Request) -> Self {
+        Self::from(content::Content::from(request))
+    }
+}
+
+impl From<content::response::Response> for Msg {
+    fn from(response: content::response::Response) -> Self {
+        Self::from(content::Content::from(response))
+    }
+}
+
+//
+// SPECIFIC REQUEST CONVERSIONS
+//
+
+impl From<content::request::standard::StandardRequest> for Msg {
+    fn from(r: content::request::standard::StandardRequest) -> Self {
+        Self::from(content::Content::from(content::request::Request::from(r)))
+    }
+}
+
+#[cfg(feature = "custom")]
+impl From<content::request::custom::CustomRequest> for Msg {
+    fn from(r: content::request::custom::CustomRequest) -> Self {
+        Self::from(content::Content::from(content::request::Request::from(r)))
+    }
+}
+
+#[cfg(feature = "exec")]
+impl From<content::request::exec::ExecRequest> for Msg {
+    fn from(r: content::request::exec::ExecRequest) -> Self {
+        Self::from(content::Content::from(content::request::Request::from(r)))
+    }
+}
+
+#[cfg(feature = "forward")]
+impl From<content::request::forward::ForwardRequest> for Msg {
+    fn from(r: content::request::forward::ForwardRequest) -> Self {
+        Self::from(content::Content::from(content::request::Request::from(r)))
+    }
+}
+
+#[cfg(feature = "file-system")]
+impl From<content::request::file_system::FileSystemRequest> for Msg {
+    fn from(r: content::request::file_system::FileSystemRequest) -> Self {
+        Self::from(content::Content::from(content::request::Request::from(r)))
+    }
+}
+
+//
+// SPECIFIC RESPONSE CONVERSIONS
+//
+
+impl From<content::response::standard::StandardResponse> for Msg {
+    fn from(r: content::response::standard::StandardResponse) -> Self {
+        Self::from(content::Content::from(content::response::Response::from(r)))
+    }
+}
+
+#[cfg(feature = "custom")]
+impl From<content::response::custom::CustomResponse> for Msg {
+    fn from(r: content::response::custom::CustomResponse) -> Self {
+        Self::from(content::Content::from(content::response::Response::from(r)))
+    }
+}
+
+#[cfg(feature = "exec")]
+impl From<content::response::exec::ExecResponse> for Msg {
+    fn from(r: content::response::exec::ExecResponse) -> Self {
+        Self::from(content::Content::from(content::response::Response::from(r)))
+    }
+}
+
+#[cfg(feature = "forward")]
+impl From<content::response::forward::ForwardResponse> for Msg {
+    fn from(r: content::response::forward::ForwardResponse) -> Self {
+        Self::from(content::Content::from(content::response::Response::from(r)))
+    }
+}
+
+#[cfg(feature = "file-system")]
+impl From<content::response::file_system::FileSystemResponse> for Msg {
+    fn from(r: content::response::file_system::FileSystemResponse) -> Self {
+        Self::from(content::Content::from(content::response::Response::from(r)))
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[derive(Serialize, Deserialize, Debug)]
-    enum Content1 {
-        Value1(String),
-        Value2(u32),
-    }
-
-    #[typetag::serde]
-    impl types::Content for Content1 {
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
-    }
-
-    #[derive(Serialize, Deserialize, Debug)]
-    enum Content2 {
-        Value3(bool),
-    }
-
-    #[typetag::serde]
-    impl types::Content for Content2 {
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
-    }
-
     #[test]
-    fn is_content_should_yield_false_if_incorrect_concrete_type() {
-        let content = Content1::Value1(String::from("test"));
-        let msg = Msg::from_content(content);
+    fn from_should_produce_a_new_msg_with_that_content() {
+        let msg = Msg::from(content::request::standard::StandardRequest::HeartbeatRequest);
 
-        assert!(!msg.is_content::<Content2>());
-    }
-
-    #[test]
-    fn is_content_should_yield_true_if_correct_concrete_type() {
-        let content = Content1::Value1(String::from("test"));
-        let msg = Msg::from_content(content);
-
-        assert!(msg.is_content::<Content1>());
-    }
-
-    #[test]
-    fn to_content_should_yield_none_if_incorrect_concrete_type() {
-        let content = Content1::Value1(String::from("test"));
-        let msg = Msg::from_content(content);
-
-        assert!(msg.to_content::<Content2>().is_none());
-    }
-
-    #[test]
-    fn to_content_should_yield_some_content_if_correct_concrete_type() {
-        let content = Content1::Value1(String::from("test"));
-        let msg = Msg::from_content(content);
-
-        let cast_content = msg
-            .to_content::<Content1>()
-            .expect("Failed to cast content");
-        match cast_content {
-            Content1::Value1(x) => assert_eq!(x, "test", "Content value was wrong"),
-            x => panic!("Unexpected content: {:?}", x),
-        }
-    }
-
-    #[test]
-    fn from_content_should_produce_a_new_msg_with_that_content() {
-        // Try a content type
-        let content = Content1::Value1(String::from("test"));
-        let msg = Msg::from_content(content);
+        // Verify creation date was set to around now
         assert!(
             Utc::now()
                 .signed_duration_since(msg.creation_date)
@@ -122,28 +148,13 @@ mod tests {
             "Unexpected creation date: {:?}",
             msg.creation_date
         );
-        match msg
-            .to_content::<Content1>()
-            .expect("Unable to cast content")
-        {
-            Content1::Value1(x) => assert_eq!(x, "test", "Content value was incorrect"),
+
+        // Verify that our message was set to the right type
+        match msg.content {
+            content::Content::Request(content::request::Request::Standard(
+                content::request::standard::StandardRequest::HeartbeatRequest,
+            )) => (),
             x => panic!("Unexpected content: {:?}", x),
         }
-
-        // Now try different content type
-        let content = Content2::Value3(true);
-        let msg = Msg::from_content(content);
-        assert!(
-            Utc::now()
-                .signed_duration_since(msg.creation_date)
-                .num_milliseconds()
-                >= 0,
-            "Unexpected creation date: {:?}",
-            msg.creation_date
-        );
-        let Content2::Value3(x) = msg
-            .to_content::<Content2>()
-            .expect("Unable to cast content");
-        assert!(x, "Content value was incorrect");
     }
 }

@@ -1,6 +1,6 @@
 use over_there_crypto::{self as crypto, aes_gcm, Bicrypter};
 use over_there_msg::{
-    Msg, MsgTransmitter, StandardRequest as Request, StandardResponse as Response,
+    Content, Msg, MsgTransmitter, Request, Response, StandardRequest, StandardResponse,
     TcpMsgTransmitter, UdpMsgTransmitter,
 };
 use over_there_sign::{Authenticator, Sha256Authenticator};
@@ -53,23 +53,19 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Send message to server
-    let req = Request::HeartbeatRequest;
-    let msg = Msg::from_content(req);
+    let req = StandardRequest::HeartbeatRequest;
+    let msg = Msg::from(req);
     client.send(msg, server.socket.local_addr()?)?;
 
     // Keep checking until we receive a complete message from the client
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some((msg, addr)) = server.recv()? {
-            if msg.is_content::<Request>() {
-                match msg.to_content::<Request>().unwrap() {
-                    Request::HeartbeatRequest => {
-                        server.send(Msg::from_content(Response::HeartbeatResponse), addr)?
-                    }
-                    x => panic!("Unexpected request {:?}", x),
+            match msg.content {
+                Content::Request(Request::Standard(StandardRequest::HeartbeatRequest)) => {
+                    server.send(Msg::from(StandardResponse::HeartbeatResponse), addr)?
                 }
-            } else {
-                panic!("Unexpected msg {:?}", msg);
+                x => panic!("Unexpected content {:?}", x),
             }
             return Ok(true);
         }
@@ -80,13 +76,9 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some((msg, _addr)) = client.recv()? {
-            if msg.is_content::<Response>() {
-                match msg.to_content::<Response>().unwrap() {
-                    Response::HeartbeatResponse => (),
-                    x => panic!("Unexpected response {:?}", x),
-                }
-            } else {
-                panic!("Unexpected msg {:?}", msg);
+            match msg.content {
+                Content::Response(Response::Standard(StandardResponse::HeartbeatResponse)) => (),
+                x => panic!("Unexpected content {:?}", x),
             }
             return Ok(true);
         }
@@ -123,23 +115,19 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Send message to server
-    let req = Request::HeartbeatRequest;
-    let msg = Msg::from_content(req);
+    let req = StandardRequest::HeartbeatRequest;
+    let msg = Msg::from(req);
     client.send(msg)?;
 
     // Keep checking until we receive a complete message from the client
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = server.recv()? {
-            if msg.is_content::<Request>() {
-                match msg.to_content::<Request>().unwrap() {
-                    Request::HeartbeatRequest => {
-                        server.send(Msg::from_content(Response::HeartbeatResponse))?
-                    }
-                    x => panic!("Unexpected request {:?}", x),
+            match msg.content {
+                Content::Request(Request::Standard(StandardRequest::HeartbeatRequest)) => {
+                    server.send(Msg::from(StandardResponse::HeartbeatResponse))?
                 }
-            } else {
-                panic!("Unexpected msg {:?}", msg);
+                x => panic!("Unexpected content {:?}", x),
             }
             return Ok(true);
         }
@@ -150,13 +138,9 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
         if let Some(msg) = client.recv()? {
-            if msg.is_content::<Response>() {
-                match msg.to_content::<Response>().unwrap() {
-                    Response::HeartbeatResponse => (),
-                    x => panic!("Unexpected response {:?}", x),
-                }
-            } else {
-                panic!("Unexpected msg {:?}", msg);
+            match msg.content {
+                Content::Response(Response::Standard(StandardResponse::HeartbeatResponse)) => (),
+                x => panic!("Unexpected content {:?}", x),
             }
             return Ok(true);
         }

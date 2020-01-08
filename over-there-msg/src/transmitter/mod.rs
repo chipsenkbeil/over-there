@@ -59,7 +59,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::msg::types::request::StandardRequest as Request;
+    use crate::msg::content::request::standard::StandardRequest as Request;
     use over_there_crypto::NoopBicrypter;
     use over_there_sign::NoopAuthenticator;
 
@@ -81,7 +81,7 @@ mod tests {
     #[test]
     fn send_should_fail_if_unable_to_send_data() {
         let m = new_msg_transmitter(100);
-        let msg = Msg::from_content(Request::HeartbeatRequest);
+        let msg = Msg::from(Request::HeartbeatRequest);
 
         match m.send(msg, |_| {
             Err(std::io::Error::from(std::io::ErrorKind::Other))
@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn send_should_succeed_if_able_to_send_msg() {
         let m = new_msg_transmitter(100);
-        let msg = Msg::from_content(Request::HeartbeatRequest);
+        let msg = Msg::from(Request::HeartbeatRequest);
 
         assert_eq!(m.send(msg, |_| Ok(())).is_ok(), true);
     }
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn recv_should_succeed_if_able_to_receive_msg() {
         let m = new_msg_transmitter(200);
-        let msg = Msg::from_content(Request::HeartbeatRequest);
+        let msg = Msg::from(Request::HeartbeatRequest);
 
         // Construct a data representation for our message
         // NOTE: With addition of a 256-bit (32 byte) message signature,
