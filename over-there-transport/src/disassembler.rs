@@ -159,6 +159,7 @@ impl Disassembler {
         authenticator: &dyn Authenticator,
     ) -> Result<usize, rmp_serde::encode::Error> {
         // Calculate key to use for cache
+        // TODO: Convert authenticator into part of the key? Is this necessary?
         let key = format!("{}{:?}", desired_data_size, r#type);
 
         // Check if we have a cached value and, if so, use it
