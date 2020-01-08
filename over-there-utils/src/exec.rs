@@ -1,24 +1,15 @@
+use over_there_derive::Error;
 use std::time::{Duration, SystemTime, SystemTimeError};
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
     Exec(Box<dyn std::error::Error>),
     SystemTime(SystemTimeError),
     Timeout(Duration),
 }
 
-impl std::error::Error for Error {}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match &*self {
-            Error::Exec(e) => write!(f, "Execution Error: {:?}", e),
-            Error::SystemTime(e) => write!(f, "SystemTime Error: {:?}", e),
-            Error::Timeout(d) => write!(f, "Exceeded Duration: {:?}", d),
-        }
-    }
-}
-
+/// Invokes a function repeatedly until it yields true; if a timeout is reached,
+/// the function will return an error
 pub fn loop_timeout(
     timeout: Duration,
     mut f: impl FnMut() -> Result<bool, Box<dyn std::error::Error>>,
@@ -41,6 +32,8 @@ pub fn loop_timeout(
     }
 }
 
+/// Invokes a function repeatedly until it yields true; if a timeout is
+/// reached, the function will panic
 pub fn loop_timeout_panic(timeout: Duration, mut f: impl FnMut() -> bool) -> () {
     loop_timeout(timeout, || Ok(f())).unwrap()
 }
