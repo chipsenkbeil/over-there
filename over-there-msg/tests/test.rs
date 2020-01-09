@@ -1,8 +1,5 @@
 use over_there_crypto::{self as crypto, aes_gcm, Bicrypter};
-use over_there_msg::{
-    Content, Msg, MsgTransmitter, Request, Response, StandardRequest, StandardResponse,
-    TcpMsgTransmitter, UdpMsgTransmitter,
-};
+use over_there_msg::{Content, Msg, MsgTransmitter, TcpMsgTransmitter, UdpMsgTransmitter};
 use over_there_sign::{Authenticator, Sha256Authenticator};
 use over_there_transport::{tcp, udp, Transmitter};
 use over_there_utils::exec;
@@ -53,7 +50,7 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Send message to server
-    let req = StandardRequest::HeartbeatRequest;
+    let req = Content::HeartbeatRequest;
     let msg = Msg::from(req);
     client.send(msg, server.socket.local_addr()?)?;
 
@@ -62,8 +59,8 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
         // A full message has been received, so we process it to verify
         if let Some((msg, addr)) = server.recv()? {
             match msg.content {
-                Content::Request(Request::Standard(StandardRequest::HeartbeatRequest)) => {
-                    server.send(Msg::from(StandardResponse::HeartbeatResponse), addr)?
+                Content::HeartbeatRequest => {
+                    server.send(Msg::from(Content::HeartbeatResponse), addr)?
                 }
                 x => panic!("Unexpected content {:?}", x),
             }
@@ -77,7 +74,7 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
         // A full message has been received, so we process it to verify
         if let Some((msg, _addr)) = client.recv()? {
             match msg.content {
-                Content::Response(Response::Standard(StandardResponse::HeartbeatResponse)) => (),
+                Content::HeartbeatResponse => (),
                 x => panic!("Unexpected content {:?}", x),
             }
             return Ok(true);
@@ -115,7 +112,7 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Send message to server
-    let req = StandardRequest::HeartbeatRequest;
+    let req = Content::HeartbeatRequest;
     let msg = Msg::from(req);
     client.send(msg)?;
 
@@ -124,9 +121,7 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
         // A full message has been received, so we process it to verify
         if let Some(msg) = server.recv()? {
             match msg.content {
-                Content::Request(Request::Standard(StandardRequest::HeartbeatRequest)) => {
-                    server.send(Msg::from(StandardResponse::HeartbeatResponse))?
-                }
+                Content::HeartbeatRequest => server.send(Msg::from(Content::HeartbeatResponse))?,
                 x => panic!("Unexpected content {:?}", x),
             }
             return Ok(true);
@@ -139,7 +134,7 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
         // A full message has been received, so we process it to verify
         if let Some(msg) = client.recv()? {
             match msg.content {
-                Content::Response(Response::Standard(StandardResponse::HeartbeatResponse)) => (),
+                Content::HeartbeatResponse => (),
                 x => panic!("Unexpected content {:?}", x),
             }
             return Ok(true);

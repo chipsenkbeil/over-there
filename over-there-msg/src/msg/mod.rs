@@ -1,10 +1,11 @@
 pub mod content;
 
 use chrono::prelude::{DateTime, Utc};
+use content::Content;
 use rand::random;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Msg {
     /// ID associated with a request or response
     pub id: u32,
@@ -13,7 +14,7 @@ pub struct Msg {
     pub creation_date: DateTime<Utc>,
 
     /// Content within the message
-    pub content: content::Content,
+    pub content: Content,
 }
 
 impl Msg {
@@ -25,109 +26,14 @@ impl Msg {
         rmp_serde::from_read_ref(slice)
     }
 }
-//
-// GENERAL CONTENT CONVERSION
-//
 
-impl From<content::Content> for Msg {
-    fn from(content: content::Content) -> Self {
+impl From<Content> for Msg {
+    fn from(content: Content) -> Self {
         Self {
             id: random(),
             creation_date: Utc::now(),
             content,
         }
-    }
-}
-
-//
-// GENERAL REQUEST/RESPONSE CONVERSIONS
-//
-
-impl From<content::request::Request> for Msg {
-    fn from(request: content::request::Request) -> Self {
-        Self::from(content::Content::from(request))
-    }
-}
-
-impl From<content::response::Response> for Msg {
-    fn from(response: content::response::Response) -> Self {
-        Self::from(content::Content::from(response))
-    }
-}
-
-//
-// SPECIFIC REQUEST CONVERSIONS
-//
-
-impl From<content::request::standard::StandardRequest> for Msg {
-    fn from(r: content::request::standard::StandardRequest) -> Self {
-        Self::from(content::Content::from(content::request::Request::from(r)))
-    }
-}
-
-#[cfg(feature = "custom")]
-impl From<content::request::custom::CustomRequest> for Msg {
-    fn from(r: content::request::custom::CustomRequest) -> Self {
-        Self::from(content::Content::from(content::request::Request::from(r)))
-    }
-}
-
-#[cfg(feature = "exec")]
-impl From<content::request::exec::ExecRequest> for Msg {
-    fn from(r: content::request::exec::ExecRequest) -> Self {
-        Self::from(content::Content::from(content::request::Request::from(r)))
-    }
-}
-
-#[cfg(feature = "forward")]
-impl From<content::request::forward::ForwardRequest> for Msg {
-    fn from(r: content::request::forward::ForwardRequest) -> Self {
-        Self::from(content::Content::from(content::request::Request::from(r)))
-    }
-}
-
-#[cfg(feature = "file-system")]
-impl From<content::request::file_system::FileSystemRequest> for Msg {
-    fn from(r: content::request::file_system::FileSystemRequest) -> Self {
-        Self::from(content::Content::from(content::request::Request::from(r)))
-    }
-}
-
-//
-// SPECIFIC RESPONSE CONVERSIONS
-//
-
-impl From<content::response::standard::StandardResponse> for Msg {
-    fn from(r: content::response::standard::StandardResponse) -> Self {
-        Self::from(content::Content::from(content::response::Response::from(r)))
-    }
-}
-
-#[cfg(feature = "custom")]
-impl From<content::response::custom::CustomResponse> for Msg {
-    fn from(r: content::response::custom::CustomResponse) -> Self {
-        Self::from(content::Content::from(content::response::Response::from(r)))
-    }
-}
-
-#[cfg(feature = "exec")]
-impl From<content::response::exec::ExecResponse> for Msg {
-    fn from(r: content::response::exec::ExecResponse) -> Self {
-        Self::from(content::Content::from(content::response::Response::from(r)))
-    }
-}
-
-#[cfg(feature = "forward")]
-impl From<content::response::forward::ForwardResponse> for Msg {
-    fn from(r: content::response::forward::ForwardResponse) -> Self {
-        Self::from(content::Content::from(content::response::Response::from(r)))
-    }
-}
-
-#[cfg(feature = "file-system")]
-impl From<content::response::file_system::FileSystemResponse> for Msg {
-    fn from(r: content::response::file_system::FileSystemResponse) -> Self {
-        Self::from(content::Content::from(content::response::Response::from(r)))
     }
 }
 
@@ -137,7 +43,7 @@ mod tests {
 
     #[test]
     fn from_should_produce_a_new_msg_with_that_content() {
-        let msg = Msg::from(content::request::standard::StandardRequest::HeartbeatRequest);
+        let msg = Msg::from(Content::HeartbeatRequest);
 
         // Verify creation date was set to around now
         assert!(
@@ -151,9 +57,7 @@ mod tests {
 
         // Verify that our message was set to the right type
         match msg.content {
-            content::Content::Request(content::request::Request::Standard(
-                content::request::standard::StandardRequest::HeartbeatRequest,
-            )) => (),
+            Content::HeartbeatRequest => (),
             x => panic!("Unexpected content: {:?}", x),
         }
     }
