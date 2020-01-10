@@ -1,21 +1,29 @@
 use super::Digest;
 
-pub trait Authenticator {
+pub trait Authenticator: Signer + Verifier {}
+
+pub trait Signer {
     /// Signs some some message, producing a digest
     fn sign(&self, message: &[u8]) -> Digest;
+}
 
+pub trait Verifier {
     /// Verifies a signature (digest) for some message
     fn verify(&self, message: &[u8], signature: &Digest) -> bool;
 }
 
 pub struct NoopAuthenticator;
 
-impl Authenticator for NoopAuthenticator {
+impl Authenticator for NoopAuthenticator {}
+
+impl Signer for NoopAuthenticator {
     /// Signs some some message, producing a digest
     fn sign(&self, _message: &[u8]) -> Digest {
         Digest::default()
     }
+}
 
+impl Verifier for NoopAuthenticator {
     /// Verifies a signature (digest) for some message
     fn verify(&self, _message: &[u8], _signature: &Digest) -> bool {
         true
@@ -32,12 +40,16 @@ impl Sha256Authenticator {
     }
 }
 
-impl Authenticator for Sha256Authenticator {
+impl Authenticator for Sha256Authenticator {}
+
+impl Signer for Sha256Authenticator {
     /// Signs some some message, producing a digest
     fn sign(&self, message: &[u8]) -> Digest {
         From::from(super::sign_sha256(&self.key, message))
     }
+}
 
+impl Verifier for Sha256Authenticator {
     /// Verifies a signature (digest) for some message
     fn verify(&self, message: &[u8], signature: &Digest) -> bool {
         signature.verify(&self.key, message)
@@ -54,12 +66,16 @@ impl Sha512Authenticator {
     }
 }
 
-impl Authenticator for Sha512Authenticator {
+impl Authenticator for Sha512Authenticator {}
+
+impl Signer for Sha512Authenticator {
     /// Signs some some message, producing a digest
     fn sign(&self, message: &[u8]) -> Digest {
         From::from(super::sign_sha512(&self.key, message))
     }
+}
 
+impl Verifier for Sha512Authenticator {
     /// Verifies a signature (digest) for some message
     fn verify(&self, message: &[u8], signature: &Digest) -> bool {
         signature.verify(&self.key, message)

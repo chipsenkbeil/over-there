@@ -7,10 +7,10 @@ edition = "2018"
 
 [workspace]
 members = [
+    "over-there-auth",
     "over-there-crypto",
     "over-there-msg",
     "over-there-transport",
-    "over-there-sign",
     "over-there-utils",
     "over-there-derive",
 ]

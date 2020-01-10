@@ -403,6 +403,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "over-there-auth"
+version = "0.1.0"
+dependencies = [
+ "hmac 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "over-there-utils 0.1.0",
+ "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde-big-array 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "over-there-crypto"
 version = "0.1.0"
 dependencies = [
@@ -433,9 +444,9 @@ dependencies = [
  "chrono 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "over-there-auth 0.1.0",
  "over-there-crypto 0.1.0",
  "over-there-derive 0.1.0",
- "over-there-sign 0.1.0",
  "over-there-transport 0.1.0",
  "over-there-utils 0.1.0",
  "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -448,24 +459,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "over-there-sign"
-version = "0.1.0"
-dependencies = [
- "hmac 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "over-there-utils 0.1.0",
- "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde-big-array 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "over-there-transport"
 version = "0.1.0"
 dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "over-there-auth 0.1.0",
  "over-there-crypto 0.1.0",
  "over-there-derive 0.1.0",
- "over-there-sign 0.1.0",
  "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rmp-serde 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",

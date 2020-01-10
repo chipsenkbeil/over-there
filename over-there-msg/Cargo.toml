@@ -28,11 +28,11 @@ strum = "0.17.1"
 strum_macros = "0.17.1"
 log = "0.4.8"
 rand = "0.7.2"
+over-there-auth = { path = "../over-there-auth" }
 over-there-crypto = { path = "../over-there-crypto" }
-over-there-sign = { path = "../over-there-sign" }
+over-there-derive = { path = "../over-there-derive" }
 over-there-transport = { path = "../over-there-transport" }
 over-there-utils = { path = "../over-there-utils" }
-over-there-derive = { path = "../over-there-derive" }
 
 [dev-dependencies]
 env_logger = "0.7.1"

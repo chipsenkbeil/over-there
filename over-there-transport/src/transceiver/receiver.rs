@@ -1,44 +1,32 @@
 use crate::{
     assembler::{self, Assembler},
-    disassembler::{self, DisassembleInfo, Disassembler},
     packet::Packet,
 };
-use over_there_crypto::{AssociatedData, Bicrypter, CryptError, Nonce};
+use over_there_auth::Verifier;
+use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
 use over_there_derive::Error;
-use over_there_sign::Authenticator;
-use rand::random;
 use std::cell::RefCell;
 use std::io::Error as IoError;
 use std::time::Duration;
 use ttl_cache::TtlCache;
 
 #[derive(Debug, Error)]
-pub enum TransmitterError {
-    EncodePacket(rmp_serde::encode::Error),
+pub enum ReceiverError {
     DecodePacket(rmp_serde::decode::Error),
     UnableToVerifySignature,
     InvalidPacketSignature,
     AssembleData(assembler::AssemblerError),
-    DisassembleData(disassembler::DisassemblerError),
-    EncryptData(CryptError),
     DecryptData(CryptError),
-    SendBytes(IoError),
     RecvBytes(IoError),
 }
 
-pub struct Transmitter<A, B>
+pub struct Receiver<'a, V, D>
 where
-    A: Authenticator,
-    B: Bicrypter,
+    V: Verifier,
+    D: Decrypter,
 {
-    /// Maximum size allowed for a packet
-    transmission_size: usize,
-
     /// Cache of packets belonging to a group that has not been completed
     cache: RefCell<TtlCache<u32, Assembler>>,
-
-    /// Disassembler used to break up data into packets
-    disassembler: RefCell<Disassembler>,
 
     /// Maximum time for a cache entry to exist untouched before expiring
     cache_duration: Duration,
@@ -47,85 +35,43 @@ where
     /// NOTE: Cannot use static array due to type constraints
     buffer: RefCell<Box<[u8]>>,
 
-    /// Performs authentication on data
-    authenticator: A,
+    /// Performs verification on data
+    verifier: &'a V,
 
     /// Performs encryption/decryption on data
-    bicrypter: B,
+    decrypter: &'a D,
 }
 
-impl<A, B> Transmitter<A, B>
+impl<'a, V, D> Receiver<'a, V, D>
 where
-    A: Authenticator,
-    B: Bicrypter,
+    V: Verifier,
+    D: Decrypter,
 {
     /// Begins building a transmitter, enabling us to specify options
     pub fn new(
         transmission_size: usize,
         cache_capacity: usize,
         cache_duration: Duration,
-        authenticator: A,
-        bicrypter: B,
+        verifier: &'a V,
+        decrypter: &'a D,
     ) -> Self {
         let cache = RefCell::new(TtlCache::new(cache_capacity));
         let buffer = RefCell::new(vec![0; transmission_size as usize].into_boxed_slice());
-        Transmitter {
-            transmission_size,
+        Self {
             cache_duration,
             cache,
             buffer,
-            authenticator,
-            bicrypter,
-            disassembler: RefCell::new(Disassembler::new()),
+            verifier,
+            decrypter,
         }
-    }
-
-    pub fn send(
-        &self,
-        data: &[u8],
-        mut send_handler: impl FnMut(&[u8]) -> Result<(), IoError>,
-    ) -> Result<(), TransmitterError> {
-        // Encrypt entire dataset before splitting as it will grow in size
-        // and it's difficult to predict if we can stay under our transmission
-        // limit if encrypting at the individual packet level
-        let associated_data = self.bicrypter.new_encrypt_associated_data();
-        let nonce = associated_data.nonce().cloned();
-        let data = self
-            .bicrypter
-            .encrypt(data, &associated_data)
-            .map_err(TransmitterError::EncryptData)?;
-
-        // Produce a unique id used to group our packets
-        let id: u32 = random();
-
-        // Split data into multiple packets
-        let packets = self
-            .disassembler
-            .borrow_mut()
-            .make_packets_from_data(DisassembleInfo {
-                id,
-                nonce,
-                data: &data,
-                desired_chunk_size: self.transmission_size,
-                authenticator: &self.authenticator,
-            })
-            .map_err(TransmitterError::DisassembleData)?;
-
-        // For each packet, serialize and send to specific address
-        for packet in packets.iter() {
-            let packet_data = packet.to_vec().map_err(TransmitterError::EncodePacket)?;
-            send_handler(&packet_data).map_err(TransmitterError::SendBytes)?;
-        }
-
-        Ok(())
     }
 
     pub fn recv(
         &self,
         mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, IoError>,
-    ) -> Result<Option<Vec<u8>>, TransmitterError> {
+    ) -> Result<Option<Vec<u8>>, ReceiverError> {
         let mut buf = self.buffer.borrow_mut();
-        let size = recv_handler(&mut buf).map_err(TransmitterError::RecvBytes)?;
+        let size = recv_handler(&mut buf).map_err(ReceiverError::RecvBytes)?;
 
         // If we don't receive any bytes, we treat it as there are no bytes
         // available, which is not an error but also does not warrant trying
@@ -135,12 +81,12 @@ where
         }
 
         // Process the received packet
-        let p = Packet::from_slice(&buf[..size]).map_err(TransmitterError::DecodePacket)?;
+        let p = Packet::from_slice(&buf[..size]).map_err(ReceiverError::DecodePacket)?;
 
         // Verify the packet's signature, skipping any form of assembly if
         // it is not a legit packet
-        if !Self::verify_packet(&self.authenticator, &p)? {
-            return Err(TransmitterError::InvalidPacketSignature);
+        if !Self::verify_packet(&self.verifier, &p)? {
+            return Err(ReceiverError::InvalidPacketSignature);
         }
 
         let id = p.id();
@@ -152,7 +98,7 @@ where
             Some(assembler) => {
                 let do_assemble = Self::add_packet_and_verify(assembler, p)?;
                 if do_assemble {
-                    let data = Self::assemble_and_decrypt(assembler, &self.bicrypter, nonce)
+                    let data = Self::assemble_and_decrypt(assembler, &self.decrypter, nonce)
                         .map(|d| Some(d));
 
                     // We also want to drop the assembler at this point
@@ -167,12 +113,12 @@ where
         }
     }
 
-    fn verify_packet(authenticator: &A, packet: &Packet) -> Result<bool, TransmitterError> {
+    fn verify_packet(verifier: &V, packet: &Packet) -> Result<bool, ReceiverError> {
         let signature = packet.signature();
         let content = packet
             .content_for_signature()
-            .map_err(|_| TransmitterError::UnableToVerifySignature)?;
-        Ok(authenticator.verify(&content, signature))
+            .map_err(|_| ReceiverError::UnableToVerifySignature)?;
+        Ok(verifier.verify(&content, signature))
     }
 
     /// Retrieves an assembler using its id, or creates a new assembler;
@@ -200,11 +146,11 @@ where
     fn add_packet_and_verify(
         assembler: &mut Assembler,
         packet: Packet,
-    ) -> Result<bool, TransmitterError> {
+    ) -> Result<bool, ReceiverError> {
         // Bubble up the error; we don't care about the success
         assembler
             .add_packet(packet)
-            .map_err(TransmitterError::AssembleData)?;
+            .map_err(ReceiverError::AssembleData)?;
 
         Ok(assembler.verify())
     }
@@ -213,18 +159,16 @@ where
     /// using the internal bicrypter
     fn assemble_and_decrypt(
         assembler: &Assembler,
-        bicrypter: &B,
+        decrypter: &D,
         nonce: Option<Nonce>,
-    ) -> Result<Vec<u8>, TransmitterError> {
+    ) -> Result<Vec<u8>, ReceiverError> {
         // Assemble our data, which could be encrypted
-        let data = assembler
-            .assemble()
-            .map_err(TransmitterError::AssembleData)?;
+        let data = assembler.assemble().map_err(ReceiverError::AssembleData)?;
 
         // Decrypt our collective data
-        let data = bicrypter
+        let data = decrypter
             .decrypt(&data, &AssociatedData::from(nonce))
-            .map_err(TransmitterError::DecryptData)?;
+            .map_err(ReceiverError::DecryptData)?;
 
         Ok(data)
     }
@@ -233,58 +177,26 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::disassembler::{DisassembleInfo, Disassembler};
     use crate::packet::PacketType;
+    use over_there_auth::NoopAuthenticator;
     use over_there_crypto::NoopBicrypter;
-    use over_there_sign::NoopAuthenticator;
     use std::io::ErrorKind as IoErrorKind;
 
     const MAX_CACHE_CAPACITY: usize = 1500;
     const MAX_CACHE_DURATION_IN_SECS: u64 = 5 * 60;
 
     /// Uses no encryption or signing
-    fn transmitter_with_transmission_size(
+    fn transmitter_with_transmission_size<'a>(
         transmission_size: usize,
-    ) -> Transmitter<NoopAuthenticator, NoopBicrypter> {
-        Transmitter::new(
+    ) -> Receiver<'a, NoopAuthenticator, NoopBicrypter> {
+        Receiver::new(
             transmission_size,
             MAX_CACHE_CAPACITY,
             Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
-            NoopAuthenticator,
-            NoopBicrypter,
+            &NoopAuthenticator,
+            &NoopBicrypter,
         )
-    }
-
-    #[test]
-    fn send_should_fail_if_unable_to_convert_bytes_to_packets() {
-        // Produce a transmitter with a "bytes per packet" that is too
-        // low, causing the process to fail
-        let m = transmitter_with_transmission_size(0);
-        let data = vec![1, 2, 3];
-
-        match m.send(&data, |_| Ok(())) {
-            Err(TransmitterError::DisassembleData(_)) => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[test]
-    fn send_should_fail_if_fails_to_send_bytes() {
-        let m = transmitter_with_transmission_size(100);
-        let data = vec![1, 2, 3];
-
-        match m.send(&data, |_| Err(IoError::from(IoErrorKind::Other))) {
-            Err(TransmitterError::SendBytes(_)) => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[test]
-    fn send_should_return_okay_if_successfully_sent_data() {
-        let m = transmitter_with_transmission_size(100);
-        let data = vec![1, 2, 3];
-
-        let result = m.send(&data, |_| Ok(()));
-        assert_eq!(result.is_ok(), true);
     }
 
     #[test]
@@ -292,7 +204,7 @@ mod tests {
         let m = transmitter_with_transmission_size(100);
 
         match m.recv(|_| Err(IoError::from(IoErrorKind::Other))) {
-            Err(TransmitterError::RecvBytes(_)) => (),
+            Err(ReceiverError::RecvBytes(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -309,7 +221,7 @@ mod tests {
             buf[2] = 0;
             Ok(buf.len())
         }) {
-            Err(TransmitterError::DecodePacket(_)) => (),
+            Err(ReceiverError::DecodePacket(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -320,14 +232,14 @@ mod tests {
         let id = 0;
         let nonce = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        let authenticator = NoopAuthenticator;
+        let signer = NoopAuthenticator;
 
         // Calculate the bigger of the two overhead sizes (final packet)
         // and ensure that we can fit data in it
         let overhead_size = Disassembler::estimate_packet_overhead_size(
             /* data size */ 1,
             PacketType::Final { nonce },
-            &authenticator,
+            &signer,
         )
         .unwrap();
 
@@ -340,7 +252,7 @@ mod tests {
                 nonce,
                 data: &data,
                 desired_chunk_size: overhead_size + 1,
-                authenticator: &authenticator,
+                signer: &signer,
             })
             .unwrap()[0];
         let data = p.to_vec().unwrap();
@@ -362,7 +274,7 @@ mod tests {
             buf[..l].clone_from_slice(&data);
             Ok(l)
         }) {
-            Err(TransmitterError::AssembleData(_)) => (),
+            Err(ReceiverError::AssembleData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -381,19 +293,19 @@ mod tests {
     fn recv_should_return_none_if_the_assembler_expired() {
         // Make a transmitter that has a really short duration
         let wait_duration = Duration::from_nanos(1);
-        let m = Transmitter::new(100, 100, wait_duration, NoopAuthenticator, NoopBicrypter);
+        let m = Receiver::new(100, 100, wait_duration, &NoopAuthenticator, &NoopBicrypter);
 
         let id = 0;
         let nonce = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        let authenticator = NoopAuthenticator;
+        let signer = NoopAuthenticator;
 
         // Calculate the bigger of the two overhead sizes (final packet)
         // and ensure that we can fit data in it
         let overhead_size = Disassembler::estimate_packet_overhead_size(
             /* data size */ 1,
             PacketType::Final { nonce },
-            &authenticator,
+            &signer,
         )
         .unwrap();
 
@@ -405,7 +317,7 @@ mod tests {
                 nonce,
                 data: &data,
                 desired_chunk_size: overhead_size + 1,
-                authenticator: &NoopAuthenticator,
+                signer: &NoopAuthenticator,
             })
             .unwrap();
 
@@ -441,14 +353,14 @@ mod tests {
         let id = 0;
         let nonce = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-        let authenticator = NoopAuthenticator;
+        let signer = NoopAuthenticator;
 
         // Calculate the bigger of the two overhead sizes (final packet)
         // and ensure that we can fit data in it
         let overhead_size = Disassembler::estimate_packet_overhead_size(
             /* data size */ 1,
             PacketType::Final { nonce },
-            &authenticator,
+            &signer,
         )
         .unwrap();
 
@@ -460,7 +372,7 @@ mod tests {
                 nonce,
                 data: &data,
                 desired_chunk_size: overhead_size + 1,
-                authenticator: &NoopAuthenticator,
+                signer: &NoopAuthenticator,
             })
             .unwrap()[0];
         let data = p.to_vec().unwrap();
@@ -486,7 +398,7 @@ mod tests {
                 nonce: None,
                 data: &data,
                 desired_chunk_size: 100,
-                authenticator: &NoopAuthenticator,
+                signer: &NoopAuthenticator,
             })
             .unwrap()[0];
         let pdata = p.to_vec().unwrap();
@@ -505,20 +417,10 @@ mod tests {
     #[cfg(test)]
     mod crypt {
         use super::*;
-        use over_there_crypto::{CryptError, Decrypter, Encrypter};
+        use over_there_crypto::{CryptError, Decrypter};
 
-        struct BadBicrypter;
-        impl Bicrypter for BadBicrypter {}
-        impl Encrypter for BadBicrypter {
-            fn encrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
-                Err(CryptError::EncryptFailed(From::from("Some error")))
-            }
-
-            fn new_encrypt_associated_data(&self) -> AssociatedData {
-                AssociatedData::None
-            }
-        }
-        impl Decrypter for BadBicrypter {
+        struct BadDecrypter;
+        impl Decrypter for BadDecrypter {
             fn decrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
                 Err(CryptError::DecryptFailed(From::from("Some error")))
             }
@@ -526,25 +428,25 @@ mod tests {
 
         #[test]
         fn recv_should_fail_if_unable_to_decrypt_data() {
-            let m = Transmitter::new(
+            let m = Receiver::new(
                 100,
                 MAX_CACHE_CAPACITY,
                 Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
-                NoopAuthenticator,
-                BadBicrypter,
+                &NoopAuthenticator,
+                &BadDecrypter,
             );
 
             let id = 0;
             let nonce = None;
             let data = vec![1, 2, 3];
-            let authenticator = NoopAuthenticator;
+            let signer = NoopAuthenticator;
 
             // Calculate the bigger of the two overhead sizes (final packet)
             // and ensure that we can fit data in it
             let overhead_size = Disassembler::estimate_packet_overhead_size(
                 /* data size */ 1,
                 PacketType::Final { nonce },
-                &authenticator,
+                &signer,
             )
             .unwrap();
 
@@ -555,7 +457,7 @@ mod tests {
                     nonce,
                     data: &data.clone(),
                     desired_chunk_size: overhead_size + 1,
-                    authenticator: &NoopAuthenticator,
+                    signer: &NoopAuthenticator,
                 })
                 .unwrap();
 
@@ -582,24 +484,7 @@ mod tests {
                 buf[..l].clone_from_slice(&pdata);
                 Ok(l)
             }) {
-                Err(super::TransmitterError::DecryptData(_)) => (),
-                x => panic!("Unexpected result: {:?}", x),
-            }
-        }
-
-        #[test]
-        fn send_should_fail_if_unable_to_encrypt_data() {
-            let m = Transmitter::new(
-                100,
-                MAX_CACHE_CAPACITY,
-                Duration::from_secs(MAX_CACHE_DURATION_IN_SECS),
-                NoopAuthenticator,
-                BadBicrypter,
-            );
-            let data = vec![1, 2, 3];
-
-            match m.send(&data, |_| Ok(())) {
-                Err(super::TransmitterError::EncryptData(_)) => (),
+                Err(super::ReceiverError::DecryptData(_)) => (),
                 x => panic!("Unexpected result: {:?}", x),
             }
         }

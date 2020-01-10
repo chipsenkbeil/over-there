@@ -1,10 +1,10 @@
 use crate::packet::{Metadata, Packet, PacketType};
+use over_there_auth::Signer;
 use over_there_crypto::Nonce;
 use over_there_derive::Error;
-use over_there_sign::Authenticator;
 use std::collections::HashMap;
 
-pub struct DisassembleInfo<'data, 'a, A: Authenticator> {
+pub struct DisassembleInfo<'d, 's, S: Signer> {
     /// ID used to group created packets together
     pub id: u32,
 
@@ -15,11 +15,11 @@ pub struct DisassembleInfo<'data, 'a, A: Authenticator> {
     pub desired_chunk_size: usize,
 
     /// Key used to generate signatures
-    pub authenticator: &'a A,
+    pub signer: &'s S,
 
     /// The data to build packets around; encryption should have already happened
     /// by this point
-    pub data: &'data [u8],
+    pub data: &'d [u8],
 }
 
 #[derive(Debug, Error)]
@@ -40,32 +40,28 @@ impl Disassembler {
         }
     }
 
-    pub fn make_packets_from_data<A: Authenticator>(
+    pub fn make_packets_from_data<S: Signer>(
         &mut self,
-        info: DisassembleInfo<A>,
+        info: DisassembleInfo<S>,
     ) -> Result<Vec<Packet>, DisassemblerError> {
         let DisassembleInfo {
             id,
             nonce,
             desired_chunk_size,
-            authenticator,
+            signer,
             data,
         } = info;
 
         // Determine overhead needed to produce packet with desired data size
         let non_final_overhead_size = self
-            .cached_estimate_packet_overhead_size(
-                desired_chunk_size,
-                PacketType::NotFinal,
-                authenticator,
-            )
+            .cached_estimate_packet_overhead_size(desired_chunk_size, PacketType::NotFinal, signer)
             .map_err(|_| DisassemblerError::FailedToEstimatePacketSize)?;
 
         let final_overhead_size = self
             .cached_estimate_packet_overhead_size(
                 desired_chunk_size,
                 PacketType::Final { nonce },
-                authenticator,
+                signer,
             )
             .map_err(|_| DisassemblerError::FailedToEstimatePacketSize)?;
 
@@ -123,7 +119,7 @@ impl Disassembler {
                     PacketType::NotFinal
                 },
                 chunk,
-                authenticator,
+                signer,
             )
             .map_err(|_| DisassemblerError::FailedToSignPacket)?;
 
@@ -143,11 +139,11 @@ impl Disassembler {
         index: u32,
         r#type: PacketType,
         data: &[u8],
-        authenticator: &dyn Authenticator,
+        signer: &dyn Signer,
     ) -> Result<Packet, rmp_serde::encode::Error> {
         let metadata = Metadata { id, index, r#type };
         metadata.to_vec().map(|md| {
-            let sig = authenticator.sign(&[md, data.to_vec()].concat());
+            let sig = signer.sign(&[md, data.to_vec()].concat());
             Packet::new(metadata, sig, data.to_vec())
         })
     }
@@ -156,7 +152,7 @@ impl Disassembler {
         &mut self,
         desired_data_size: usize,
         r#type: PacketType,
-        authenticator: &dyn Authenticator,
+        signer: &dyn Signer,
     ) -> Result<usize, rmp_serde::encode::Error> {
         // Calculate key to use for cache
         // TODO: Convert authenticator into part of the key? Is this necessary?
@@ -168,8 +164,7 @@ impl Disassembler {
         }
 
         // Otherwise, estimate the packet size, cache it, and return it
-        let overhead_size =
-            Self::estimate_packet_overhead_size(desired_data_size, r#type, authenticator)?;
+        let overhead_size = Self::estimate_packet_overhead_size(desired_data_size, r#type, signer)?;
         self.packet_overhead_size_cache.insert(key, overhead_size);
         Ok(overhead_size)
     }
@@ -177,13 +172,13 @@ impl Disassembler {
     pub(crate) fn estimate_packet_overhead_size(
         desired_data_size: usize,
         r#type: PacketType,
-        authenticator: &dyn Authenticator,
+        signer: &dyn Signer,
     ) -> Result<usize, rmp_serde::encode::Error> {
         println!(
             "Request packet size for desired data size of {} and type {:?}",
             desired_data_size, r#type
         );
-        let packet_size = Self::estimate_packet_size(desired_data_size, r#type, authenticator)?;
+        let packet_size = Self::estimate_packet_size(desired_data_size, r#type, signer)?;
         println!("It is {}", packet_size);
 
         // Figure out how much overhead is needed to fit the data into the packet
@@ -200,7 +195,7 @@ impl Disassembler {
     fn estimate_packet_size(
         desired_data_size: usize,
         r#type: PacketType,
-        authenticator: &dyn Authenticator,
+        signer: &dyn Signer,
     ) -> Result<usize, rmp_serde::encode::Error> {
         // Produce random fake data to avoid any byte sequencing
         let fake_data: Vec<u8> = (0..desired_data_size)
@@ -218,7 +213,7 @@ impl Disassembler {
             u32::max_value(),
             r#type,
             &fake_data,
-            authenticator,
+            signer,
         )?
         .to_vec()
         .map(|v| v.len())
@@ -228,8 +223,8 @@ impl Disassembler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use over_there_auth::NoopAuthenticator;
     use over_there_crypto::nonce;
-    use over_there_sign::NoopAuthenticator;
 
     #[test]
     fn fails_if_desired_chunk_size_is_too_low() {
@@ -241,7 +236,7 @@ mod tests {
                 nonce: None,
                 data: &vec![1, 2, 3],
                 desired_chunk_size: chunk_size,
-                authenticator: &NoopAuthenticator,
+                signer: &NoopAuthenticator,
             })
             .unwrap_err();
 
@@ -266,7 +261,7 @@ mod tests {
                 nonce,
                 data: &data,
                 desired_chunk_size: chunk_size,
-                authenticator: &NoopAuthenticator,
+                signer: &NoopAuthenticator,
             })
             .unwrap();
         assert_eq!(packets.len(), 1, "More than one packet produced");
@@ -304,7 +299,7 @@ mod tests {
                 nonce,
                 data: &data,
                 desired_chunk_size: chunk_size,
-                authenticator: &NoopAuthenticator,
+                signer: &NoopAuthenticator,
             })
             .unwrap();
         assert_eq!(packets.len(), 2, "Unexpected number of packets");
@@ -348,7 +343,7 @@ mod tests {
                 nonce,
                 data: &data,
                 desired_chunk_size: chunk_size,
-                authenticator: &NoopAuthenticator,
+                signer: &NoopAuthenticator,
             })
             .unwrap();
 

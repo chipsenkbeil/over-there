@@ -1,5 +1,5 @@
+use over_there_auth::Digest;
 use over_there_crypto::Nonce;
-use over_there_sign::Digest;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]

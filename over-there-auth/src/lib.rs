@@ -1,5 +1,7 @@
 mod auth;
-pub use auth::{Authenticator, NoopAuthenticator, Sha256Authenticator, Sha512Authenticator};
+pub use auth::{
+    Authenticator, NoopAuthenticator, Sha256Authenticator, Sha512Authenticator, Signer, Verifier,
+};
 
 mod digest;
 pub use digest::{Digest, Digest256Bits, Digest512Bits};
