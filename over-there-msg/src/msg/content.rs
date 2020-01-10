@@ -1,11 +1,11 @@
 use super::Msg;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use strum_macros::EnumDiscriminants;
+use strum_macros::{Display, EnumDiscriminants, EnumString};
 
 #[derive(EnumDiscriminants, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[strum_discriminants(name(ContentType))]
-#[strum_discriminants(derive(Hash))]
+#[strum_discriminants(derive(Display, EnumString, Hash))]
 pub enum Content {
     // ------------------------------------------------------------------------
     // Heartbeats are used to ensure remote instances are alive

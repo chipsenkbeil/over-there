@@ -6,12 +6,22 @@ use rand::random;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct Msg {
+pub struct Header {
     /// ID associated with a request or response
     pub id: u32,
 
     /// The time at which the message was created
     pub creation_date: DateTime<Utc>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Msg {
+    /// Information associated with this message
+    pub header: Header,
+
+    /// Information associated with the parent of this message
+    /// to provide origin context
+    pub parent_header: Option<Header>,
 
     /// Content within the message
     pub content: Content,
@@ -27,13 +37,27 @@ impl Msg {
     }
 }
 
+/// Produce a new message from the content with no parent
 impl From<Content> for Msg {
     fn from(content: Content) -> Self {
         Self {
-            id: random(),
-            creation_date: Utc::now(),
+            header: Header {
+                id: random(),
+                creation_date: Utc::now(),
+            },
+            parent_header: None,
             content,
         }
+    }
+}
+
+/// Produce a new message from the content with existing message
+/// being the parent
+impl From<(Content, Msg)> for Msg {
+    fn from((content, msg): (Content, Msg)) -> Self {
+        let mut new_msg = Msg::from(content);
+        new_msg.parent_header = Some(msg.header);
+        new_msg
     }
 }
 
@@ -48,11 +72,11 @@ mod tests {
         // Verify creation date was set to around now
         assert!(
             Utc::now()
-                .signed_duration_since(msg.creation_date)
+                .signed_duration_since(msg.header.creation_date)
                 .num_milliseconds()
                 >= 0,
             "Unexpected creation date: {:?}",
-            msg.creation_date
+            msg.header.creation_date
         );
 
         // Verify that our message was set to the right type
