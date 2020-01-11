@@ -1,11 +1,11 @@
 use super::AssociatedData;
 use crate::{Bicrypter, CryptError, Decrypter, Encrypter};
 use lru::LruCache;
-use std::cell::RefCell;
+use std::sync::RwLock;
 
 pub struct NonceCacheBicrypter<T: Bicrypter> {
     bicrypter: T,
-    cache: Option<RefCell<LruCache<Vec<u8>, ()>>>,
+    cache: Option<RwLock<LruCache<Vec<u8>, ()>>>,
 }
 
 impl<T: Bicrypter> NonceCacheBicrypter<T> {
@@ -13,7 +13,7 @@ impl<T: Bicrypter> NonceCacheBicrypter<T> {
         // LruCache does not handle zero capacity itself, so we make it an
         // option where we won't do anything if it's zero
         let cache = if nonce_cache_size > 0 {
-            Some(RefCell::new(LruCache::new(nonce_cache_size)))
+            Some(RwLock::new(LruCache::new(nonce_cache_size)))
         } else {
             None
         };
@@ -28,12 +28,12 @@ impl<T: Bicrypter> NonceCacheBicrypter<T> {
     fn register_nonce<'a>(&self, nonce: &'a [u8]) -> Result<&'a [u8], CryptError> {
         if let Some(cache) = &self.cache {
             let nonce_vec = nonce.to_vec();
-            if cache.borrow().contains(&nonce_vec) {
+            if cache.read().unwrap().contains(&nonce_vec) {
                 return Err(CryptError::NonceAlreadyUsed { nonce: nonce_vec });
             }
 
             // Mark that we have used the nonce
-            cache.borrow_mut().put(nonce_vec, ());
+            cache.write().unwrap().put(nonce_vec, ());
         }
 
         Ok(nonce)

@@ -3,8 +3,8 @@ use over_there_auth::Signer;
 use over_there_crypto::{CryptError, Encrypter};
 use over_there_derive::Error;
 use rand::random;
-use std::cell::RefCell;
 use std::io::Error as IoError;
+use std::sync::RwLock;
 
 #[derive(Debug, Error)]
 pub enum TransmitterError {
@@ -14,6 +14,7 @@ pub enum TransmitterError {
     SendBytes(IoError),
 }
 
+/// Not thread-safe; should only be used in one thread
 pub struct Transmitter<'a, S, E>
 where
     S: Signer,
@@ -23,7 +24,7 @@ where
     transmission_size: usize,
 
     /// Disassembler used to break up data into packets
-    disassembler: RefCell<Disassembler>,
+    disassembler: RwLock<Disassembler>,
 
     /// Performs authentication on data
     signer: &'a S,
@@ -43,7 +44,7 @@ where
             transmission_size,
             signer,
             encrypter,
-            disassembler: RefCell::new(Disassembler::new()),
+            disassembler: RwLock::new(Disassembler::new()),
         }
     }
 
@@ -66,17 +67,21 @@ where
         let id: u32 = random();
 
         // Split data into multiple packets
-        let packets = self
-            .disassembler
-            .borrow_mut()
-            .make_packets_from_data(DisassembleInfo {
+        // NOTE: Must protect mutable access to disassembler, which caches
+        //       computing the estimated packet sizes; if there is a way
+        //       that we could do this faster (not need a cache), we could
+        //       get rid of the locking and only need a reference
+        let packets = {
+            let mut d = self.disassembler.write().unwrap();
+            d.make_packets_from_data(DisassembleInfo {
                 id,
                 nonce,
                 data: &data,
                 desired_chunk_size: self.transmission_size,
                 signer: self.signer,
             })
-            .map_err(TransmitterError::DisassembleData)?;
+            .map_err(TransmitterError::DisassembleData)?
+        };
 
         // For each packet, serialize and send to specific address
         for packet in packets.iter() {

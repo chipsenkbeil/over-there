@@ -5,8 +5,8 @@ use crate::{
 use over_there_auth::Verifier;
 use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
 use over_there_derive::Error;
-use std::cell::RefCell;
 use std::io::Error as IoError;
+use std::sync::RwLock;
 use std::time::Duration;
 use ttl_cache::TtlCache;
 
@@ -20,20 +20,21 @@ pub enum ReceiverError {
     RecvBytes(IoError),
 }
 
+/// Not thread-safe; should only be used in one thread
 pub struct Receiver<'a, V, D>
 where
     V: Verifier,
     D: Decrypter,
 {
     /// Cache of packets belonging to a group that has not been completed
-    cache: RefCell<TtlCache<u32, Assembler>>,
+    cache: RwLock<TtlCache<u32, Assembler>>,
 
     /// Maximum time for a cache entry to exist untouched before expiring
     cache_duration: Duration,
 
     /// Buffer to contain bytes for temporary storage
     /// NOTE: Cannot use static array due to type constraints
-    buffer: RefCell<Box<[u8]>>,
+    buffer: RwLock<Box<[u8]>>,
 
     /// Performs verification on data
     verifier: &'a V,
@@ -55,8 +56,8 @@ where
         verifier: &'a V,
         decrypter: &'a D,
     ) -> Self {
-        let cache = RefCell::new(TtlCache::new(cache_capacity));
-        let buffer = RefCell::new(vec![0; transmission_size as usize].into_boxed_slice());
+        let cache = RwLock::new(TtlCache::new(cache_capacity));
+        let buffer = RwLock::new(vec![0; transmission_size as usize].into_boxed_slice());
         Self {
             cache_duration,
             cache,
@@ -70,8 +71,11 @@ where
         &self,
         mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, IoError>,
     ) -> Result<Option<Vec<u8>>, ReceiverError> {
-        let mut buf = self.buffer.borrow_mut();
-        let size = recv_handler(&mut buf).map_err(ReceiverError::RecvBytes)?;
+        // Perform reading into our buffer, safely locking for a write operation
+        let size = {
+            let mut buf = self.buffer.write().unwrap();
+            recv_handler(&mut buf).map_err(ReceiverError::RecvBytes)?
+        };
 
         // If we don't receive any bytes, we treat it as there are no bytes
         // available, which is not an error but also does not warrant trying
@@ -80,8 +84,11 @@ where
             return Ok(None);
         }
 
-        // Process the received packet
-        let p = Packet::from_slice(&buf[..size]).map_err(ReceiverError::DecodePacket)?;
+        // Process the received packet, safely reading from our buffer
+        let p = {
+            let buf = self.buffer.read().unwrap();
+            Packet::from_slice(&buf[..size]).map_err(ReceiverError::DecodePacket)?
+        };
 
         // Verify the packet's signature, skipping any form of assembly if
         // it is not a legit packet
@@ -93,7 +100,7 @@ where
         let nonce = p.nonce().cloned();
 
         // Retrieve or create assembler for packet group
-        let mut cache = self.cache.borrow_mut();
+        let mut cache = self.cache.write().unwrap();
         match Self::get_or_new_assembler(&mut cache, id, self.cache_duration) {
             Some(assembler) => {
                 let do_assemble = Self::add_packet_and_verify(assembler, p)?;
