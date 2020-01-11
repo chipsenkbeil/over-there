@@ -89,7 +89,7 @@ pub enum KeySize {
 }
 
 impl KeySize {
-    pub fn size_in_bytes(&self) -> usize {
+    pub fn size_in_bytes(self) -> usize {
         match self {
             KeySize::Key128Bits => 16,
             KeySize::Key256Bits => 32,

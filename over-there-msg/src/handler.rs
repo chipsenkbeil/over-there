@@ -2,6 +2,7 @@ use crate::msg::transmitter::MsgTransmitterError;
 use crate::msg::{content::ContentType, Msg};
 use over_there_derive::Error;
 use rand::random;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -74,12 +75,6 @@ pub struct HandlerStore {
 }
 
 impl HandlerStore {
-    pub fn new() -> Self {
-        Self {
-            store: Rc::new(HashMap::new()),
-        }
-    }
-
     /// Register a handler to be invoked when a msg is received whose
     /// content type matches the specified type
     pub fn register_for_content_type(
@@ -156,11 +151,10 @@ impl HandlerStore {
 
         Rc::get_mut(&mut self.store)
             .ok_or(HandlerError::StoreNotAvailable)
-            .and_then(|s| {
-                if s.contains_key(&id) {
-                    Err(HandlerError::StoreIdCollision)
-                } else {
-                    s.insert(id, handler_container);
+            .and_then(|s| match s.entry(id) {
+                Entry::Occupied(_) => Err(HandlerError::StoreIdCollision),
+                Entry::Vacant(v) => {
+                    v.insert(handler_container);
                     Ok(id)
                 }
             })
@@ -189,6 +183,14 @@ impl HandlerStore {
     }
 }
 
+impl Default for HandlerStore {
+    fn default() -> Self {
+        Self {
+            store: Rc::new(HashMap::new()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,7 +206,7 @@ mod tests {
 
     #[test]
     fn can_invoke() {
-        let mut store = HandlerStore::new();
+        let mut store = HandlerStore::default();
         assert!(store
             .register_for_content_type(ContentType::HeartbeatRequest, |_ctx| {
                 println!("TEST");

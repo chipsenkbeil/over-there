@@ -1,5 +1,5 @@
 use std::io::Result;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 
 /// Maximum Transmission Unit for Ethernet in bytes
 pub const MTU_ETHERNET_SIZE: usize = 1500;

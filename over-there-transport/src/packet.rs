@@ -22,7 +22,7 @@ impl PacketType {
     pub fn is_final(&self) -> bool {
         match self {
             Self::NotFinal => false,
-            Self::Final { nonce: _ } => true,
+            Self::Final { .. } => true,
         }
     }
 }

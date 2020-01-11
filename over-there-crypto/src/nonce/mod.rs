@@ -58,7 +58,7 @@ pub enum NonceSize {
 }
 
 impl NonceSize {
-    pub fn size_in_bytes(&self) -> usize {
+    pub fn size_in_bytes(self) -> usize {
         match self {
             NonceSize::Nonce96Bits => 12,
             NonceSize::Nonce128Bits => 16,

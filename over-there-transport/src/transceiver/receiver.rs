@@ -105,13 +105,12 @@ where
             Some(assembler) => {
                 let do_assemble = Self::add_packet_and_verify(assembler, p)?;
                 if do_assemble {
-                    let data = Self::assemble_and_decrypt(assembler, &self.decrypter, nonce)
-                        .map(|d| Some(d));
+                    let data = Self::assemble_and_decrypt(assembler, &self.decrypter, nonce)?;
 
                     // We also want to drop the assembler at this point
                     cache.remove(&id);
 
-                    data
+                    Ok(Some(data))
                 } else {
                     Ok(None)
                 }
