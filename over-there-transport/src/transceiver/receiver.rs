@@ -20,7 +20,6 @@ pub enum ReceiverError {
     RecvBytes(IoError),
 }
 
-/// Not thread-safe; should only be used in one thread
 pub struct Receiver<'a, V, D>
 where
     V: Verifier,
@@ -69,12 +68,12 @@ where
 
     pub fn recv(
         &self,
-        mut recv_handler: impl FnMut(&mut [u8]) -> Result<usize, IoError>,
+        mut recv_impl: impl FnMut(&mut [u8]) -> Result<usize, IoError>,
     ) -> Result<Option<Vec<u8>>, ReceiverError> {
         // Perform reading into our buffer, safely locking for a write operation
         let size = {
             let mut buf = self.buffer.write().unwrap();
-            recv_handler(&mut buf).map_err(ReceiverError::RecvBytes)?
+            recv_impl(&mut buf).map_err(ReceiverError::RecvBytes)?
         };
 
         // If we don't receive any bytes, we treat it as there are no bytes

@@ -14,3 +14,4 @@ ttl_cache = "0.5.1"
 over-there-auth = { path = "../over-there-auth" }
 over-there-crypto = { path = "../over-there-crypto" }
 over-there-derive = { path = "../over-there-derive" }
+over-there-utils = { path = "../over-there-utils" }

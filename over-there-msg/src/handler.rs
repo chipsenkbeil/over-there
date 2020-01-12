@@ -1,4 +1,4 @@
-use crate::msg::transmitter::MsgTransmitterError;
+use crate::msg::MsgError;
 use crate::msg::{content::ContentType, Msg};
 use over_there_derive::Error;
 use rand::random;
@@ -19,7 +19,7 @@ pub enum HandlerError {
 }
 
 pub trait HandlerSender {
-    fn send(&self, msg: Msg) -> Result<(), MsgTransmitterError>;
+    fn send(&self, msg: Msg) -> Result<(), MsgError>;
 }
 
 pub struct HandlerContext<'a, 'b, 'c, 'd> {
@@ -41,7 +41,7 @@ pub struct HandlerContext<'a, 'b, 'c, 'd> {
 
 impl<'a, 'b, 'c, 'd> HandlerContext<'a, 'b, 'c, 'd> {
     /// Sends a new msg to the originator of the incoming msg
-    pub fn send(&self, msg: Msg) -> Result<(), MsgTransmitterError> {
+    pub fn send(&self, msg: Msg) -> Result<(), MsgError> {
         self.sender.send(msg)
     }
 
@@ -199,7 +199,7 @@ mod tests {
     struct FakeSender {}
 
     impl HandlerSender for FakeSender {
-        fn send(&self, _msg: Msg) -> Result<(), MsgTransmitterError> {
+        fn send(&self, _msg: Msg) -> Result<(), MsgError> {
             Ok(())
         }
     }

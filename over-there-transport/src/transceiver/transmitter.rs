@@ -15,7 +15,6 @@ pub enum TransmitterError {
     SendBytes(IoError),
 }
 
-/// Not thread-safe; should only be used in one thread
 pub struct Transmitter<'a, S, E>
 where
     S: Signer,
@@ -52,7 +51,7 @@ where
     pub fn send(
         &self,
         data: &[u8],
-        mut send_handler: impl FnMut(&[u8]) -> Result<(), IoError>,
+        mut send_impl: impl FnMut(&[u8]) -> Result<(), IoError>,
     ) -> Result<(), TransmitterError> {
         // Encrypt entire dataset before splitting as it will grow in size
         // and it's difficult to predict if we can stay under our transmission
@@ -87,7 +86,7 @@ where
         // For each packet, serialize and send to specific address
         for packet in packets.iter() {
             let packet_data = packet.to_vec().map_err(TransmitterError::EncodePacket)?;
-            send_handler(&packet_data).map_err(TransmitterError::SendBytes)?;
+            send_impl(&packet_data).map_err(TransmitterError::SendBytes)?;
         }
 
         Ok(())

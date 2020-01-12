@@ -1,11 +1,16 @@
 pub mod content;
-pub mod receiver;
-pub mod transmitter;
 
 use chrono::prelude::{DateTime, Utc};
 use content::Content;
+use over_there_derive::Error;
 use rand::random;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Error)]
+pub enum MsgError {
+    EncodeMsg(rmp_serde::encode::Error),
+    DecodeMsg(rmp_serde::decode::Error),
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Header {
@@ -30,12 +35,12 @@ pub struct Msg {
 }
 
 impl Msg {
-    pub fn to_vec(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-        rmp_serde::to_vec(&self)
+    pub fn to_vec(&self) -> Result<Vec<u8>, MsgError> {
+        rmp_serde::to_vec(&self).map_err(MsgError::EncodeMsg)
     }
 
-    pub fn from_slice(slice: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_read_ref(slice)
+    pub fn from_slice(slice: &[u8]) -> Result<Self, MsgError> {
+        rmp_serde::from_read_ref(slice).map_err(MsgError::DecodeMsg)
     }
 }
 
