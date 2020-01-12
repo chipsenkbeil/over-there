@@ -1,4 +1,5 @@
 use crate::disassembler::{self, DisassembleInfo, Disassembler};
+use crate::packet::PacketEncryption;
 use over_there_auth::Signer;
 use over_there_crypto::{CryptError, Encrypter};
 use over_there_derive::Error;
@@ -57,7 +58,7 @@ where
         // and it's difficult to predict if we can stay under our transmission
         // limit if encrypting at the individual packet level
         let associated_data = self.encrypter.new_encrypt_associated_data();
-        let nonce = associated_data.nonce().cloned();
+        let encryption = PacketEncryption::from(associated_data.nonce().cloned());
         let data = self
             .encrypter
             .encrypt(data, &associated_data)
@@ -75,7 +76,7 @@ where
             let mut d = self.disassembler.write().unwrap();
             d.make_packets_from_data(DisassembleInfo {
                 id,
-                nonce,
+                encryption,
                 data: &data,
                 desired_chunk_size: self.transmission_size,
                 signer: self.signer,

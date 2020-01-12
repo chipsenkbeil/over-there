@@ -184,7 +184,7 @@ where
 mod tests {
     use super::*;
     use crate::disassembler::{DisassembleInfo, Disassembler};
-    use crate::packet::PacketType;
+    use crate::packet::{PacketEncryption, PacketType};
     use over_there_auth::NoopAuthenticator;
     use over_there_crypto::NoopBicrypter;
     use std::io::ErrorKind as IoErrorKind;
@@ -236,7 +236,7 @@ mod tests {
     fn recv_should_fail_if_unable_to_add_packet_to_assembler() {
         let m = transmitter_with_transmission_size(100);
         let id = 0;
-        let nonce = None;
+        let encryption = PacketEncryption::None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         let signer = NoopAuthenticator;
 
@@ -244,7 +244,7 @@ mod tests {
         // and ensure that we can fit data in it
         let overhead_size = Disassembler::estimate_packet_overhead_size(
             /* data size */ 1,
-            PacketType::Final { nonce },
+            PacketType::Final { encryption },
             &signer,
         )
         .unwrap();
@@ -255,7 +255,7 @@ mod tests {
         let p = &Disassembler::new()
             .make_packets_from_data(DisassembleInfo {
                 id,
-                nonce,
+                encryption,
                 data: &data,
                 desired_chunk_size: overhead_size + 1,
                 signer: &signer,
@@ -302,7 +302,7 @@ mod tests {
         let m = Receiver::new(100, 100, wait_duration, &NoopAuthenticator, &NoopBicrypter);
 
         let id = 0;
-        let nonce = None;
+        let encryption = PacketEncryption::None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         let signer = NoopAuthenticator;
 
@@ -310,7 +310,7 @@ mod tests {
         // and ensure that we can fit data in it
         let overhead_size = Disassembler::estimate_packet_overhead_size(
             /* data size */ 1,
-            PacketType::Final { nonce },
+            PacketType::Final { encryption },
             &signer,
         )
         .unwrap();
@@ -320,7 +320,7 @@ mod tests {
         let packets = &mut Disassembler::new()
             .make_packets_from_data(DisassembleInfo {
                 id,
-                nonce,
+                encryption,
                 data: &data,
                 desired_chunk_size: overhead_size + 1,
                 signer: &NoopAuthenticator,
@@ -357,7 +357,7 @@ mod tests {
         let m = transmitter_with_transmission_size(100);
 
         let id = 0;
-        let nonce = None;
+        let encryption = PacketEncryption::None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         let signer = NoopAuthenticator;
 
@@ -365,7 +365,7 @@ mod tests {
         // and ensure that we can fit data in it
         let overhead_size = Disassembler::estimate_packet_overhead_size(
             /* data size */ 1,
-            PacketType::Final { nonce },
+            PacketType::Final { encryption },
             &signer,
         )
         .unwrap();
@@ -375,7 +375,7 @@ mod tests {
         let p = &Disassembler::new()
             .make_packets_from_data(DisassembleInfo {
                 id,
-                nonce,
+                encryption,
                 data: &data,
                 desired_chunk_size: overhead_size + 1,
                 signer: &NoopAuthenticator,
@@ -401,7 +401,7 @@ mod tests {
         let p = &Disassembler::new()
             .make_packets_from_data(DisassembleInfo {
                 id: 0,
-                nonce: None,
+                encryption: PacketEncryption::None,
                 data: &data,
                 desired_chunk_size: 100,
                 signer: &NoopAuthenticator,
@@ -443,7 +443,7 @@ mod tests {
             );
 
             let id = 0;
-            let nonce = None;
+            let encryption = PacketEncryption::None;
             let data = vec![1, 2, 3];
             let signer = NoopAuthenticator;
 
@@ -451,7 +451,7 @@ mod tests {
             // and ensure that we can fit data in it
             let overhead_size = Disassembler::estimate_packet_overhead_size(
                 /* data size */ 1,
-                PacketType::Final { nonce },
+                PacketType::Final { encryption },
                 &signer,
             )
             .unwrap();
@@ -460,7 +460,7 @@ mod tests {
             let packets = Disassembler::new()
                 .make_packets_from_data(DisassembleInfo {
                     id,
-                    nonce,
+                    encryption,
                     data: &data.clone(),
                     desired_chunk_size: overhead_size + 1,
                     signer: &NoopAuthenticator,

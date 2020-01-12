@@ -2,27 +2,61 @@ use over_there_auth::Digest;
 use over_there_crypto::Nonce;
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub(crate) enum PacketEncryption {
+    None,
+    Encrypted,
+    EncryptedWithNonce { nonce: Nonce },
+}
+
+impl PacketEncryption {
+    /// Retrieves the nonce used for encryption
+    pub fn nonce(&self) -> Option<&Nonce> {
+        match self {
+            Self::EncryptedWithNonce { nonce } => Some(nonce),
+            _ => None,
+        }
+    }
+}
+
+impl From<Nonce> for PacketEncryption {
+    fn from(nonce: Nonce) -> Self {
+        Self::EncryptedWithNonce { nonce }
+    }
+}
+
+impl From<Option<Nonce>> for PacketEncryption {
+    fn from(maybe_nonce: Option<Nonce>) -> Self {
+        match maybe_nonce {
+            Some(nonce) => Self::from(nonce),
+            None => Self::None,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) enum PacketType {
     /// Represents packets that are not the final in a collection
     NotFinal,
 
-    /// Represents final packet and includes nonce if used to encrypt data
-    Final { nonce: Option<Nonce> },
+    /// Represents final packet and includes encryption-related information
+    Final { encryption: PacketEncryption },
 }
 
 impl PacketType {
+    /// Retrieves the nonce used for encryption
     pub fn nonce(&self) -> Option<&Nonce> {
         match self {
-            Self::NotFinal => None,
-            Self::Final { nonce } => nonce.as_ref(),
+            Self::Final { encryption } => encryption.nonce(),
+            _ => None,
         }
     }
 
+    /// Indicates if this is the final packet in a collection
     pub fn is_final(&self) -> bool {
         match self {
-            Self::NotFinal => false,
             Self::Final { .. } => true,
+            _ => false,
         }
     }
 }

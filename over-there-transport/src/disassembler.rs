@@ -1,15 +1,14 @@
-use crate::packet::{Metadata, Packet, PacketType};
+use crate::packet::{Metadata, Packet, PacketEncryption, PacketType};
 use over_there_auth::Signer;
-use over_there_crypto::Nonce;
 use over_there_derive::Error;
 use std::collections::HashMap;
 
-pub struct DisassembleInfo<'d, 's, S: Signer> {
+pub(crate) struct DisassembleInfo<'d, 's, S: Signer> {
     /// ID used to group created packets together
     pub id: u32,
 
-    /// Nonce used to encrypt provided data; if None, implies there was no encryption
-    pub nonce: Option<Nonce>,
+    /// Used to specify the level of encryption to use
+    pub encryption: PacketEncryption,
 
     /// Desired maximum size of each packet (including metadata)
     pub desired_chunk_size: usize,
@@ -46,7 +45,7 @@ impl Disassembler {
     ) -> Result<Vec<Packet>, DisassemblerError> {
         let DisassembleInfo {
             id,
-            nonce,
+            encryption,
             desired_chunk_size,
             signer,
             data,
@@ -60,7 +59,7 @@ impl Disassembler {
         let final_overhead_size = self
             .cached_estimate_packet_overhead_size(
                 desired_chunk_size,
-                PacketType::Final { nonce },
+                PacketType::Final { encryption },
                 signer,
             )
             .map_err(|_| DisassemblerError::FailedToEstimatePacketSize)?;
@@ -114,7 +113,7 @@ impl Disassembler {
                 id,
                 packets.len() as u32,
                 if can_fit_all_in_final_packet {
-                    PacketType::Final { nonce }
+                    PacketType::Final { encryption }
                 } else {
                     PacketType::NotFinal
                 },
@@ -224,7 +223,7 @@ impl Disassembler {
 mod tests {
     use super::*;
     use over_there_auth::NoopAuthenticator;
-    use over_there_crypto::nonce;
+    use over_there_crypto::{nonce, Nonce};
 
     #[test]
     fn fails_if_desired_chunk_size_is_too_low() {
@@ -233,7 +232,7 @@ mod tests {
         let err = Disassembler::new()
             .make_packets_from_data(DisassembleInfo {
                 id: 0,
-                nonce: None,
+                encryption: PacketEncryption::None,
                 data: &vec![1, 2, 3],
                 desired_chunk_size: chunk_size,
                 signer: &NoopAuthenticator,
@@ -250,7 +249,7 @@ mod tests {
     fn produces_single_packet_with_data() {
         let id = 12345;
         let data: Vec<u8> = vec![1, 2];
-        let nonce = Some(Nonce::from(nonce::new_128bit_nonce()));
+        let encryption = PacketEncryption::from(Nonce::from(nonce::new_128bit_nonce()));
 
         // Make it so all the data fits in one packet
         let chunk_size = 1000;
@@ -258,7 +257,7 @@ mod tests {
         let packets = Disassembler::new()
             .make_packets_from_data(DisassembleInfo {
                 id,
-                nonce,
+                encryption,
                 data: &data,
                 desired_chunk_size: chunk_size,
                 signer: &NoopAuthenticator,
@@ -281,13 +280,15 @@ mod tests {
     fn produces_multiple_packets_with_data() {
         let id = 67890;
         let data: Vec<u8> = vec![1, 2, 3];
-        let nonce = Some(Nonce::from(nonce::new_128bit_nonce()));
+        let nonce = Nonce::from(nonce::new_128bit_nonce());
 
         // Calculate the bigger of the two overhead sizes (final packet)
         // and ensure that we can only fit the last element in it
         let overhead_size = Disassembler::estimate_packet_overhead_size(
             /* data size */ 1,
-            PacketType::Final { nonce },
+            PacketType::Final {
+                encryption: PacketEncryption::from(nonce),
+            },
             &NoopAuthenticator,
         )
         .unwrap();
@@ -296,7 +297,7 @@ mod tests {
         let packets = Disassembler::new()
             .make_packets_from_data(DisassembleInfo {
                 id,
-                nonce,
+                encryption: PacketEncryption::from(nonce),
                 data: &data,
                 desired_chunk_size: chunk_size,
                 signer: &NoopAuthenticator,
@@ -326,7 +327,7 @@ mod tests {
     #[test]
     fn produces_multiple_packets_respecting_size_constraints() {
         let id = 67890;
-        let nonce = Some(Nonce::from(nonce::new_128bit_nonce()));
+        let encryption = PacketEncryption::from(Nonce::from(nonce::new_128bit_nonce()));
 
         // Make it so not all of the data fits in one packet
         //
@@ -340,7 +341,7 @@ mod tests {
         let packets = Disassembler::new()
             .make_packets_from_data(DisassembleInfo {
                 id,
-                nonce,
+                encryption,
                 data: &data,
                 desired_chunk_size: chunk_size,
                 signer: &NoopAuthenticator,
