@@ -48,11 +48,10 @@ where
         }
     }
 
-    pub fn send(
-        &self,
-        data: &[u8],
-        mut send_impl: impl FnMut(&[u8]) -> Result<(), IoError>,
-    ) -> Result<(), TransmitterError> {
+    pub fn send<F>(&self, data: &[u8], mut write: F) -> Result<(), TransmitterError>
+    where
+        F: FnMut(&[u8]) -> Result<usize, IoError>,
+    {
         // Encrypt entire dataset before splitting as it will grow in size
         // and it's difficult to predict if we can stay under our transmission
         // limit if encrypting at the individual packet level
@@ -86,7 +85,13 @@ where
         // For each packet, serialize and send to specific address
         for packet in packets.iter() {
             let packet_data = packet.to_vec().map_err(TransmitterError::EncodePacket)?;
-            send_impl(&packet_data).map_err(TransmitterError::SendBytes)?;
+
+            // TODO: Handle case where cannot send all bytes at once, which
+            //       results in an invalid packet. Can we tack on a couple of
+            //       bytes at the beginning to denote the total size of the
+            //       serialized packet (in total) and read that before
+            //       deserializing a packet?
+            write(&packet_data).map_err(TransmitterError::SendBytes)?;
         }
 
         Ok(())
@@ -114,7 +119,7 @@ mod tests {
         let m = transmitter_with_transmission_size(0);
         let data = vec![1, 2, 3];
 
-        match m.send(&data, |_| Ok(())) {
+        match m.send(&data, |_| Ok(data.len())) {
             Err(TransmitterError::DisassembleData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
@@ -136,7 +141,7 @@ mod tests {
         let m = transmitter_with_transmission_size(100);
         let data = vec![1, 2, 3];
 
-        let result = m.send(&data, |_| Ok(()));
+        let result = m.send(&data, |_| Ok(data.len()));
         assert_eq!(result.is_ok(), true);
     }
 
@@ -161,7 +166,7 @@ mod tests {
             let m = Transmitter::new(100, &NoopAuthenticator, &BadEncrypter);
             let data = vec![1, 2, 3];
 
-            match m.send(&data, |_| Ok(())) {
+            match m.send(&data, |_| Ok(data.len())) {
                 Err(super::TransmitterError::EncryptData(_)) => (),
                 x => panic!("Unexpected result: {:?}", x),
             }

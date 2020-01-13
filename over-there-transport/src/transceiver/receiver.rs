@@ -66,21 +66,21 @@ where
         }
     }
 
-    pub fn recv(
-        &self,
-        mut recv_impl: impl FnMut(&mut [u8]) -> Result<usize, IoError>,
-    ) -> Result<Option<Vec<u8>>, ReceiverError> {
+    pub fn recv<T, R>(&self, read: R) -> Result<(Option<Vec<u8>>, T), ReceiverError>
+    where
+        R: FnOnce(&mut [u8]) -> Result<(usize, T), IoError>,
+    {
         // Perform reading into our buffer, safely locking for a write operation
-        let size = {
+        let (size, other_data) = {
             let mut buf = self.buffer.write().unwrap();
-            recv_impl(&mut buf).map_err(ReceiverError::RecvBytes)?
+            read(&mut buf).map_err(ReceiverError::RecvBytes)?
         };
 
         // If we don't receive any bytes, we treat it as there are no bytes
         // available, which is not an error but also does not warrant trying
         // to parse a packet, which will cause an error
         if size == 0 {
-            return Ok(None);
+            return Ok((None, other_data));
         }
 
         // Process the received packet, safely reading from our buffer
@@ -109,12 +109,12 @@ where
                     // We also want to drop the assembler at this point
                     cache.remove(&id);
 
-                    Ok(Some(data))
+                    Ok((Some(data), other_data))
                 } else {
-                    Ok(None)
+                    Ok((None, other_data))
                 }
             }
-            None => Ok(None),
+            None => Ok((None, other_data)),
         }
     }
 
@@ -208,9 +208,20 @@ mod tests {
     fn recv_should_fail_if_socket_fails_to_get_bytes() {
         let m = transmitter_with_transmission_size(100);
 
-        match m.recv(|_| Err(IoError::from(IoErrorKind::Other))) {
+        // NOTE: Having to produce this ugly failure function to get
+        //       write function parameter to be created
+        let f = |_: &mut [u8]| {
+            if false {
+                Ok((0, ()))
+            } else {
+                Err(IoError::from(IoErrorKind::Other))
+            }
+        };
+
+        match m.recv(f) {
             Err(ReceiverError::RecvBytes(_)) => (),
-            x => panic!("Unexpected result: {:?}", x),
+            Err(x) => panic!("Unexpected error: {:?}", x),
+            Ok((x, _)) => panic!("Unexpected result: {:?}", x),
         }
     }
 
@@ -224,10 +235,11 @@ mod tests {
             buf[0] = 0;
             buf[1] = 0;
             buf[2] = 0;
-            Ok(buf.len())
+            Ok((buf.len(), ()))
         }) {
             Err(ReceiverError::DecodePacket(_)) => (),
-            x => panic!("Unexpected result: {:?}", x),
+            Err(x) => panic!("Unexpected error: {:?}", x),
+            Ok((x, _)) => panic!("Unexpected result: {:?}", x),
         }
     }
 
@@ -265,7 +277,7 @@ mod tests {
             m.recv(|buf| {
                 let l = data.len();
                 buf[..l].clone_from_slice(&data);
-                Ok(l)
+                Ok((l, ()))
             })
             .is_ok(),
             true,
@@ -277,10 +289,11 @@ mod tests {
         match m.recv(|buf| {
             let l = data.len();
             buf[..l].clone_from_slice(&data);
-            Ok(l)
+            Ok((l, ()))
         }) {
             Err(ReceiverError::AssembleData(_)) => (),
-            x => panic!("Unexpected result: {:?}", x),
+            Err(x) => panic!("Unexpected error: {:?}", x),
+            Ok((x, _)) => panic!("Unexpected result: {:?}", x),
         }
     }
 
@@ -288,9 +301,10 @@ mod tests {
     fn recv_should_return_none_if_zero_bytes_received() {
         let m = transmitter_with_transmission_size(100);
 
-        match m.recv(|_| Ok(0)) {
-            Ok(None) => (),
-            x => panic!("Unexpected result: {:?}", x),
+        match m.recv(|_| Ok((0, ()))) {
+            Ok((None, _)) => (),
+            Ok((Some(x), _)) => panic!("Unexpected result: {:?}", x),
+            Err(x) => panic!("Unexpected error: {:?}", x),
         }
     }
 
@@ -332,17 +346,17 @@ mod tests {
                 let data = p.to_vec().unwrap();
                 let l = data.len();
                 buf[..l].clone_from_slice(&data);
-                Ok(l)
+                Ok((l, ()))
             }) {
-                Ok(Some(_)) if packets.is_empty() => {
+                Ok((Some(_), _)) if packets.is_empty() => {
                     panic!("Unexpectedly got complete message! Expiration did not happen")
                 }
-                Ok(Some(_)) => panic!(
+                Ok((Some(_), _)) => panic!(
                     "Unexpectedly got complete message with {} packets remaining",
                     packets.len()
                 ),
-                Ok(None) => (),
-                x => panic!("Unexpected result: {:?}", x),
+                Ok((None, _)) => (),
+                Err(x) => panic!("Unexpected error: {:?}", x),
             }
 
             // Wait the same time as our expiration to make sure we throw
@@ -384,10 +398,11 @@ mod tests {
         match m.recv(|buf| {
             let l = data.len();
             buf[..l].clone_from_slice(&data);
-            Ok(l)
+            Ok((l, ()))
         }) {
-            Ok(None) => (),
-            x => panic!("Unexpected result: {:?}", x),
+            Ok((None, _)) => (),
+            Ok((Some(x), _)) => panic!("Unexpected result: {:?}", x),
+            Err(x) => panic!("Unexpected error: {:?}", x),
         }
     }
 
@@ -410,12 +425,13 @@ mod tests {
         match m.recv(|buf| {
             let l = pdata.len();
             buf[..l].clone_from_slice(&pdata);
-            Ok(l)
+            Ok((l, ()))
         }) {
-            Ok(Some(recv_data)) => {
+            Ok((Some(recv_data), _)) => {
                 assert_eq!(recv_data, data, "Received unexpected data: {:?}", recv_data);
             }
-            x => panic!("Unexpected result: {:?}", x),
+            Ok((None, _)) => panic!("Unexpectedly received no data"),
+            Err(x) => panic!("Unexpected error: {:?}", x),
         }
     }
 
@@ -473,7 +489,7 @@ mod tests {
                     m.recv(|buf| {
                         let l = pdata.len();
                         buf[..l].clone_from_slice(&pdata);
-                        Ok(l)
+                        Ok((l, ()))
                     })
                     .is_ok(),
                     true,
@@ -487,10 +503,11 @@ mod tests {
             match m.recv(|buf| {
                 let l = pdata.len();
                 buf[..l].clone_from_slice(&pdata);
-                Ok(l)
+                Ok((l, ()))
             }) {
                 Err(super::ReceiverError::DecryptData(_)) => (),
-                x => panic!("Unexpected result: {:?}", x),
+                Err(x) => panic!("Unexpected error: {:?}", x),
+                Ok((x, _)) => panic!("Unexpected result: {:?}", x),
             }
         }
     }

@@ -1,9 +1,8 @@
 use over_there_auth::{Sha256Authenticator, Signer, Verifier};
 use over_there_crypto::{self as crypto, aes_gcm, Decrypter, Encrypter};
 use over_there_msg::{Content, Msg};
-use over_there_transport::{tcp, udp, Receiver, Transmitter};
+use over_there_transport::{tcp, udp, Receiver, Transmitter, TransmitterError};
 use over_there_utils::{exec, Capture};
-use std::net::SocketAddr;
 use std::time::Duration;
 
 fn init() {
@@ -51,19 +50,25 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
         Ok(ct.send(&data, send)?)
     };
     let cr = new_receiver(udp::MAX_IPV4_DATAGRAM_SIZE, &client_auth, &client_bicrypter);
-    let cr_recv = || -> Result<Option<(Msg, SocketAddr)>, Box<dyn std::error::Error>> {
-        let mut recv = udp::new_recv_func(client_socket.try_clone()?);
+    let cr_recv = || -> Result<Option<(Msg, _)>, Box<dyn std::error::Error>> {
+        let socket = client_socket.try_clone()?;
+        let mut recv = udp::new_recv_func(socket);
         let capture = Capture::default();
         let recv = |data: &mut [u8]| {
             let (size, addr) = recv(data)?;
             capture.set(addr);
-            Ok(size)
+
+            let sock = client_socket.try_clone()?;
+            let send = |data: &[u8]| -> Result<(), TransmitterError> {
+                let send = udp::new_send_func(sock, addr);
+                Ok(ct.send(&data, send)?)
+            };
+
+            Ok((size, send))
         };
-        let maybe_msg = cr.recv(recv)?.map(|d| Msg::from_slice(&d)).transpose()?;
-        Ok(match (maybe_msg, capture.take()) {
-            (Some(msg), Some(addr)) => Some((msg, addr)),
-            _ => None,
-        })
+        let (maybe_msg, reply) = cr.recv(recv)?;
+        let maybe_msg = maybe_msg.map(|d| Msg::from_slice(&d)).transpose()?;
+        Ok(maybe_msg.map(|m| (m, reply)))
     };
 
     let server_socket = udp::local()?;
@@ -76,19 +81,24 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
         Ok(st.send(&data, send)?)
     };
     let sr = new_receiver(udp::MAX_IPV4_DATAGRAM_SIZE, &server_auth, &server_bicrypter);
-    let sr_recv = || -> Result<Option<(Msg, SocketAddr)>, Box<dyn std::error::Error>> {
+    let sr_recv = || -> Result<Option<(Msg, _)>, Box<dyn std::error::Error>> {
         let mut recv = udp::new_recv_func(server_socket.try_clone()?);
         let capture = Capture::default();
         let recv = |data: &mut [u8]| {
             let (size, addr) = recv(data)?;
             capture.set(addr);
-            Ok(size)
+
+            let sock = server_socket.try_clone()?;
+            let send = move |data: &[u8]| -> Result<(), TransmitterError> {
+                let send = udp::new_send_func(sock, addr);
+                Ok(st.send(&data, send)?)
+            };
+
+            Ok((size, send))
         };
-        let maybe_msg = sr.recv(recv)?.map(|d| Msg::from_slice(&d)).transpose()?;
-        Ok(match (maybe_msg, capture.take()) {
-            (Some(msg), Some(addr)) => Some((msg, addr)),
-            _ => None,
-        })
+        let (maybe_msg, reply) = sr.recv(recv)?;
+        let maybe_msg = maybe_msg.map(|d| Msg::from_slice(&d)).transpose()?;
+        Ok(maybe_msg.map(|m| (m, reply)))
     };
 
     // Send message to server
@@ -99,9 +109,11 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     // Keep checking until we receive a complete message from the client
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
-        if let Some((msg, addr)) = sr_recv()? {
+        if let Some((msg, reply)) = sr_recv()? {
             match msg.content {
-                Content::HeartbeatRequest => st_send(Msg::from(Content::HeartbeatResponse), addr)?,
+                Content::HeartbeatRequest => {
+                    reply(&Msg::from(Content::HeartbeatResponse).to_vec()?)?
+                }
                 x => panic!("Unexpected content {:?}", x),
             }
             return Ok(true);
@@ -137,51 +149,47 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 
     let client_auth = Sha256Authenticator::new(sign_key);
     let client_bicrypter = aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key);
+    let c_send = tcp::new_send_func(client_stream.try_clone()?);
     let ct = new_transmitter(tcp::MTU_ETHERNET_SIZE, &client_auth, &client_bicrypter);
     let ct_send = |msg: Msg| -> Result<(), Box<dyn std::error::Error>> {
         let data = msg.to_vec()?;
-        let send = tcp::new_send_func(client_stream.try_clone()?);
-        Ok(ct.send(&data, send)?)
+        Ok(ct.send(&data, c_send)?)
     };
     let cr = new_receiver(tcp::MTU_ETHERNET_SIZE, &client_auth, &client_bicrypter);
-    let cr_recv = || -> Result<Option<(Msg, SocketAddr)>, Box<dyn std::error::Error>> {
+    let cr_recv = || -> Result<Option<(Msg, _)>, Box<dyn std::error::Error>> {
         let mut recv = tcp::new_recv_func(client_stream.try_clone()?, server_addr);
         let capture = Capture::default();
         let recv = |data: &mut [u8]| {
             let (size, addr) = recv(data)?;
             capture.set(addr);
-            Ok(size)
+            Ok((size, c_send))
         };
-        let maybe_msg = cr.recv(recv)?.map(|d| Msg::from_slice(&d)).transpose()?;
-        Ok(match (maybe_msg, capture.take()) {
-            (Some(msg), Some(addr)) => Some((msg, addr)),
-            _ => None,
-        })
+        let (maybe_msg, reply) = cr.recv(recv)?;
+        let maybe_msg = maybe_msg.map(|d| Msg::from_slice(&d)).transpose()?;
+        Ok(maybe_msg.map(|m| (m, reply)))
     };
 
     let server_stream = server_listener.accept()?;
     let server_auth = Sha256Authenticator::new(sign_key);
     let server_bicrypter = aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key);
     let st = new_transmitter(tcp::MTU_ETHERNET_SIZE, &server_auth, &server_bicrypter);
+    let s_send = tcp::new_send_func(server_stream.0.try_clone()?);
     let st_send = |msg: Msg| -> Result<(), Box<dyn std::error::Error>> {
         let data = msg.to_vec()?;
-        let send = tcp::new_send_func(server_stream.0.try_clone()?);
-        Ok(st.send(&data, send)?)
+        Ok(st.send(&data, s_send)?)
     };
     let sr = new_receiver(tcp::MTU_ETHERNET_SIZE, &server_auth, &server_bicrypter);
-    let sr_recv = || -> Result<Option<(Msg, SocketAddr)>, Box<dyn std::error::Error>> {
+    let sr_recv = || -> Result<Option<(Msg, _)>, Box<dyn std::error::Error>> {
         let mut recv = tcp::new_recv_func(server_stream.0.try_clone()?, server_stream.1);
         let capture = Capture::default();
         let recv = |data: &mut [u8]| {
             let (size, addr) = recv(data)?;
             capture.set(addr);
-            Ok(size)
+            Ok((size, s_send))
         };
-        let maybe_msg = sr.recv(recv)?.map(|d| Msg::from_slice(&d)).transpose()?;
-        Ok(match (maybe_msg, capture.take()) {
-            (Some(msg), Some(addr)) => Some((msg, addr)),
-            _ => None,
-        })
+        let (maybe_msg, reply) = sr.recv(recv)?;
+        let maybe_msg = maybe_msg.map(|d| Msg::from_slice(&d)).transpose()?;
+        Ok(maybe_msg.map(|m| (m, reply)))
     };
 
     // Send message to server

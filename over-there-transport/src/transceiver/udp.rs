@@ -23,8 +23,7 @@ pub fn local() -> Result<UdpSocket> {
 }
 
 /// Produces a new function to send data using a udp socket
-/// NOTE: This consumes the socket, so a clone should attempt to be made
-pub fn new_send_func(socket: UdpSocket, addr: SocketAddr) -> impl FnMut(&[u8]) -> Result<()> {
+pub fn new_send_func(socket: UdpSocket, addr: SocketAddr) -> impl FnMut(&[u8]) -> Result<usize> {
     move |data| {
         // TODO: Support sending remaining bytes in loop? Would need to
         //       support collecting bytes for a packet in multiple receives,
@@ -41,12 +40,11 @@ pub fn new_send_func(socket: UdpSocket, addr: SocketAddr) -> impl FnMut(&[u8]) -
             ));
         }
 
-        Ok(())
+        Ok(size)
     }
 }
 
 /// Produces a new function to receive data using a udp socket
-/// NOTE: This consumes the socket, so a clone should attempt to be made
 pub fn new_recv_func(socket: UdpSocket) -> impl FnMut(&mut [u8]) -> Result<(usize, SocketAddr)> {
     move |data| socket.recv_from(data)
 }

@@ -23,8 +23,7 @@ pub fn local() -> Result<TcpListener> {
 }
 
 /// Produces a new function to send data using a tcp stream
-/// NOTE: This consumes the stream, so a clone should attempt to be made
-pub fn new_send_func(mut stream: TcpStream) -> impl FnMut(&[u8]) -> Result<()> {
+pub fn new_send_func(mut stream: TcpStream) -> impl FnMut(&[u8]) -> Result<usize> {
     move |data| {
         // TODO: Support sending remaining bytes in loop? Would need to
         //       support collecting bytes for a packet in multiple receives,
@@ -40,12 +39,11 @@ pub fn new_send_func(mut stream: TcpStream) -> impl FnMut(&[u8]) -> Result<()> {
                 format!("Only sent {} bytes out of {}", size, data.len()),
             ));
         }
-        Ok(())
+        Ok(size)
     }
 }
 
 /// Produces a new function to receive data using a tcp stream
-/// NOTE: This consumes the stream, so a clone should attempt to be made
 pub fn new_recv_func(
     mut stream: TcpStream,
     addr: SocketAddr,
