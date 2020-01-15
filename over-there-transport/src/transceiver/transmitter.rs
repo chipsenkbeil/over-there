@@ -5,7 +5,6 @@ use over_there_crypto::{CryptError, Encrypter};
 use over_there_derive::Error;
 use rand::random;
 use std::io::Error as IoError;
-use std::sync::RwLock;
 
 #[derive(Debug, Error)]
 pub enum TransmitterError {
@@ -15,140 +14,129 @@ pub enum TransmitterError {
     SendBytes(IoError),
 }
 
-pub struct Transmitter<'a, S, E>
+pub(crate) struct TransmitterContext<'a, S, E>
 where
     S: Signer,
     E: Encrypter,
 {
     /// Maximum size allowed for a packet
-    transmission_size: usize,
+    pub(crate) transmission_size: usize,
 
     /// Disassembler used to break up data into packets
-    disassembler: RwLock<Disassembler>,
+    pub(crate) disassembler: &'a mut Disassembler,
 
     /// Performs authentication on data
-    signer: &'a S,
+    pub(crate) signer: &'a S,
 
     /// Performs encryption/decryption on data
-    encrypter: &'a E,
+    pub(crate) encrypter: &'a E,
 }
 
-impl<'a, S, E> Transmitter<'a, S, E>
+pub(crate) fn do_send<'a, S, E, F>(
+    ctx: TransmitterContext<'a, S, E>,
+    data: &[u8],
+    mut write: F,
+) -> Result<(), TransmitterError>
 where
     S: Signer,
     E: Encrypter,
+    F: FnMut(&[u8]) -> Result<usize, IoError>,
 {
-    /// Begins building a transmitter, enabling us to specify options
-    pub fn new(transmission_size: usize, signer: &'a S, encrypter: &'a E) -> Self {
-        Self {
-            transmission_size,
-            signer,
-            encrypter,
-            disassembler: RwLock::new(Disassembler::new()),
-        }
+    // Encrypt entire dataset before splitting as it will grow in size
+    // and it's difficult to predict if we can stay under our transmission
+    // limit if encrypting at the individual packet level
+    let associated_data = ctx.encrypter.new_encrypt_associated_data();
+    let encryption = PacketEncryption::from(associated_data.nonce().cloned());
+    let data = ctx
+        .encrypter
+        .encrypt(data, &associated_data)
+        .map_err(TransmitterError::EncryptData)?;
+
+    // Produce a unique id used to group our packets
+    let id: u32 = random();
+
+    // Split data into multiple packets
+    // NOTE: Must protect mutable access to disassembler, which caches
+    //       computing the estimated packet sizes; if there is a way
+    //       that we could do this faster (not need a cache), we could
+    //       get rid of the locking and only need a reference
+    let packets = ctx
+        .disassembler
+        .make_packets_from_data(DisassembleInfo {
+            id,
+            encryption,
+            data: &data,
+            desired_chunk_size: ctx.transmission_size,
+            signer: ctx.signer,
+        })
+        .map_err(TransmitterError::DisassembleData)?;
+
+    // For each packet, serialize and send to specific address
+    for packet in packets.iter() {
+        let packet_data = packet.to_vec().map_err(TransmitterError::EncodePacket)?;
+
+        // TODO: Handle case where cannot send all bytes at once, which
+        //       results in an invalid packet. Can we tack on a couple of
+        //       bytes at the beginning to denote the total size of the
+        //       serialized packet (in total) and read that before
+        //       deserializing a packet?
+        write(&packet_data).map_err(TransmitterError::SendBytes)?;
     }
 
-    pub fn send<F>(&self, data: &[u8], mut write: F) -> Result<(), TransmitterError>
-    where
-        F: FnMut(&[u8]) -> Result<usize, IoError>,
-    {
-        // Encrypt entire dataset before splitting as it will grow in size
-        // and it's difficult to predict if we can stay under our transmission
-        // limit if encrypting at the individual packet level
-        let associated_data = self.encrypter.new_encrypt_associated_data();
-        let encryption = PacketEncryption::from(associated_data.nonce().cloned());
-        let data = self
-            .encrypter
-            .encrypt(data, &associated_data)
-            .map_err(TransmitterError::EncryptData)?;
-
-        // Produce a unique id used to group our packets
-        let id: u32 = random();
-
-        // Split data into multiple packets
-        // NOTE: Must protect mutable access to disassembler, which caches
-        //       computing the estimated packet sizes; if there is a way
-        //       that we could do this faster (not need a cache), we could
-        //       get rid of the locking and only need a reference
-        let packets = {
-            let mut d = self.disassembler.write().unwrap();
-            d.make_packets_from_data(DisassembleInfo {
-                id,
-                encryption,
-                data: &data,
-                desired_chunk_size: self.transmission_size,
-                signer: self.signer,
-            })
-            .map_err(TransmitterError::DisassembleData)?
-        };
-
-        // For each packet, serialize and send to specific address
-        for packet in packets.iter() {
-            let packet_data = packet.to_vec().map_err(TransmitterError::EncodePacket)?;
-
-            // TODO: Handle case where cannot send all bytes at once, which
-            //       results in an invalid packet. Can we tack on a couple of
-            //       bytes at the beginning to denote the total size of the
-            //       serialized packet (in total) and read that before
-            //       deserializing a packet?
-            write(&packet_data).map_err(TransmitterError::SendBytes)?;
-        }
-
-        Ok(())
-    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transceiver::Context;
     use over_there_auth::NoopAuthenticator;
     use over_there_crypto::NoopBicrypter;
     use std::io::ErrorKind as IoErrorKind;
 
-    /// Uses no encryption or signing
-    fn transmitter_with_transmission_size<'a>(
-        transmission_size: usize,
-    ) -> Transmitter<'a, NoopAuthenticator, NoopBicrypter> {
-        Transmitter::new(transmission_size, &NoopAuthenticator, &NoopBicrypter)
+    fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, NoopBicrypter> {
+        Context::new(buffer_size, NoopAuthenticator, NoopBicrypter)
     }
 
     #[test]
-    fn send_should_fail_if_unable_to_convert_bytes_to_packets() {
+    fn do_send_should_fail_if_unable_to_convert_bytes_to_packets() {
         // Produce a transmitter with a "bytes per packet" that is too
         // low, causing the process to fail
-        let m = transmitter_with_transmission_size(0);
+        let mut ctx = new_context(0);
         let data = vec![1, 2, 3];
 
-        match m.send(&data, |_| Ok(data.len())) {
+        match do_send(From::from(&mut ctx), &data, |_| Ok(data.len())) {
             Err(TransmitterError::DisassembleData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
 
     #[test]
-    fn send_should_fail_if_fails_to_send_bytes() {
-        let m = transmitter_with_transmission_size(100);
+    fn do_send_should_fail_if_fails_to_do_send_bytes() {
+        let mut ctx = new_context(100);
         let data = vec![1, 2, 3];
 
-        match m.send(&data, |_| Err(IoError::from(IoErrorKind::Other))) {
+        match do_send(From::from(&mut ctx), &data, |_| {
+            Err(IoError::from(IoErrorKind::Other))
+        }) {
             Err(TransmitterError::SendBytes(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
 
     #[test]
-    fn send_should_return_okay_if_successfully_sent_data() {
-        let m = transmitter_with_transmission_size(100);
+    fn do_send_should_return_okay_if_successfully_sent_data() {
+        let mut ctx = new_context(100);
         let data = vec![1, 2, 3];
 
-        let result = m.send(&data, |_| Ok(data.len()));
+        let result = do_send(From::from(&mut ctx), &data, |_| Ok(data.len()));
         assert_eq!(result.is_ok(), true);
     }
 
     #[cfg(test)]
     mod crypt {
         use super::*;
-        use over_there_crypto::{AssociatedData, CryptError, Encrypter};
+        use over_there_crypto::{AssociatedData, CryptError, Decrypter, Encrypter};
 
         struct BadEncrypter;
         impl Encrypter for BadEncrypter {
@@ -160,13 +148,22 @@ mod tests {
                 AssociatedData::None
             }
         }
+        impl Decrypter for BadEncrypter {
+            fn decrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
+                Err(CryptError::DecryptFailed(From::from("Some error")))
+            }
+        }
+
+        fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, BadEncrypter> {
+            Context::new(buffer_size, NoopAuthenticator, BadEncrypter)
+        }
 
         #[test]
-        fn send_should_fail_if_unable_to_encrypt_data() {
-            let m = Transmitter::new(100, &NoopAuthenticator, &BadEncrypter);
+        fn do_send_should_fail_if_unable_to_encrypt_data() {
+            let mut ctx = new_context(100);
             let data = vec![1, 2, 3];
 
-            match m.send(&data, |_| Ok(data.len())) {
+            match do_send(From::from(&mut ctx), &data, |_| Ok(data.len())) {
                 Err(super::TransmitterError::EncryptData(_)) => (),
                 x => panic!("Unexpected result: {:?}", x),
             }

@@ -1,11 +1,12 @@
 mod assembler;
 mod disassembler;
+pub mod net;
 mod packet;
 mod transceiver;
 
 pub use assembler::AssemblerError;
 pub use disassembler::DisassemblerError;
-pub use transceiver::receiver::{Receiver, ReceiverError};
-pub use transceiver::tcp;
-pub use transceiver::transmitter::{Transmitter, TransmitterError};
-pub use transceiver::udp;
+pub use transceiver::net::tcp::TcpStreamTransceiver;
+pub use transceiver::net::udp::UdpTransceiver;
+pub use transceiver::receiver::ReceiverError;
+pub use transceiver::transmitter::TransmitterError;
