@@ -5,6 +5,9 @@ use crate::{
 use over_there_auth::Verifier;
 use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
 use over_there_derive::Error;
+use over_there_utils::TtlValue;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::io::Error as IoError;
 
 #[derive(Debug, Error)]
@@ -25,6 +28,11 @@ where
     /// Buffer to contain bytes for temporary storage
     pub(crate) buffer: &'a mut [u8],
 
+    /// Contains expiration information that is used to
+    /// constrain how long assembler packet groups
+    /// are available
+    pub(crate) expirations: &'a mut BinaryHeap<Reverse<TtlValue<u32>>>,
+
     /// Assembler used to gather packets together
     pub(crate) assembler: &'a mut Assembler,
 
@@ -36,7 +44,7 @@ where
 }
 
 pub(crate) fn do_receive<V, D, T, R>(
-    ctx: ReceiverContext<'_, V, D>,
+    mut ctx: ReceiverContext<'_, V, D>,
     read: R,
 ) -> Result<(Option<Vec<u8>>, T), ReceiverError>
 where
@@ -62,12 +70,30 @@ where
         return Err(ReceiverError::InvalidPacketSignature);
     }
 
+    let group_id = p.id();
     let nonce = p.nonce().cloned();
+
+    // Ensure that packet groups are still valid
+    // NOTE: Using a reverse-ordered ttl value to have a min-heap
+    //       so that we can continuously pull ids off the heap
+    //       until all expired are removed
+    {
+        // TODO: Add a test to verify this removal happens
+        let expirations = &mut ctx.expirations;
+        let assembler = &mut ctx.assembler;
+        expirations
+            .drain()
+            .take_while(|rev| rev.0.has_expired())
+            .map(|rev| rev.0.value)
+            .for_each(|group_id| {
+                assembler.remove_group(group_id);
+            });
+    }
 
     // Retrieve or create assembler for packet group
     let do_assemble = add_packet_and_verify(ctx.assembler, p)?;
     if do_assemble {
-        let data = assemble_and_decrypt(ctx.assembler, ctx.decrypter, nonce)?;
+        let data = assemble_and_decrypt(group_id, ctx.assembler, ctx.decrypter, nonce)?;
         Ok((Some(data), other_data))
     } else {
         Ok((None, other_data))
@@ -88,17 +114,20 @@ where
 /// Adds the packet to our internal cache and checks to see if we
 /// are ready to assemble the packet
 fn add_packet_and_verify(assembler: &mut Assembler, packet: Packet) -> Result<bool, ReceiverError> {
+    let id = packet.id();
+
     // Bubble up the error; we don't care about the success
     assembler
         .add_packet(packet)
         .map_err(ReceiverError::AssembleData)?;
 
-    Ok(assembler.verify())
+    Ok(assembler.verify(id))
 }
 
 /// Assembles the complete data held by the assembler and decrypts it
 /// using the internal bicrypter
 fn assemble_and_decrypt<D>(
+    group_id: u32,
     assembler: &Assembler,
     decrypter: &D,
     nonce: Option<Nonce>,
@@ -107,7 +136,9 @@ where
     D: Decrypter,
 {
     // Assemble our data, which could be encrypted
-    let data = assembler.assemble().map_err(ReceiverError::AssembleData)?;
+    let data = assembler
+        .assemble(group_id)
+        .map_err(ReceiverError::AssembleData)?;
 
     // Decrypt our collective data
     let data = decrypter
@@ -192,7 +223,7 @@ mod tests {
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
         // us to re-add a packet with the same id & index
-        let p = &Disassembler::new()
+        let p = &Disassembler::default()
             .make_packets_from_data(DisassembleInfo {
                 id,
                 encryption,
@@ -259,7 +290,7 @@ mod tests {
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
-        let p = &Disassembler::new()
+        let p = &Disassembler::default()
             .make_packets_from_data(DisassembleInfo {
                 id,
                 encryption,
@@ -287,7 +318,7 @@ mod tests {
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
-        let p = &Disassembler::new()
+        let p = &Disassembler::default()
             .make_packets_from_data(DisassembleInfo {
                 id: 0,
                 encryption: PacketEncryption::None,
@@ -358,7 +389,7 @@ mod tests {
             .unwrap();
 
             // Make a new packet per element in data
-            let packets = Disassembler::new()
+            let packets = Disassembler::default()
                 .make_packets_from_data(DisassembleInfo {
                     id,
                     encryption,

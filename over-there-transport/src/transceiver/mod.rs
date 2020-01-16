@@ -6,7 +6,10 @@ use crate::assembler::Assembler;
 use crate::disassembler::Disassembler;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
+use over_there_utils::TtlValue;
 use receiver::ReceiverContext;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use transmitter::TransmitterContext;
 
 pub(crate) struct Context<A, B>
@@ -20,6 +23,9 @@ where
 
     /// Maximum size at which to send data
     transmission_size: usize,
+
+    /// Used to keep track of packet groups that are scheduled to expire
+    expirations: BinaryHeap<Reverse<TtlValue<u32>>>,
 
     /// Assembler used to gather packets together
     assembler: Assembler,
@@ -43,8 +49,9 @@ where
         Self {
             buffer: vec![0; transmission_size].into_boxed_slice(),
             transmission_size,
-            assembler: Assembler::new(),
-            disassembler: Disassembler::new(),
+            expirations: BinaryHeap::default(),
+            assembler: Assembler::default(),
+            disassembler: Disassembler::default(),
             authenticator,
             bicrypter,
         }
@@ -59,6 +66,7 @@ where
     fn from(ctx: &'a mut Context<A, B>) -> Self {
         Self {
             buffer: &mut ctx.buffer,
+            expirations: &mut ctx.expirations,
             assembler: &mut ctx.assembler,
             verifier: &ctx.authenticator,
             decrypter: &ctx.bicrypter,

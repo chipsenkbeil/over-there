@@ -33,12 +33,6 @@ pub(crate) struct Disassembler {
 }
 
 impl Disassembler {
-    pub fn new() -> Self {
-        Self {
-            packet_overhead_size_cache: HashMap::new(),
-        }
-    }
-
     pub fn make_packets_from_data<S: Signer>(
         &mut self,
         info: DisassembleInfo<S>,
@@ -219,6 +213,14 @@ impl Disassembler {
     }
 }
 
+impl Default for Disassembler {
+    fn default() -> Self {
+        Self {
+            packet_overhead_size_cache: HashMap::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,7 +231,7 @@ mod tests {
     fn fails_if_desired_chunk_size_is_too_low() {
         // Needs to accommodate metadata & data, which this does not
         let chunk_size = 1;
-        let err = Disassembler::new()
+        let err = Disassembler::default()
             .make_packets_from_data(DisassembleInfo {
                 id: 0,
                 encryption: PacketEncryption::None,
@@ -254,7 +256,7 @@ mod tests {
         // Make it so all the data fits in one packet
         let chunk_size = 1000;
 
-        let packets = Disassembler::new()
+        let packets = Disassembler::default()
             .make_packets_from_data(DisassembleInfo {
                 id,
                 encryption,
@@ -294,7 +296,7 @@ mod tests {
         .unwrap();
         let chunk_size = overhead_size + 2;
 
-        let packets = Disassembler::new()
+        let packets = Disassembler::default()
             .make_packets_from_data(DisassembleInfo {
                 id,
                 encryption: PacketEncryption::from(nonce),
@@ -338,7 +340,7 @@ mod tests {
         let data: Vec<u8> = [0; 100000].to_vec();
         let chunk_size = 512;
 
-        let packets = Disassembler::new()
+        let packets = Disassembler::default()
             .make_packets_from_data(DisassembleInfo {
                 id,
                 encryption,
