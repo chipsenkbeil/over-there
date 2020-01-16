@@ -74,6 +74,18 @@ impl<T> From<T> for TtlValue<T> {
     }
 }
 
+impl<T> Into<Instant> for TtlValue<T> {
+    fn into(self) -> Instant {
+        self.last_touched
+    }
+}
+
+impl<T> Into<Duration> for TtlValue<T> {
+    fn into(self) -> Duration {
+        self.ttl
+    }
+}
+
 impl<T> Deref for TtlValue<T> {
     type Target = T;
 
@@ -187,6 +199,23 @@ mod tests {
 
         assert_eq!(v1.value, 3);
         assert_eq!(v1.ttl, Duration::new(0, 0));
+    }
+
+    #[test]
+    fn into_should_return_last_touched_if_type_is_instant() {
+        let v1 = TtlValue::new(3, Duration::from_millis(5));
+        let v2 = v1.clone();
+
+        let i: Instant = v1.into();
+        assert_eq!(i, v2.last_touched);
+    }
+
+    #[test]
+    fn into_should_return_ttl_if_type_is_duration() {
+        let v1 = TtlValue::new(3, Duration::from_millis(5));
+
+        let d: Duration = v1.into();
+        assert_eq!(d, Duration::from_millis(5));
     }
 
     #[test]
