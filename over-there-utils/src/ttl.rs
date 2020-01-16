@@ -1,9 +1,11 @@
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
+use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 use std::time::Instant;
 
 /// Represents a value that has a limited lifetime before expiring
-#[derive(Eq)]
+#[derive(Debug)]
 pub struct TtlValue<T> {
     pub value: T,
     last_touched: Instant,
@@ -28,27 +30,68 @@ impl<T> TtlValue<T> {
     }
 }
 
-impl<T: Eq> PartialOrd for TtlValue<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+impl<T: Hash> Hash for TtlValue<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
     }
 }
 
-impl<T: Eq> Ord for TtlValue<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.last_touched.cmp(&other.last_touched)
-    }
-}
+impl<T: Eq> Eq for TtlValue<T> {}
 
-impl<T> PartialEq for TtlValue<T> {
+impl<T: Eq> PartialEq for TtlValue<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.last_touched == other.last_touched
+        self.value == other.value
+    }
+}
+
+impl<T: PartialOrd + Eq> PartialOrd for TtlValue<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.value.partial_cmp(&other.value)
+    }
+}
+
+impl<T: Ord> Ord for TtlValue<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
+impl<T: Clone> Clone for TtlValue<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            last_touched: self.last_touched,
+            ttl: self.ttl,
+        }
+    }
+}
+
+impl<T: Copy> Copy for TtlValue<T> {}
+
+impl<T> From<T> for TtlValue<T> {
+    fn from(value: T) -> Self {
+        Self::new(value, Duration::new(0, 0))
+    }
+}
+
+impl<T> Deref for TtlValue<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T> DerefMut for TtlValue<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn refresh_should_renew_lifetime_of_value() {
@@ -82,32 +125,83 @@ mod tests {
     }
 
     #[test]
-    fn ordering_uses_last_touch() {
-        let mut ttl_value_1 = TtlValue::new(0, Duration::from_millis(5));
+    fn hash_should_use_underlying_value() {
+        // Values do not overlap, so creates two entries
+        let mut set = HashSet::new();
+        let v1 = TtlValue::new(0, Duration::from_millis(5));
+        let v2 = TtlValue::new(1, Duration::from_millis(5));
 
-        std::thread::sleep(Duration::from_millis(5));
+        set.insert(v1);
+        set.insert(v2);
 
-        let ttl_value_2 = TtlValue::new(0, Duration::from_millis(5));
+        assert_eq!(set.len(), 2);
+        assert!(set.get(&0.into()).is_some());
+        assert!(set.get(&1.into()).is_some());
 
-        assert!(ttl_value_1 < ttl_value_2);
+        // Values do overlap, so creates one entry
+        let mut set = HashSet::new();
+        let v1 = TtlValue::new(2, Duration::from_millis(5));
+        let v2 = TtlValue::new(2, Duration::from_millis(10));
 
-        ttl_value_1.refresh();
+        set.insert(v1);
+        set.insert(v2);
 
-        assert!(ttl_value_1 > ttl_value_2);
+        assert_eq!(set.len(), 1);
+        assert!(set.get(&2.into()).is_some());
     }
 
     #[test]
-    fn equality_uses_last_touch() {
-        let ttl_value_1 = TtlValue::new(0, Duration::from_millis(5));
+    fn partial_eq_should_use_underlying_value() {
+        let v1 = TtlValue::new(5, Duration::from_millis(1));
+        let v2 = TtlValue::new(5, Duration::from_millis(2));
 
-        std::thread::sleep(Duration::from_millis(5));
+        assert_eq!(v1, v2);
+    }
 
-        let mut ttl_value_2 = TtlValue::new(0, Duration::from_millis(5));
+    #[test]
+    fn partial_ord_should_use_underlying_value() {
+        let v1 = TtlValue::new(3, Duration::from_millis(1));
+        let v2 = TtlValue::new(5, Duration::from_millis(1));
 
-        assert!(ttl_value_1 != ttl_value_2);
+        assert!(v1 < v2);
+    }
 
-        ttl_value_2.last_touched = ttl_value_1.last_touched;
+    #[test]
+    fn clone_should_use_underlying_value() {
+        let v1 = TtlValue::new(3, Duration::from_millis(1));
 
-        assert!(ttl_value_1 == ttl_value_2);
+        assert_eq!(v1, v1.clone());
+    }
+
+    #[test]
+    fn copy_should_use_underlying_value() {
+        let v1 = TtlValue::new(3, Duration::from_millis(1));
+        let v2 = v1;
+
+        assert_eq!(v1, v2);
+    }
+
+    #[test]
+    fn from_should_use_underlying_value_and_produce_a_duration_of_zero() {
+        let v1 = TtlValue::from(3);
+
+        assert_eq!(v1.value, 3);
+        assert_eq!(v1.ttl, Duration::new(0, 0));
+    }
+
+    #[test]
+    fn deref_should_yield_underlying_value() {
+        let v1 = TtlValue::new(5, Duration::from_millis(1));
+
+        assert_eq!(*v1, 5);
+    }
+
+    #[test]
+    fn deref_mut_should_yield_underlying_value() {
+        let mut v1 = TtlValue::new(5, Duration::from_millis(1));
+
+        *v1 = 10;
+
+        assert_eq!(*v1, 10);
     }
 }
