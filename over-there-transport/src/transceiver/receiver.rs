@@ -5,9 +5,6 @@ use crate::{
 use over_there_auth::Verifier;
 use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
 use over_there_derive::Error;
-use over_there_utils::TtlValue;
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
 use std::io::Error as IoError;
 
 #[derive(Debug, Error)]
@@ -28,11 +25,6 @@ where
     /// Buffer to contain bytes for temporary storage
     pub(crate) buffer: &'a mut [u8],
 
-    /// Contains expiration information that is used to
-    /// constrain how long assembler packet groups
-    /// are available
-    pub(crate) expirations: &'a mut BinaryHeap<Reverse<TtlValue<u32>>>,
-
     /// Assembler used to gather packets together
     pub(crate) assembler: &'a mut Assembler,
 
@@ -44,7 +36,7 @@ where
 }
 
 pub(crate) fn do_receive<V, D, T, R>(
-    mut ctx: ReceiverContext<'_, V, D>,
+    ctx: ReceiverContext<'_, V, D>,
     read: R,
 ) -> Result<(Option<Vec<u8>>, T), ReceiverError>
 where
@@ -74,26 +66,17 @@ where
     let nonce = p.nonce().cloned();
 
     // Ensure that packet groups are still valid
-    // NOTE: Using a reverse-ordered ttl value to have a min-heap
-    //       so that we can continuously pull ids off the heap
-    //       until all expired are removed
-    {
-        // TODO: Add a test to verify this removal happens
-        let expirations = &mut ctx.expirations;
-        let assembler = &mut ctx.assembler;
-        expirations
-            .drain()
-            .take_while(|rev| rev.0.has_expired())
-            .map(|rev| rev.0.value)
-            .for_each(|group_id| {
-                assembler.remove_group(group_id);
-            });
-    }
+    ctx.assembler.remove_expired();
 
-    // Retrieve or create assembler for packet group
+    // Add the packet, see if we are ready to assemble the data, and do so
     let do_assemble = add_packet_and_verify(ctx.assembler, p)?;
     if do_assemble {
+        // Gather the complete data
         let data = assemble_and_decrypt(group_id, ctx.assembler, ctx.decrypter, nonce)?;
+
+        // Remove the underlying group as we no longer need to keep it
+        ctx.assembler.remove_group(group_id);
+
         Ok((Some(data), other_data))
     } else {
         Ok((None, other_data))
@@ -157,9 +140,15 @@ mod tests {
     use over_there_auth::NoopAuthenticator;
     use over_there_crypto::NoopBicrypter;
     use std::io::ErrorKind as IoErrorKind;
+    use std::time::Duration;
 
     fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, NoopBicrypter> {
-        Context::new(buffer_size, NoopAuthenticator, NoopBicrypter)
+        Context::new(
+            buffer_size,
+            Duration::from_secs(1),
+            NoopAuthenticator,
+            NoopBicrypter,
+        )
     }
 
     #[test]
@@ -345,6 +334,75 @@ mod tests {
         }
     }
 
+    #[test]
+    fn do_receive_should_remove_expired_packet_groups() {
+        // Create a custom context whose packet groups within its assembler
+        // will expire immediately
+        let mut ctx = Context::new(100, Duration::new(0, 0), NoopAuthenticator, NoopBicrypter);
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+
+        // Make many small packets
+        let packets = &mut Disassembler::default()
+            .make_packets_from_data(DisassembleInfo {
+                id: 0,
+                encryption: PacketEncryption::None,
+                data: &data,
+                desired_chunk_size: Disassembler::estimate_packet_overhead_size(
+                    data.len(),
+                    PacketType::NotFinal,
+                    &NoopAuthenticator,
+                )
+                .unwrap()
+                    + data.len(),
+                signer: &NoopAuthenticator,
+            })
+            .unwrap();
+        assert!(packets.len() > 1, "Did not produce many small packets");
+
+        while !packets.is_empty() {
+            let rctx = From::from(&mut ctx);
+            assert!(
+                do_receive(rctx, |buf| {
+                    let pdata = packets.remove(0).to_vec().unwrap();
+                    let l = pdata.len();
+                    buf[..l].clone_from_slice(&pdata);
+                    Ok((l, ()))
+                })
+                .unwrap()
+                .0
+                .is_none(),
+                "Unexpectedly got result from receive with ttl of zero"
+            );
+        }
+    }
+
+    #[test]
+    fn do_receive_should_remove_the_assembler_packet_group_if_does_complete_data() {
+        let mut ctx = new_context(100);
+        let rctx = From::from(&mut ctx);
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+
+        // Make one large packet so we can complete a message
+        let p = &Disassembler::default()
+            .make_packets_from_data(DisassembleInfo {
+                id: 0,
+                encryption: PacketEncryption::None,
+                data: &data,
+                desired_chunk_size: 100,
+                signer: &NoopAuthenticator,
+            })
+            .unwrap()[0];
+        let pdata = p.to_vec().unwrap();
+        do_receive(rctx, |buf| {
+            let l = pdata.len();
+            buf[..l].clone_from_slice(&pdata);
+            Ok((l, ()))
+        })
+        .unwrap();
+
+        assert_eq!(ctx.assembler.len(), 0);
+    }
+
     #[cfg(test)]
     mod crypt {
         use super::*;
@@ -367,7 +425,12 @@ mod tests {
         }
 
         fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, BadDecrypter> {
-            Context::new(buffer_size, NoopAuthenticator, BadDecrypter)
+            Context::new(
+                buffer_size,
+                Duration::from_secs(1),
+                NoopAuthenticator,
+                BadDecrypter,
+            )
         }
 
         #[test]

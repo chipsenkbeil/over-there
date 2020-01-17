@@ -93,9 +93,15 @@ mod tests {
     use over_there_auth::NoopAuthenticator;
     use over_there_crypto::NoopBicrypter;
     use std::io::ErrorKind as IoErrorKind;
+    use std::time::Duration;
 
     fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, NoopBicrypter> {
-        Context::new(buffer_size, NoopAuthenticator, NoopBicrypter)
+        Context::new(
+            buffer_size,
+            Duration::from_secs(1),
+            NoopAuthenticator,
+            NoopBicrypter,
+        )
     }
 
     #[test]
@@ -155,7 +161,12 @@ mod tests {
         }
 
         fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, BadEncrypter> {
-            Context::new(buffer_size, NoopAuthenticator, BadEncrypter)
+            Context::new(
+                buffer_size,
+                Duration::from_secs(1),
+                NoopAuthenticator,
+                BadEncrypter,
+            )
         }
 
         #[test]

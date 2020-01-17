@@ -1,12 +1,13 @@
 use crate::packet::Packet;
 use over_there_derive::Error;
+use over_there_utils::TtlValue;
 use std::collections::HashMap;
+use std::time::Duration;
 
 #[derive(Debug, Error)]
 pub enum AssemblerError {
     PacketExists { id: u32, index: u32 },
     PacketBeyondLastIndex { id: u32, index: u32 },
-    PacketHasDifferentId { id: u32, expected_id: u32 },
     FinalPacketAlreadyExists { id: u32, index: u32 },
     IncompletePacketCollection,
 }
@@ -31,10 +32,29 @@ impl Default for PacketGroup {
 
 pub(crate) struct Assembler {
     /// Map of unique id to associated group of packets being assembled
-    packet_groups: HashMap<u32, PacketGroup>,
+    packet_groups: HashMap<TtlValue<u32>, PacketGroup>,
+
+    /// Maximum time-to-live for each group of packets before being removed;
+    /// this time can be updated upon adding a new packet to a group
+    ttl: Duration,
 }
 
 impl Assembler {
+    pub const DEFAULT_TTL_IN_SECS: u64 = 5 * 60;
+
+    pub fn new(ttl: Duration) -> Self {
+        Self {
+            packet_groups: HashMap::new(),
+            ttl,
+        }
+    }
+
+    /// Returns the total packet groups contained within the assembler
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.packet_groups.len()
+    }
+
     /// Adds a new packet to the assembler, consuming it for reconstruction
     pub fn add_packet(&mut self, packet: Packet) -> Result<(), AssemblerError> {
         let id = packet.id();
@@ -43,7 +63,10 @@ impl Assembler {
 
         // Check if we already have a group for this packet, otherwise create
         // a new group
-        let group = self.packet_groups.entry(id).or_default();
+        let group = self
+            .packet_groups
+            .entry(TtlValue::new(id, self.ttl))
+            .or_default();
 
         // Check if we already have this packet
         if group.packets.contains_key(&index) {
@@ -74,19 +97,21 @@ impl Assembler {
         Ok(())
     }
 
-    /// Removes the specified packet group from the assembler,
-    /// returning the packets that were contained
-    pub fn remove_group(&mut self, group_id: u32) -> Option<Vec<Packet>> {
-        self.packet_groups
-            .remove(&group_id)
-            .as_mut()
-            .map(|g| g.packets.drain().map(|e| e.1).collect())
+    /// Removes the specified packet group, returning whether or not the
+    /// group existed to be removed
+    pub fn remove_group(&mut self, group_id: u32) -> bool {
+        self.packet_groups.remove(&group_id.into()).is_some()
+    }
+
+    /// Removes all expired packet groups from the assembler
+    pub fn remove_expired(&mut self) {
+        self.packet_groups.retain(|k, _| !k.has_expired())
     }
 
     /// Determines whether or not all packets have been added to the assembler
     pub fn verify(&self, group_id: u32) -> bool {
         self.packet_groups
-            .get(&group_id)
+            .get(&group_id.into())
             .and_then(|g| {
                 let total_packets = g.packets.len() as u32;
                 g.final_index.map(|i| i + 1 == total_packets)
@@ -104,7 +129,7 @@ impl Assembler {
         }
 
         // Grab the appropriate group, which we can now assume exists
-        let group = self.packet_groups.get(&group_id).unwrap();
+        let group = self.packet_groups.get(&group_id.into()).unwrap();
 
         // Gather references to packets in proper order
         let mut packets = group.packets.values().collect::<Vec<&Packet>>();
@@ -118,9 +143,7 @@ impl Assembler {
 
 impl Default for Assembler {
     fn default() -> Self {
-        Self {
-            packet_groups: HashMap::new(),
-        }
+        Self::new(Duration::from_secs(Self::DEFAULT_TTL_IN_SECS))
     }
 }
 
@@ -206,36 +229,6 @@ mod tests {
     }
 
     #[test]
-    fn add_packet_fails_if_packet_does_not_have_same_id() {
-        let mut a = Assembler::default();
-        let id = 999;
-
-        // Add first packet successfully
-        let result = a.add_packet(make_empty_packet(id, 0, false));
-        assert_eq!(
-            result.is_ok(),
-            true,
-            "Expected success for adding first packet, but got {}",
-            result.unwrap_err(),
-        );
-
-        // Fail if adding packet after final packet
-        match a
-            .add_packet(make_empty_packet(id + 1, 1, false))
-            .unwrap_err()
-        {
-            AssemblerError::PacketHasDifferentId {
-                id: actual_id,
-                expected_id,
-            } => {
-                assert_eq!(actual_id, id + 1, "Actual id was different than provided");
-                assert_eq!(expected_id, id, "Expected id was different from tracked");
-            }
-            e => panic!("Unexpected error {} received", e),
-        }
-    }
-
-    #[test]
     fn add_packet_fails_if_last_packet_already_added() {
         let mut a = Assembler::default();
 
@@ -257,6 +250,44 @@ mod tests {
             }
             e => panic!("Unexpected error {} received", e),
         }
+    }
+
+    #[test]
+    fn remove_group_should_remove_the_underlying_packet_group() {
+        let mut a = Assembler::default();
+
+        // Add a couple of packets
+        a.add_packet(make_empty_packet(0, 0, true)).unwrap();
+        a.add_packet(make_empty_packet(1, 0, true)).unwrap();
+        a.add_packet(make_empty_packet(2, 0, true)).unwrap();
+        assert_eq!(a.packet_groups.len(), 3);
+
+        // Remove a group that doesn't exist
+        assert!(!a.remove_group(3));
+        assert_eq!(a.packet_groups.len(), 3);
+
+        // Remove a group that does exist
+        assert!(a.remove_group(1));
+        assert_eq!(a.packet_groups.len(), 2);
+    }
+
+    #[test]
+    fn remove_expired_should_only_retain_packet_groups_not_expired() {
+        let mut a = Assembler::new(Duration::from_millis(10));
+
+        // Add a couple of packets
+        a.add_packet(make_empty_packet(0, 0, true)).unwrap();
+        a.add_packet(make_empty_packet(1, 0, true)).unwrap();
+        assert_eq!(a.packet_groups.len(), 2);
+
+        // Add another thread a little later
+        std::thread::sleep(Duration::from_millis(11));
+        a.add_packet(make_empty_packet(2, 0, true)).unwrap();
+        assert_eq!(a.packet_groups.len(), 3);
+
+        // Remove the expired packet groups
+        a.remove_expired();
+        assert_eq!(a.packet_groups.len(), 1, "Unexpired packet did not remain");
     }
 
     #[test]

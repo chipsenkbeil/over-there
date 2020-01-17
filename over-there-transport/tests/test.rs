@@ -19,12 +19,14 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut client = UdpTransceiver::new(
         net::udp::local()?,
+        Duration::from_secs(1),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
 
     let mut server = UdpTransceiver::new(
         net::udp::local()?,
+        Duration::from_secs(1),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
@@ -74,6 +76,7 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut client = TcpStreamTransceiver::new(
         client_stream,
+        Duration::from_secs(1),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
@@ -81,6 +84,7 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
     let (server_stream, _addr) = server_listener.accept()?;
     let mut server = TcpStreamTransceiver::new(
         server_stream,
+        Duration::from_secs(1),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );

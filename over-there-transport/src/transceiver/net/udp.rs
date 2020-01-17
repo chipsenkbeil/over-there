@@ -7,6 +7,7 @@ use crate::transceiver::{
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use std::net::{SocketAddr, UdpSocket};
+use std::time::Duration;
 
 pub struct UdpTransceiver<A, B>
 where
@@ -22,10 +23,15 @@ where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
 {
-    pub fn new(socket: UdpSocket, authenticator: A, bicrypter: B) -> Self {
+    pub fn new(socket: UdpSocket, packet_ttl: Duration, authenticator: A, bicrypter: B) -> Self {
         Self {
             socket,
-            ctx: Context::new(udp::MAX_IPV4_DATAGRAM_SIZE, authenticator, bicrypter),
+            ctx: Context::new(
+                udp::MAX_IPV4_DATAGRAM_SIZE,
+                packet_ttl,
+                authenticator,
+                bicrypter,
+            ),
         }
     }
 

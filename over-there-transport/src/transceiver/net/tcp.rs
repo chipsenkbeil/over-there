@@ -8,6 +8,7 @@ use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::time::Duration;
 
 pub struct TcpStreamTransceiver<A, B>
 where
@@ -23,10 +24,10 @@ where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
 {
-    pub fn new(stream: TcpStream, authenticator: A, bicrypter: B) -> Self {
+    pub fn new(stream: TcpStream, packet_ttl: Duration, authenticator: A, bicrypter: B) -> Self {
         Self {
             stream,
-            ctx: Context::new(tcp::MTU_ETHERNET_SIZE, authenticator, bicrypter),
+            ctx: Context::new(tcp::MTU_ETHERNET_SIZE, packet_ttl, authenticator, bicrypter),
         }
     }
 
