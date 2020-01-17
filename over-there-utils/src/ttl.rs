@@ -21,8 +21,16 @@ impl<T> TtlValue<T> {
         }
     }
 
-    pub fn refresh(&mut self) {
+    pub fn touch(&mut self) {
         self.last_touched = Instant::now();
+    }
+
+    pub fn last_touched(&self) -> &Instant {
+        &self.last_touched
+    }
+
+    pub fn ttl(&self) -> &Duration {
+        &self.ttl
     }
 
     pub fn has_expired(&self) -> bool {
