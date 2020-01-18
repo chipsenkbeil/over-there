@@ -1,9 +1,10 @@
 use crate::{
     assembler::{self, Assembler},
     packet::Packet,
+    transceiver::Context,
 };
-use over_there_auth::Verifier;
-use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
+use over_there_auth::{Signer, Verifier};
+use over_there_crypto::{AssociatedData, CryptError, Decrypter, Encrypter, Nonce};
 use over_there_derive::Error;
 use std::io::Error as IoError;
 
@@ -23,16 +24,31 @@ where
     D: Decrypter,
 {
     /// Buffer to contain bytes for temporary storage
-    pub(crate) buffer: &'a mut [u8],
+    buffer: &'a mut [u8],
 
     /// Assembler used to gather packets together
-    pub(crate) assembler: &'a mut Assembler,
+    assembler: &'a mut Assembler,
 
     /// Performs verification on data
-    pub(crate) verifier: &'a V,
+    verifier: &'a V,
 
     /// Performs encryption/decryption on data
-    pub(crate) decrypter: &'a D,
+    decrypter: &'a D,
+}
+
+impl<'a, A, B> From<&'a mut Context<A, B>> for ReceiverContext<'a, A, B>
+where
+    A: Signer + Verifier,
+    B: Encrypter + Decrypter,
+{
+    fn from(ctx: &'a mut Context<A, B>) -> Self {
+        Self {
+            buffer: &mut ctx.buffer,
+            assembler: &mut ctx.assembler,
+            verifier: &ctx.authenticator,
+            decrypter: &ctx.bicrypter,
+        }
+    }
 }
 
 pub(crate) fn do_receive<V, D, T, R>(

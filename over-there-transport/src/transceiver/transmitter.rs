@@ -1,7 +1,10 @@
-use crate::disassembler::{self, DisassembleInfo, Disassembler};
-use crate::packet::PacketEncryption;
-use over_there_auth::Signer;
-use over_there_crypto::{CryptError, Encrypter};
+use crate::{
+    disassembler::{self, DisassembleInfo, Disassembler},
+    packet::PacketEncryption,
+    transceiver::Context,
+};
+use over_there_auth::{Signer, Verifier};
+use over_there_crypto::{CryptError, Decrypter, Encrypter};
 use over_there_derive::Error;
 use rand::random;
 use std::io::Error as IoError;
@@ -20,16 +23,31 @@ where
     E: Encrypter,
 {
     /// Maximum size allowed for a packet
-    pub(crate) transmission_size: usize,
+    transmission_size: usize,
 
     /// Disassembler used to break up data into packets
-    pub(crate) disassembler: &'a mut Disassembler,
+    disassembler: &'a mut Disassembler,
 
     /// Performs authentication on data
-    pub(crate) signer: &'a S,
+    signer: &'a S,
 
     /// Performs encryption/decryption on data
-    pub(crate) encrypter: &'a E,
+    encrypter: &'a E,
+}
+
+impl<'a, A, B> From<&'a mut Context<A, B>> for TransmitterContext<'a, A, B>
+where
+    A: Signer + Verifier,
+    B: Encrypter + Decrypter,
+{
+    fn from(ctx: &'a mut Context<A, B>) -> Self {
+        Self {
+            transmission_size: ctx.transmission_size,
+            disassembler: &mut ctx.disassembler,
+            signer: &ctx.authenticator,
+            encrypter: &ctx.bicrypter,
+        }
+    }
 }
 
 pub(crate) fn do_send<'a, S, E, F>(

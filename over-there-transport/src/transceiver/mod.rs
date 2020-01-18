@@ -6,9 +6,7 @@ use crate::assembler::Assembler;
 use crate::disassembler::Disassembler;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
-use receiver::ReceiverContext;
 use std::time::Duration;
-use transmitter::TransmitterContext;
 
 pub(crate) struct Context<A, B>
 where
@@ -53,36 +51,6 @@ where
             disassembler: Disassembler::default(),
             authenticator,
             bicrypter,
-        }
-    }
-}
-
-impl<'a, A, B> From<&'a mut Context<A, B>> for ReceiverContext<'a, A, B>
-where
-    A: Signer + Verifier,
-    B: Encrypter + Decrypter,
-{
-    fn from(ctx: &'a mut Context<A, B>) -> Self {
-        Self {
-            buffer: &mut ctx.buffer,
-            assembler: &mut ctx.assembler,
-            verifier: &ctx.authenticator,
-            decrypter: &ctx.bicrypter,
-        }
-    }
-}
-
-impl<'a, A, B> From<&'a mut Context<A, B>> for TransmitterContext<'a, A, B>
-where
-    A: Signer + Verifier,
-    B: Encrypter + Decrypter,
-{
-    fn from(ctx: &'a mut Context<A, B>) -> Self {
-        Self {
-            transmission_size: ctx.transmission_size,
-            disassembler: &mut ctx.disassembler,
-            signer: &ctx.authenticator,
-            encrypter: &ctx.bicrypter,
         }
     }
 }
