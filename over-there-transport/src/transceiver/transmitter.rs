@@ -1,7 +1,7 @@
 use crate::{
     disassembler::{self, DisassembleInfo, Disassembler},
     packet::PacketEncryption,
-    transceiver::Context,
+    transceiver::TransceiverContext,
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{CryptError, Decrypter, Encrypter};
@@ -35,12 +35,12 @@ where
     encrypter: &'a E,
 }
 
-impl<'a, A, B> From<&'a mut Context<A, B>> for TransmitterContext<'a, A, B>
+impl<'a, A, B> From<&'a mut TransceiverContext<A, B>> for TransmitterContext<'a, A, B>
 where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
 {
-    fn from(ctx: &'a mut Context<A, B>) -> Self {
+    fn from(ctx: &'a mut TransceiverContext<A, B>) -> Self {
         Self {
             transmission_size: ctx.transmission_size,
             disassembler: &mut ctx.disassembler,
@@ -107,14 +107,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transceiver::Context;
+    use crate::transceiver::TransceiverContext;
     use over_there_auth::NoopAuthenticator;
     use over_there_crypto::NoopBicrypter;
     use std::io::ErrorKind as IoErrorKind;
     use std::time::Duration;
 
-    fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, NoopBicrypter> {
-        Context::new(
+    fn new_context(buffer_size: usize) -> TransceiverContext<NoopAuthenticator, NoopBicrypter> {
+        TransceiverContext::new(
             buffer_size,
             Duration::from_secs(1),
             NoopAuthenticator,
@@ -178,8 +178,8 @@ mod tests {
             }
         }
 
-        fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, BadEncrypter> {
-            Context::new(
+        fn new_context(buffer_size: usize) -> TransceiverContext<NoopAuthenticator, BadEncrypter> {
+            TransceiverContext::new(
                 buffer_size,
                 Duration::from_secs(1),
                 NoopAuthenticator,

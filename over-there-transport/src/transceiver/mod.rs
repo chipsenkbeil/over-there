@@ -8,7 +8,7 @@ use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use std::time::Duration;
 
-pub(crate) struct Context<A, B>
+pub struct TransceiverContext<A, B>
 where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
@@ -33,7 +33,7 @@ where
     bicrypter: B,
 }
 
-impl<A, B> Context<A, B>
+impl<A, B> TransceiverContext<A, B>
 where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,

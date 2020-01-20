@@ -1,7 +1,7 @@
 use crate::{
     assembler::{self, Assembler},
     packet::Packet,
-    transceiver::Context,
+    transceiver::TransceiverContext,
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{AssociatedData, CryptError, Decrypter, Encrypter, Nonce};
@@ -36,12 +36,12 @@ where
     decrypter: &'a D,
 }
 
-impl<'a, A, B> From<&'a mut Context<A, B>> for ReceiverContext<'a, A, B>
+impl<'a, A, B> From<&'a mut TransceiverContext<A, B>> for ReceiverContext<'a, A, B>
 where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
 {
-    fn from(ctx: &'a mut Context<A, B>) -> Self {
+    fn from(ctx: &'a mut TransceiverContext<A, B>) -> Self {
         Self {
             buffer: &mut ctx.buffer,
             assembler: &mut ctx.assembler,
@@ -152,14 +152,14 @@ mod tests {
     use super::*;
     use crate::disassembler::{DisassembleInfo, Disassembler};
     use crate::packet::{PacketEncryption, PacketType};
-    use crate::transceiver::Context;
+    use crate::transceiver::TransceiverContext;
     use over_there_auth::NoopAuthenticator;
     use over_there_crypto::NoopBicrypter;
     use std::io::ErrorKind as IoErrorKind;
     use std::time::Duration;
 
-    fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, NoopBicrypter> {
-        Context::new(
+    fn new_context(buffer_size: usize) -> TransceiverContext<NoopAuthenticator, NoopBicrypter> {
+        TransceiverContext::new(
             buffer_size,
             Duration::from_secs(1),
             NoopAuthenticator,
@@ -354,7 +354,8 @@ mod tests {
     fn do_receive_should_remove_expired_packet_groups() {
         // Create a custom context whose packet groups within its assembler
         // will expire immediately
-        let mut ctx = Context::new(100, Duration::new(0, 0), NoopAuthenticator, NoopBicrypter);
+        let mut ctx =
+            TransceiverContext::new(100, Duration::new(0, 0), NoopAuthenticator, NoopBicrypter);
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make many small packets
@@ -440,8 +441,8 @@ mod tests {
             }
         }
 
-        fn new_context(buffer_size: usize) -> Context<NoopAuthenticator, BadDecrypter> {
-            Context::new(
+        fn new_context(buffer_size: usize) -> TransceiverContext<NoopAuthenticator, BadDecrypter> {
+            TransceiverContext::new(
                 buffer_size,
                 Duration::from_secs(1),
                 NoopAuthenticator,
