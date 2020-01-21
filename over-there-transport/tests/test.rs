@@ -131,7 +131,8 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Block until we verify the counts
-    exec::loop_timeout_panic(Duration::from_millis(500), || {
+    exec::loop_timeout_panic(Duration::from_millis(2500), || {
+        thread::sleep(Duration::from_millis(50));
         let tmc = *mc_2.lock().unwrap() == N;
         let trc = *rc_2.lock().unwrap() == N;
         tmc && trc
@@ -268,7 +269,8 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Block until we verify the counts
-    exec::loop_timeout_panic(Duration::from_millis(500), || {
+    exec::loop_timeout_panic(Duration::from_millis(2500), || {
+        thread::sleep(Duration::from_millis(50));
         let tmc = *mc_2.lock().unwrap() == N;
         let trc = *rc_2.lock().unwrap() == N;
         tmc && trc
