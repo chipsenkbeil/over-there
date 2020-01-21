@@ -392,8 +392,8 @@ version = "0.1.0"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "over-there-core 0.1.0",
  "over-there-crypto 0.1.0",
- "over-there-msg 0.1.0",
  "tempfile 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -406,6 +406,27 @@ dependencies = [
  "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde-big-array 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha2 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "over-there-core"
+version = "0.1.0"
+dependencies = [
+ "chrono 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "over-there-auth 0.1.0",
+ "over-there-crypto 0.1.0",
+ "over-there-derive 0.1.0",
+ "over-there-transport 0.1.0",
+ "over-there-utils 0.1.0",
+ "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rmp-serde 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_bytes 0.11.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "strum 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "strum_macros 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tempfile 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -430,27 +451,6 @@ dependencies = [
  "proc-macro2 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "quote 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "syn 1.0.9 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "over-there-msg"
-version = "0.1.0"
-dependencies = [
- "chrono 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "over-there-auth 0.1.0",
- "over-there-crypto 0.1.0",
- "over-there-derive 0.1.0",
- "over-there-transport 0.1.0",
- "over-there-utils 0.1.0",
- "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rmp-serde 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.103 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_bytes 0.11.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "strum 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "strum_macros 0.17.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "tempfile 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

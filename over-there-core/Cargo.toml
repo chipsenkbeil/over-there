@@ -1,5 +1,5 @@
 [package]
-name = "over-there-msg"
+name = "over-there-core"
 version = "0.1.0"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 edition = "2018"
