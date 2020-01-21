@@ -7,8 +7,24 @@ use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::{Arc, RwLock};
+use std::sync::{mpsc, Arc, RwLock};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
+
+pub struct UdpNetSend {
+    tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    addr: SocketAddr,
+}
+
+impl UdpNetSend {
+    pub fn send(&self, data: &[u8]) -> Result<(), mpsc::SendError<(Vec<u8>, SocketAddr)>> {
+        self.tx.send((data.to_vec(), self.addr))
+    }
+
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
 
 pub struct UdpTransceiver<A, B>
 where
@@ -41,26 +57,57 @@ where
 
     pub fn spawn(
         &self,
-        callback: impl Fn(Vec<u8>, SocketAddr) + Send + 'static,
+        sleep_duration: Duration,
+        callback: impl Fn(Vec<u8>, UdpNetSend) + Send + 'static,
     ) -> Result<JoinHandle<()>, io::Error> {
-        spawn(self.socket.try_clone()?, Arc::clone(&self.ctx), callback)
+        spawn(
+            self.socket.try_clone()?,
+            Arc::clone(&self.ctx),
+            sleep_duration,
+            callback,
+        )
     }
 }
 
-fn spawn<A, B>(
+fn spawn<A, B, C>(
     socket: UdpSocket,
     ctx: Arc<RwLock<TransceiverContext<A, B>>>,
-    callback: impl Fn(Vec<u8>, SocketAddr) + Send + 'static,
+    sleep_duration: Duration,
+    callback: C,
 ) -> Result<JoinHandle<()>, io::Error>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
+    C: Fn(Vec<u8>, UdpNetSend) + Send + 'static,
 {
-    Ok(thread::spawn(move || loop {
-        match recv(&socket, &mut ctx.write().unwrap()) {
-            Ok((Some(data), addr)) => callback(data, addr),
-            Ok((None, _addr)) => (),
-            Err(_) => (),
+    Ok(thread::spawn(move || {
+        let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>();
+        loop {
+            let mut ctx_mut = ctx.write().unwrap();
+
+            // Attempt to send data on socket if there is any available
+            // TODO: Handle non-timeout errors
+            if let Ok((data, addr)) = rx.recv_timeout(Duration::new(0, 0)) {
+                // TODO: Handle errors
+                send(&socket, addr, &mut ctx_mut, &data).unwrap();
+            }
+
+            // Attempt to get new data and pass it along
+            match recv(&socket, &mut ctx_mut) {
+                Ok((Some(data), addr)) => callback(
+                    data,
+                    UdpNetSend {
+                        tx: tx.clone(),
+                        addr,
+                    },
+                ),
+                Ok((None, _addr)) => (),
+
+                // TODO: Handle errors
+                Err(_) => (),
+            }
+
+            thread::sleep(sleep_duration);
         }
     }))
 }

@@ -6,9 +6,25 @@ use crate::transceiver::{
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use std::io::{self, Read, Write};
-use std::net::TcpStream;
-use std::sync::{Arc, RwLock};
+use std::net::{SocketAddr, TcpStream};
+use std::sync::{mpsc, Arc, RwLock};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
+
+pub struct TcpNetSend {
+    tx: mpsc::Sender<Vec<u8>>,
+    addr: SocketAddr,
+}
+
+impl TcpNetSend {
+    pub fn send(&self, data: &[u8]) -> Result<(), mpsc::SendError<Vec<u8>>> {
+        self.tx.send(data.to_vec())
+    }
+
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
 
 pub struct TcpStreamTransceiver<A, B>
 where
@@ -41,26 +57,53 @@ where
 
     pub fn spawn(
         &self,
-        callback: impl Fn(Vec<u8>) + Send + 'static,
+        sleep_duration: Duration,
+        callback: impl Fn(Vec<u8>, TcpNetSend) + Send + 'static,
     ) -> Result<JoinHandle<()>, io::Error> {
-        stream_spawn(self.stream.try_clone()?, Arc::clone(&self.ctx), callback)
+        stream_spawn(
+            self.stream.try_clone()?,
+            Arc::clone(&self.ctx),
+            sleep_duration,
+            callback,
+        )
     }
 }
 
 fn stream_spawn<A, B>(
     mut stream: TcpStream,
     ctx: Arc<RwLock<TransceiverContext<A, B>>>,
-    callback: impl Fn(Vec<u8>) + Send + 'static,
+    sleep_duration: Duration,
+    callback: impl Fn(Vec<u8>, TcpNetSend) + Send + 'static,
 ) -> Result<JoinHandle<()>, io::Error>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
-    Ok(thread::spawn(move || loop {
-        match stream_recv(&mut stream, &mut ctx.write().unwrap()) {
-            Ok(Some(data)) => callback(data),
-            Ok(None) => (),
-            Err(_) => (),
+    let addr = stream.local_addr()?;
+    Ok(thread::spawn(move || {
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        loop {
+            let mut ctx_mut = ctx.write().unwrap();
+
+            // Attempt to send data on socket if there is any available
+            // TODO: Handle non-timeout errors
+            if let Ok(data) = rx.recv_timeout(Duration::new(0, 0)) {
+                // TODO: Handle errors
+                stream_send(&mut stream, &mut ctx_mut, &data).unwrap();
+            }
+
+            match stream_recv(&mut stream, &mut ctx_mut) {
+                Ok(Some(data)) => callback(
+                    data,
+                    TcpNetSend {
+                        tx: tx.clone(),
+                        addr,
+                    },
+                ),
+                Ok(None) => (),
+                Err(_) => (),
+            }
+            thread::sleep(sleep_duration);
         }
     }))
 }

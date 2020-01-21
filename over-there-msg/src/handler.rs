@@ -208,10 +208,7 @@ mod tests {
     fn can_invoke() {
         let mut store = HandlerStore::default();
         assert!(store
-            .register_for_content_type(ContentType::HeartbeatRequest, |_ctx| {
-                println!("TEST");
-                Ok(())
-            })
+            .register_for_content_type(ContentType::HeartbeatRequest, |_ctx| { Ok(()) })
             .is_ok());
         let sender = FakeSender {};
         assert!(

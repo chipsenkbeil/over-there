@@ -4,6 +4,7 @@ use over_there_transport::{
     net, NetTransmission, TcpStreamTransceiver, TransceiverContext, UdpTransceiver,
 };
 use over_there_utils::exec;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 fn init() {
@@ -14,7 +15,7 @@ fn init() {
 }
 
 #[test]
-fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
+fn test_udp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> {
     init();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
@@ -69,7 +70,65 @@ fn test_udp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
+fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
+    init();
+    let encrypt_key = crypto::key::new_256bit_key();
+    let sign_key = b"my signature key";
+
+    let ctx = TransceiverContext::new(
+        NetTransmission::UdpIpv4.into(),
+        Duration::from_secs(1),
+        Sha256Authenticator::new(sign_key),
+        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+    );
+    let client = UdpTransceiver::new(net::udp::local()?, ctx);
+
+    let ctx = TransceiverContext::new(
+        NetTransmission::UdpIpv4.into(),
+        Duration::from_secs(1),
+        Sha256Authenticator::new(sign_key),
+        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+    );
+    let server = UdpTransceiver::new(net::udp::local()?, ctx);
+
+    let mc_1 = Arc::new(Mutex::new(0));
+    let mc_2 = Arc::clone(&mc_1);
+    let rc_1 = Arc::new(Mutex::new(0));
+    let rc_2 = Arc::clone(&rc_1);
+
+    server.spawn(Duration::from_millis(1), move |msg, s| {
+        if msg != b"test message" {
+            panic!("Unexpected content {:?}", msg);
+        }
+
+        s.send(b"test reply").unwrap();
+        *mc_1.lock().unwrap() += 1;
+    })?;
+
+    client.spawn(Duration::from_millis(1), move |msg, _addr| {
+        if msg != b"test reply" {
+            panic!("Unexpected content {:?}", msg);
+        }
+
+        *rc_1.lock().unwrap() += 1;
+    })?;
+
+    // Send message to server
+    let msg = b"test message";
+    client.send(server.socket.local_addr()?, msg)?;
+
+    // Block until we verify the counts
+    exec::loop_timeout_panic(Duration::from_millis(500), || {
+        let tmc = *mc_2.lock().unwrap() == 1;
+        let trc = *rc_2.lock().unwrap() == 1;
+        tmc && trc
+    });
+
+    Ok(())
+}
+
+#[test]
+fn test_tcp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> {
     init();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
@@ -124,6 +183,69 @@ fn test_tcp_send_recv() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok(false)
     })?;
+
+    Ok(())
+}
+
+#[test]
+fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
+    init();
+    let encrypt_key = crypto::key::new_256bit_key();
+    let sign_key = b"my signature key";
+
+    let server_listener = net::tcp::local()?;
+    let server_addr = server_listener.local_addr()?;
+    let client_stream = std::net::TcpStream::connect(server_addr)?;
+
+    let ctx = TransceiverContext::new(
+        NetTransmission::TcpEthernet.into(),
+        Duration::from_secs(1),
+        Sha256Authenticator::new(sign_key),
+        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+    );
+    let mut client = TcpStreamTransceiver::new(client_stream, ctx);
+
+    let ctx = TransceiverContext::new(
+        NetTransmission::TcpEthernet.into(),
+        Duration::from_secs(1),
+        Sha256Authenticator::new(sign_key),
+        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+    );
+    let (server_stream, _addr) = server_listener.accept()?;
+    let server = TcpStreamTransceiver::new(server_stream, ctx);
+
+    let mc_1 = Arc::new(Mutex::new(0));
+    let mc_2 = Arc::clone(&mc_1);
+    let rc_1 = Arc::new(Mutex::new(0));
+    let rc_2 = Arc::clone(&rc_1);
+
+    server.spawn(Duration::from_millis(1), move |msg, s| {
+        if msg != b"test message" {
+            panic!("Unexpected content {:?}", msg);
+        }
+
+        s.send(b"test reply").unwrap();
+        *mc_1.lock().unwrap() += 1;
+    })?;
+
+    client.spawn(Duration::from_millis(1), move |msg, _send| {
+        if msg != b"test reply" {
+            panic!("Unexpected content {:?}", msg);
+        }
+
+        *rc_1.lock().unwrap() += 1;
+    })?;
+
+    // Send message to server
+    let msg = b"test message";
+    client.send(msg)?;
+
+    // Block until we verify the counts
+    exec::loop_timeout_panic(Duration::from_millis(500), || {
+        let tmc = *mc_2.lock().unwrap() == 1;
+        let trc = *rc_2.lock().unwrap() == 1;
+        tmc && trc
+    });
 
     Ok(())
 }

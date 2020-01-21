@@ -167,12 +167,7 @@ impl Disassembler {
         r#type: PacketType,
         signer: &dyn Signer,
     ) -> Result<usize, rmp_serde::encode::Error> {
-        println!(
-            "Request packet size for desired data size of {} and type {:?}",
-            desired_data_size, r#type
-        );
         let packet_size = Self::estimate_packet_size(desired_data_size, r#type, signer)?;
-        println!("It is {}", packet_size);
 
         // Figure out how much overhead is needed to fit the data into the packet
         // NOTE: If for some reason the packet -> msgpack has optimized the
