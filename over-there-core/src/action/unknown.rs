@@ -1,6 +1,13 @@
-use crate::{action::ActionError, msg::Msg};
+use crate::{
+    action::{ActionError, ActionState},
+    msg::Msg,
+};
 use over_there_transport::NetSend;
 
-pub fn unknown<NS: NetSend>(_msg: Msg, _ns: NS) -> Result<(), ActionError<NS::TSendData>> {
+pub fn unknown<NS: NetSend>(
+    _state: &mut ActionState,
+    _msg: Msg,
+    _ns: NS,
+) -> Result<(), ActionError<NS::TSendData>> {
     Ok(())
 }
