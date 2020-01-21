@@ -2,8 +2,8 @@ pub mod tcp;
 pub mod udp;
 
 use crate::net;
+use over_there_derive::Error;
 use std::net::SocketAddr;
-use std::sync::mpsc;
 
 pub enum NetTransmission {
     TcpEthernet,
@@ -29,9 +29,12 @@ impl Into<usize> for NetTransmission {
     }
 }
 
-pub trait NetSend: Clone {
-    type TSendData;
+#[derive(Debug, Error)]
+pub enum NetSendError {
+    Disconnected,
+}
 
-    fn send(&self, data: &[u8]) -> Result<(), mpsc::SendError<Self::TSendData>>;
+pub trait NetSend: Clone {
+    fn send(&self, data: &[u8]) -> Result<(), NetSendError>;
     fn addr(&self) -> SocketAddr;
 }

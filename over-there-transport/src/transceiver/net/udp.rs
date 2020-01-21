@@ -1,5 +1,5 @@
 use crate::transceiver::{
-    net::NetSend,
+    net::{NetSend, NetSendError},
     receiver::{self, ReceiverError},
     transmitter::{self, TransmitterError},
     TransceiverContext,
@@ -19,10 +19,10 @@ pub struct UdpNetSend {
 }
 
 impl NetSend for UdpNetSend {
-    type TSendData = (Vec<u8>, SocketAddr);
-
-    fn send(&self, data: &[u8]) -> Result<(), mpsc::SendError<Self::TSendData>> {
-        self.tx.send((data.to_vec(), self.addr))
+    fn send(&self, data: &[u8]) -> Result<(), NetSendError> {
+        self.tx
+            .send((data.to_vec(), self.addr))
+            .map_err(|_| NetSendError::Disconnected)
     }
 
     fn addr(&self) -> SocketAddr {
