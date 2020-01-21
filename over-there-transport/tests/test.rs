@@ -1,7 +1,7 @@
 use over_there_auth::Sha256Authenticator;
 use over_there_crypto::{self as crypto, aes_gcm};
 use over_there_transport::{
-    net, NetTransmission, TcpStreamTransceiver, TransceiverContext, UdpTransceiver,
+    net, NetSend, NetTransmission, TcpStreamTransceiver, TransceiverContext, UdpTransceiver,
 };
 use over_there_utils::exec;
 use std::sync::{Arc, Mutex};

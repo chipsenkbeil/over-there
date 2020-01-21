@@ -2,6 +2,8 @@ pub mod tcp;
 pub mod udp;
 
 use crate::net;
+use std::net::SocketAddr;
+use std::sync::mpsc;
 
 pub enum NetTransmission {
     TcpEthernet,
@@ -25,4 +27,11 @@ impl Into<usize> for NetTransmission {
     fn into(self) -> usize {
         self.size()
     }
+}
+
+pub trait NetSend: Clone {
+    type TSendData;
+
+    fn send(&self, data: &[u8]) -> Result<(), mpsc::SendError<Self::TSendData>>;
+    fn addr(&self) -> SocketAddr;
 }
