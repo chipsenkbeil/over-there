@@ -102,8 +102,6 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     server.spawn(Duration::from_millis(1), move |msg, s| {
         let msg = String::from_utf8(msg).unwrap();
 
-        println!("SERVER GOT {}", msg);
-
         if !msg.starts_with("test message") {
             panic!("Unexpected content {:?}", msg);
         }
@@ -115,8 +113,6 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
 
     client.spawn(Duration::from_millis(1), move |msg, _addr| {
         let msg = String::from_utf8(msg).unwrap();
-
-        println!("CLIENT GOT {}", msg);
 
         if !msg.starts_with("reply") {
             panic!("Unexpected content {:?}", msg);
@@ -241,7 +237,6 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     server.spawn(Duration::from_millis(1), move |msg, s| {
         let msg = String::from_utf8(msg).unwrap();
 
-        println!("SERVER GOT: {:?}", msg);
         if !msg.starts_with("test message") {
             panic!("Unexpected content {:?}", msg);
         }
@@ -254,7 +249,6 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     client.spawn(Duration::from_millis(1), move |msg, _send| {
         let msg = String::from_utf8(msg).unwrap();
 
-        println!("CLIENT GOT: {:?}", msg);
         if !msg.starts_with("reply") {
             panic!("Unexpected content {:?}", msg);
         }
@@ -265,18 +259,16 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     // Send N messages to server
     const N: usize = 7;
     for i in 0..N {
-        println!("SENDING MSG {}", i);
         client.send(format!("test message {}", i).as_bytes())?;
+
+        // NOTE: Without a sleep delay, TCP in testing appears to lose
+        //       some of the data; it's correctly sent, and receive
+        //       also seems to work fine, but it skips data consistently
+        thread::sleep(Duration::from_millis(1));
     }
 
     // Block until we verify the counts
     exec::loop_timeout_panic(Duration::from_millis(500), || {
-        thread::sleep(Duration::from_millis(1));
-        // println!(
-        //     "CHECK MC|{} RC|{}",
-        //     *mc_2.lock().unwrap(),
-        //     *rc_2.lock().unwrap()
-        // );
         let tmc = *mc_2.lock().unwrap() == N;
         let trc = *rc_2.lock().unwrap() == N;
         tmc && trc
