@@ -98,10 +98,10 @@ where
             let mut ctx_mut = ctx.write().unwrap();
 
             // Attempt to send data on socket if there is any available
-            // TODO: Handle non-timeout errors
-            if let Ok(data) = rx.recv_timeout(Duration::new(0, 0)) {
-                // TODO: Handle errors
-                stream_send(&mut stream, &mut ctx_mut, &data).unwrap();
+            match rx.try_recv() {
+                Ok(data) => stream_send(&mut stream, &mut ctx_mut, &data).unwrap(),
+                Err(mpsc::TryRecvError::Empty) => (),
+                Err(x) => panic!("Unexpected error: {:?}", x),
             }
 
             match stream_recv(&mut stream, &mut ctx_mut) {
@@ -113,8 +113,11 @@ where
                     },
                 ),
                 Ok(None) => (),
+
+                // TODO: Handle errors
                 Err(_) => (),
             }
+
             thread::sleep(sleep_duration);
         }
     }))
@@ -140,8 +143,8 @@ where
         //       packets of a guaranteed max size.
         let size = stream.write(&data)?;
         if size < data.len() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
                 format!("Only sent {} bytes out of {}", size, data.len()),
             ));
         }
@@ -159,5 +162,6 @@ where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
 {
-    receiver::do_receive(From::from(ctx), |data| stream.read(data).map(|s| (s, ()))).map(|r| r.0)
+    receiver::do_receive(From::from(ctx), |data| stream.read(data).map(|s| (s, ())))
+        .map(|o1| o1.map(|o2| o2.0))
 }

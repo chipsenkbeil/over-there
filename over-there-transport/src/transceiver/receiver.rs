@@ -6,7 +6,7 @@ use crate::{
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{AssociatedData, CryptError, Decrypter, Encrypter, Nonce};
 use over_there_derive::Error;
-use std::io::Error as IoError;
+use std::io;
 
 #[derive(Debug, Error)]
 pub enum ReceiverError {
@@ -15,7 +15,7 @@ pub enum ReceiverError {
     InvalidPacketSignature,
     AssembleData(assembler::AssemblerError),
     DecryptData(CryptError),
-    RecvBytes(IoError),
+    RecvBytes(io::Error),
 }
 
 pub(crate) struct ReceiverContext<'a, V, D>
@@ -54,20 +54,25 @@ where
 pub(crate) fn do_receive<V, D, T, R>(
     ctx: ReceiverContext<'_, V, D>,
     read: R,
-) -> Result<(Option<Vec<u8>>, T), ReceiverError>
+) -> Result<Option<(Vec<u8>, T)>, ReceiverError>
 where
     V: Verifier,
     D: Decrypter,
-    R: FnOnce(&mut [u8]) -> Result<(usize, T), IoError>,
+    R: FnOnce(&mut [u8]) -> Result<(usize, T), io::Error>,
 {
-    let (size, other_data) = read(ctx.buffer).map_err(ReceiverError::RecvBytes)?;
+    // When retrieving bytes, check if we received an error indicating this
+    // is async and that we should consider it as nothing
+    let (size, other_data) = match read(ctx.buffer) {
+        // Cases where we get zero bytes or a blocking error, we skip
+        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+        Ok((size, _)) if size == 0 => return Ok(None),
 
-    // If we don't receive any bytes, we treat it as there are no bytes
-    // available, which is not an error but also does not warrant trying
-    // to parse a packet, which will cause an error
-    if size == 0 {
-        return Ok((None, other_data));
-    }
+        // Otherwise, if we get a real error, we bubble it up
+        Err(e) => return Err(ReceiverError::RecvBytes(e)),
+
+        // Finally, if we get data, we continue
+        Ok(x) => x,
+    };
 
     // Process the received packet
     let p = Packet::from_slice(&ctx.buffer[..size]).map_err(ReceiverError::DecodePacket)?;
@@ -93,9 +98,9 @@ where
         // Remove the underlying group as we no longer need to keep it
         ctx.assembler.remove_group(group_id);
 
-        Ok((Some(data), other_data))
+        Ok(Some((data, other_data)))
     } else {
-        Ok((None, other_data))
+        Ok(None)
     }
 }
 
@@ -178,14 +183,14 @@ mod tests {
             if false {
                 Ok((0, ()))
             } else {
-                Err(IoError::from(IoErrorKind::Other))
+                Err(io::Error::from(IoErrorKind::Other))
             }
         };
 
         match do_receive(rctx, f) {
             Err(ReceiverError::RecvBytes(_)) => (),
             Err(x) => panic!("Unexpected error: {:?}", x),
-            Ok((x, _)) => panic!("Unexpected result: {:?}", x),
+            Ok(x) => panic!("Unexpected result: {:?}", x),
         }
     }
 
@@ -204,7 +209,7 @@ mod tests {
         }) {
             Err(ReceiverError::DecodePacket(_)) => (),
             Err(x) => panic!("Unexpected error: {:?}", x),
-            Ok((x, _)) => panic!("Unexpected result: {:?}", x),
+            Ok(x) => panic!("Unexpected result: {:?}", x),
         }
     }
 
@@ -258,7 +263,7 @@ mod tests {
         }) {
             Err(ReceiverError::AssembleData(_)) => (),
             Err(x) => panic!("Unexpected error: {:?}", x),
-            Ok((x, _)) => panic!("Unexpected result: {:?}", x),
+            Ok(x) => panic!("Unexpected result: {:?}", x),
         }
     }
 
@@ -268,8 +273,8 @@ mod tests {
         let rctx = From::from(&mut ctx);
 
         match do_receive(rctx, |_| Ok((0, ()))) {
-            Ok((None, _)) => (),
-            Ok((Some(x), _)) => panic!("Unexpected result: {:?}", x),
+            Ok(None) => (),
+            Ok(Some(x)) => panic!("Unexpected result: {:?}", x),
             Err(x) => panic!("Unexpected error: {:?}", x),
         }
     }
@@ -310,8 +315,8 @@ mod tests {
             buf[..l].clone_from_slice(&data);
             Ok((l, ()))
         }) {
-            Ok((None, _)) => (),
-            Ok((Some(x), _)) => panic!("Unexpected result: {:?}", x),
+            Ok(None) => (),
+            Ok(Some(x)) => panic!("Unexpected result: {:?}", x),
             Err(x) => panic!("Unexpected error: {:?}", x),
         }
     }
@@ -338,14 +343,14 @@ mod tests {
             buf[..l].clone_from_slice(&pdata);
             Ok((l, ()))
         }) {
-            Ok((Some(do_receive_data), _)) => {
+            Ok(Some((do_receive_data, _))) => {
                 assert_eq!(
                     do_receive_data, data,
                     "Received unexpected data: {:?}",
                     do_receive_data
                 );
             }
-            Ok((None, _)) => panic!("Unexpectedly received no data"),
+            Ok(None) => panic!("Unexpectedly received no data"),
             Err(x) => panic!("Unexpected error: {:?}", x),
         }
     }
@@ -386,7 +391,6 @@ mod tests {
                     Ok((l, ()))
                 })
                 .unwrap()
-                .0
                 .is_none(),
                 "Unexpectedly got result from receive with ttl of zero"
             );
@@ -504,7 +508,7 @@ mod tests {
             }) {
                 Err(super::ReceiverError::DecryptData(_)) => (),
                 Err(x) => panic!("Unexpected error: {:?}", x),
-                Ok((x, _)) => panic!("Unexpected result: {:?}", x),
+                Ok(x) => panic!("Unexpected result: {:?}", x),
             }
         }
     }

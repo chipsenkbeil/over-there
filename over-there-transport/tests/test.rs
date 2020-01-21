@@ -5,6 +5,7 @@ use over_there_transport::{
 };
 use over_there_utils::exec;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 fn init() {
@@ -43,7 +44,7 @@ fn test_udp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> 
     // Keep checking until we receive a complete message from the client
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
-        if let (Some(msg), addr) = server.recv()? {
+        if let Some((msg, addr)) = server.recv()? {
             match msg {
                 x if x == b"test message" => server.send(addr, b"test reply")?,
                 x => panic!("Unexpected content {:?}", x),
@@ -56,7 +57,7 @@ fn test_udp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> 
     // Now wait for client to receive response
     exec::loop_timeout(Duration::from_millis(500), || {
         // A full message has been received, so we process it to verify
-        if let (Some(msg), _addr) = client.recv()? {
+        if let Some((msg, _addr)) = client.recv()? {
             match msg {
                 x if x == b"test reply" => (),
                 x => panic!("Unexpected content {:?}", x),
@@ -82,6 +83,7 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
     let client = UdpTransceiver::new(net::udp::local()?, ctx);
+    client.socket.set_nonblocking(true)?;
 
     let ctx = TransceiverContext::new(
         NetTransmission::UdpIpv4.into(),
@@ -90,6 +92,7 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
     let server = UdpTransceiver::new(net::udp::local()?, ctx);
+    server.socket.set_nonblocking(true)?;
 
     let mc_1 = Arc::new(Mutex::new(0));
     let mc_2 = Arc::clone(&mc_1);
@@ -97,30 +100,44 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     let rc_2 = Arc::clone(&rc_1);
 
     server.spawn(Duration::from_millis(1), move |msg, s| {
-        if msg != b"test message" {
+        let msg = String::from_utf8(msg).unwrap();
+
+        println!("SERVER GOT {}", msg);
+
+        if !msg.starts_with("test message") {
             panic!("Unexpected content {:?}", msg);
         }
 
-        s.send(b"test reply").unwrap();
+        let msg = format!("reply {}", msg);
+        s.send(msg.as_bytes()).unwrap();
         *mc_1.lock().unwrap() += 1;
     })?;
 
     client.spawn(Duration::from_millis(1), move |msg, _addr| {
-        if msg != b"test reply" {
+        let msg = String::from_utf8(msg).unwrap();
+
+        println!("CLIENT GOT {}", msg);
+
+        if !msg.starts_with("reply") {
             panic!("Unexpected content {:?}", msg);
         }
 
         *rc_1.lock().unwrap() += 1;
     })?;
 
-    // Send message to server
-    let msg = b"test message";
-    client.send(server.socket.local_addr()?, msg)?;
+    // Send N messages to server
+    const N: usize = 7;
+    for i in 0..N {
+        client.send(
+            server.socket.local_addr()?,
+            format!("test message {}", i).as_bytes(),
+        )?;
+    }
 
     // Block until we verify the counts
     exec::loop_timeout_panic(Duration::from_millis(500), || {
-        let tmc = *mc_2.lock().unwrap() == 1;
-        let trc = *rc_2.lock().unwrap() == 1;
+        let tmc = *mc_2.lock().unwrap() == N;
+        let trc = *rc_2.lock().unwrap() == N;
         tmc && trc
     });
 
@@ -204,6 +221,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
     let mut client = TcpStreamTransceiver::new(client_stream, ctx);
+    client.stream.set_nonblocking(true)?;
 
     let ctx = TransceiverContext::new(
         NetTransmission::TcpEthernet.into(),
@@ -213,6 +231,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     );
     let (server_stream, _addr) = server_listener.accept()?;
     let server = TcpStreamTransceiver::new(server_stream, ctx);
+    server.stream.set_nonblocking(true)?;
 
     let mc_1 = Arc::new(Mutex::new(0));
     let mc_2 = Arc::clone(&mc_1);
@@ -220,30 +239,46 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     let rc_2 = Arc::clone(&rc_1);
 
     server.spawn(Duration::from_millis(1), move |msg, s| {
-        if msg != b"test message" {
+        let msg = String::from_utf8(msg).unwrap();
+
+        println!("SERVER GOT: {:?}", msg);
+        if !msg.starts_with("test message") {
             panic!("Unexpected content {:?}", msg);
         }
 
-        s.send(b"test reply").unwrap();
+        let msg = format!("reply {}", msg);
+        s.send(msg.as_bytes()).unwrap();
         *mc_1.lock().unwrap() += 1;
     })?;
 
     client.spawn(Duration::from_millis(1), move |msg, _send| {
-        if msg != b"test reply" {
+        let msg = String::from_utf8(msg).unwrap();
+
+        println!("CLIENT GOT: {:?}", msg);
+        if !msg.starts_with("reply") {
             panic!("Unexpected content {:?}", msg);
         }
 
         *rc_1.lock().unwrap() += 1;
     })?;
 
-    // Send message to server
-    let msg = b"test message";
-    client.send(msg)?;
+    // Send N messages to server
+    const N: usize = 7;
+    for i in 0..N {
+        println!("SENDING MSG {}", i);
+        client.send(format!("test message {}", i).as_bytes())?;
+    }
 
     // Block until we verify the counts
     exec::loop_timeout_panic(Duration::from_millis(500), || {
-        let tmc = *mc_2.lock().unwrap() == 1;
-        let trc = *rc_2.lock().unwrap() == 1;
+        thread::sleep(Duration::from_millis(1));
+        // println!(
+        //     "CHECK MC|{} RC|{}",
+        //     *mc_2.lock().unwrap(),
+        //     *rc_2.lock().unwrap()
+        // );
+        let tmc = *mc_2.lock().unwrap() == N;
+        let trc = *rc_2.lock().unwrap() == N;
         tmc && trc
     });
 

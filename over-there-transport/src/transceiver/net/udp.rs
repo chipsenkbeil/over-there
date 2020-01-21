@@ -63,7 +63,7 @@ where
         send(&self.socket, addr, &mut self.ctx.write().unwrap(), data)
     }
 
-    pub fn recv(&self) -> Result<(Option<Vec<u8>>, SocketAddr), ReceiverError> {
+    pub fn recv(&self) -> Result<Option<(Vec<u8>, SocketAddr)>, ReceiverError> {
         recv(&self.socket, &mut self.ctx.write().unwrap())
     }
 
@@ -98,22 +98,22 @@ where
             let mut ctx_mut = ctx.write().unwrap();
 
             // Attempt to send data on socket if there is any available
-            // TODO: Handle non-timeout errors
-            if let Ok((data, addr)) = rx.recv_timeout(Duration::new(0, 0)) {
-                // TODO: Handle errors
-                send(&socket, addr, &mut ctx_mut, &data).unwrap();
+            match rx.try_recv() {
+                Ok((data, addr)) => send(&socket, addr, &mut ctx_mut, &data).unwrap(),
+                Err(mpsc::TryRecvError::Empty) => (),
+                Err(x) => panic!("Unexpected error: {:?}", x),
             }
 
             // Attempt to get new data and pass it along
             match recv(&socket, &mut ctx_mut) {
-                Ok((Some(data), addr)) => callback(
+                Ok(Some((data, addr))) => callback(
                     data,
                     UdpNetSend {
                         tx: tx.clone(),
                         addr,
                     },
                 ),
-                Ok((None, _addr)) => (),
+                Ok(None) => (),
 
                 // TODO: Handle errors
                 Err(_) => (),
@@ -144,8 +144,8 @@ where
         //       packets of a guaranteed max size.
         let size = socket.send_to(&data, addr)?;
         if size < data.len() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
                 format!("Only sent {} bytes out of {}", size, data.len()),
             ));
         }
@@ -157,7 +157,7 @@ where
 fn recv<A, B>(
     socket: &UdpSocket,
     ctx: &mut TransceiverContext<A, B>,
-) -> Result<(Option<Vec<u8>>, SocketAddr), ReceiverError>
+) -> Result<Option<(Vec<u8>, SocketAddr)>, ReceiverError>
 where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
