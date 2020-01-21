@@ -1,7 +1,8 @@
 use over_there_auth::Sha256Authenticator;
 use over_there_crypto::{self as crypto, aes_gcm};
 use over_there_transport::{
-    net, NetSend, NetTransmission, TcpStreamTransceiver, TransceiverContext, UdpTransceiver,
+    net, NetSend, NetTransmission, TcpListenerTransceiver, TcpStreamTransceiver,
+    TransceiverContext, UdpTransceiver,
 };
 use over_there_utils::exec;
 use std::sync::{Arc, Mutex};
@@ -226,9 +227,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
-    let (server_stream, _addr) = server_listener.accept()?;
-    let server = TcpStreamTransceiver::new(server_stream, ctx);
-    server.stream.set_nonblocking(true)?;
+    let server = TcpListenerTransceiver::new(server_listener, ctx);
 
     let mc_1 = Arc::new(Mutex::new(0));
     let mc_2 = Arc::clone(&mc_1);

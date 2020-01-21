@@ -7,7 +7,7 @@ mod transceiver;
 pub use assembler::AssemblerError;
 pub use disassembler::DisassemblerError;
 pub use transceiver::net::{
-    tcp::{TcpNetSend, TcpStreamTransceiver},
+    tcp::{TcpListenerTransceiver, TcpNetSend, TcpStreamTransceiver},
     udp::{UdpNetSend, UdpTransceiver},
     NetSend, NetTransmission,
 };

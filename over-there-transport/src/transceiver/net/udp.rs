@@ -12,6 +12,7 @@ use std::sync::{mpsc, Arc, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+#[derive(Clone)]
 pub struct UdpNetSend {
     tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
     addr: SocketAddr,
@@ -26,15 +27,6 @@ impl NetSend for UdpNetSend {
 
     fn addr(&self) -> SocketAddr {
         self.addr
-    }
-}
-
-impl Clone for UdpNetSend {
-    fn clone(&self) -> Self {
-        Self {
-            tx: self.tx.clone(),
-            addr: self.addr,
-        }
     }
 }
 

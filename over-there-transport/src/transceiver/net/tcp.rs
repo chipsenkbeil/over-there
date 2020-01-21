@@ -7,11 +7,12 @@ use crate::transceiver::{
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{mpsc, Arc, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+#[derive(Clone)]
 pub struct TcpNetSend {
     tx: mpsc::Sender<Vec<u8>>,
     addr: SocketAddr,
@@ -29,12 +30,38 @@ impl NetSend for TcpNetSend {
     }
 }
 
-impl Clone for TcpNetSend {
-    fn clone(&self) -> Self {
+pub struct TcpListenerTransceiver<A, B>
+where
+    A: Signer + Verifier + Send + Sync + 'static,
+    B: Encrypter + Decrypter + Send + Sync + 'static,
+{
+    pub listener: TcpListener,
+    ctx: Arc<RwLock<TransceiverContext<A, B>>>,
+}
+
+impl<A, B> TcpListenerTransceiver<A, B>
+where
+    A: Signer + Verifier + Send + Sync + 'static,
+    B: Encrypter + Decrypter + Send + Sync + 'static,
+{
+    pub fn new(listener: TcpListener, ctx: TransceiverContext<A, B>) -> Self {
         Self {
-            tx: self.tx.clone(),
-            addr: self.addr,
+            listener,
+            ctx: Arc::new(RwLock::new(ctx)),
         }
+    }
+
+    pub fn spawn(
+        &self,
+        sleep_duration: Duration,
+        callback: impl Fn(Vec<u8>, TcpNetSend) + Send + 'static,
+    ) -> Result<JoinHandle<()>, io::Error> {
+        listener_spawn(
+            self.listener.try_clone()?,
+            Arc::clone(&self.ctx),
+            sleep_duration,
+            callback,
+        )
     }
 }
 
@@ -81,46 +108,107 @@ where
     }
 }
 
-fn stream_spawn<A, B>(
-    mut stream: TcpStream,
+fn listener_spawn<A, B, C>(
+    listener: TcpListener,
     ctx: Arc<RwLock<TransceiverContext<A, B>>>,
     sleep_duration: Duration,
-    callback: impl Fn(Vec<u8>, TcpNetSend) + Send + 'static,
+    callback: C,
 ) -> Result<JoinHandle<()>, io::Error>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
+    C: Fn(Vec<u8>, TcpNetSend) + Send + 'static,
 {
-    let addr = stream.local_addr()?;
-    Ok(thread::spawn(move || {
-        let (tx, rx) = mpsc::channel::<Vec<u8>>();
-        loop {
-            let mut ctx_mut = ctx.write().unwrap();
+    // Must be non-blocking so we can accept new connections within the same
+    // thread as sending/receiving data
+    listener.set_nonblocking(true)?;
 
-            // Attempt to send data on socket if there is any available
-            match rx.try_recv() {
-                Ok(data) => stream_send(&mut stream, &mut ctx_mut, &data).unwrap(),
-                Err(mpsc::TryRecvError::Empty) => (),
-                Err(x) => panic!("Unexpected error: {:?}", x),
+    Ok(thread::spawn(move || {
+        let mut connections = Vec::new();
+        loop {
+            // Process a new connection if we have one
+            match listener.accept() {
+                Ok((stream, addr)) => {
+                    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+                    connections.push((stream, addr, tx, rx));
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => (),
+                // TODO: Handle errors
+                Err(_e) => (),
             }
 
-            match stream_recv(&mut stream, &mut ctx_mut) {
-                Ok(Some(data)) => callback(
-                    data,
-                    TcpNetSend {
-                        tx: tx.clone(),
-                        addr,
-                    },
-                ),
-                Ok(None) => (),
+            // Run through all streams
+            let mut ctx_mut = ctx.write().unwrap();
+            for (stream, addr, tx, rx) in connections.iter_mut() {
+                let tns = TcpNetSend {
+                    tx: tx.clone(),
+                    addr: *addr,
+                };
 
                 // TODO: Handle errors
-                Err(_) => (),
+                stream_process(stream, &mut ctx_mut, rx, &tns, &callback).unwrap();
             }
 
             thread::sleep(sleep_duration);
         }
     }))
+}
+
+fn stream_spawn<A, B, C>(
+    mut stream: TcpStream,
+    ctx: Arc<RwLock<TransceiverContext<A, B>>>,
+    sleep_duration: Duration,
+    callback: C,
+) -> Result<JoinHandle<()>, io::Error>
+where
+    A: Signer + Verifier + Send + Sync + 'static,
+    B: Encrypter + Decrypter + Send + Sync + 'static,
+    C: Fn(Vec<u8>, TcpNetSend) + Send + 'static,
+{
+    let addr = stream.peer_addr()?;
+    Ok(thread::spawn(move || {
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+        let tns = TcpNetSend { tx, addr };
+        loop {
+            let mut ctx_mut = ctx.write().unwrap();
+
+            // TODO: Handle errors
+            stream_process(&mut stream, &mut ctx_mut, &rx, &tns, &callback).unwrap();
+
+            thread::sleep(sleep_duration);
+        }
+    }))
+}
+
+fn stream_process<A, B, C>(
+    stream: &mut TcpStream,
+    ctx: &mut TransceiverContext<A, B>,
+    send_rx: &mpsc::Receiver<Vec<u8>>,
+    tns: &TcpNetSend,
+    callback: &C,
+) -> Result<(), io::Error>
+where
+    A: Signer + Verifier,
+    B: Encrypter + Decrypter,
+    C: Fn(Vec<u8>, TcpNetSend) + Send + 'static,
+{
+    // Attempt to send data on socket if there is any available
+    match send_rx.try_recv() {
+        Ok(data) => stream_send(stream, ctx, &data).unwrap(),
+        Err(mpsc::TryRecvError::Empty) => (),
+        // TODO: Handle errors
+        Err(mpsc::TryRecvError::Disconnected) => panic!("Disconnected!"),
+    }
+
+    match stream_recv(stream, ctx) {
+        Ok(Some(data)) => {
+            callback(data, tns.clone());
+            Ok(())
+        }
+        Ok(None) => Ok(()),
+        // TODO: Handle errors
+        Err(x) => panic!("Unexpected error: {:?}", x),
+    }
 }
 
 /// Helper method to send data using the underlying stream
