@@ -1,8 +1,12 @@
 mod heartbeat;
 mod unknown;
+mod version;
 
 use crate::{
-    msg::{content::ContentType, Msg, MsgError},
+    msg::{
+        content::{Content, ContentType},
+        Msg, MsgError,
+    },
     state::State,
 };
 use over_there_derive::Error;
@@ -12,6 +16,7 @@ use over_there_transport::{NetSend, NetSendError};
 pub enum ActionError {
     MsgError(MsgError),
     NetSendError(NetSendError),
+    UnexpectedContent,
     Unknown,
 }
 
@@ -23,6 +28,9 @@ pub fn route<NS: NetSend>(
         ContentType::HeartbeatRequest => heartbeat::heartbeat_request,
         ContentType::HeartbeatResponse => heartbeat::heartbeat_response,
 
+        ContentType::VersionRequest => version::version_request,
+        ContentType::VersionResponse => version::version_response,
+
         // TODO: Remove unknown by completing all other content types
         _ => unknown::unknown,
     }
@@ -32,6 +40,17 @@ pub fn route<NS: NetSend>(
 /// netsend component
 pub fn execute<NS: NetSend>(state: &mut State, msg: Msg, ns: &NS) -> Result<(), ActionError> {
     (route(ContentType::from(&msg.content)))(state, msg, ns)
+}
+
+/// Sends a response to the originator of a msg
+pub(crate) fn respond<NS: NetSend>(
+    ns: &NS,
+    content: Content,
+    parent_msg: Msg,
+) -> Result<(), ActionError> {
+    let new_msg = Msg::from((content, parent_msg));
+    let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
+    ns.send(&data).map_err(ActionError::NetSendError)
 }
 
 #[cfg(test)]

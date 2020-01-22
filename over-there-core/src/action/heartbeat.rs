@@ -1,5 +1,5 @@
 use crate::{
-    action::ActionError,
+    action::{self, ActionError},
     msg::{content::Content, Msg},
     state::State,
 };
@@ -12,9 +12,7 @@ pub fn heartbeat_request<NS: NetSend>(
     msg: Msg,
     ns: &NS,
 ) -> Result<(), ActionError> {
-    let new_msg = Msg::from((Content::HeartbeatResponse, msg));
-    let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
-    ns.send(&data).map_err(ActionError::NetSendError)
+    action::respond(ns, Content::HeartbeatResponse, msg)
 }
 
 /// Updates the last heartbeat we have received
@@ -38,7 +36,8 @@ mod tests {
         let msg = Msg::from(Content::HeartbeatRequest);
         let mut ns = MockNetSend::default();
 
-        assert!(heartbeat_request(&mut state, msg.clone(), &ns).is_ok());
+        let result = heartbeat_request(&mut state, msg.clone(), &ns);
+        assert!(result.is_ok(), "Bad result: {:?}", result);
 
         let outgoing_msg = Msg::from_slice(&ns.take_last_sent().unwrap()).unwrap();
         assert_eq!(outgoing_msg.parent_header, Some(msg.header));
@@ -52,7 +51,8 @@ mod tests {
         let msg = Msg::from(Content::HeartbeatResponse);
         let mut ns = MockNetSend::default();
 
-        assert!(heartbeat_response(&mut state, msg.clone(), &ns).is_ok());
+        let result = heartbeat_response(&mut state, msg.clone(), &ns);
+        assert!(result.is_ok(), "Bad result: {:?}", result);
 
         let last_sent = ns.take_last_sent();
         assert!(last_sent.is_none(), "Unexpected last sent {:?}", last_sent);
