@@ -1,13 +1,14 @@
 use crate::{
-    action::{ActionError, ActionState},
+    action::ActionError,
     msg::{content::Content, Msg},
+    state::State,
 };
 use over_there_transport::NetSend;
 use std::time::Instant;
 
 /// Requests a new heartbeat to confirm remote endpoint is alive
 pub fn heartbeat_request<NS: NetSend>(
-    _state: &mut ActionState,
+    _state: &mut State,
     msg: Msg,
     ns: &NS,
 ) -> Result<(), ActionError> {
@@ -18,7 +19,7 @@ pub fn heartbeat_request<NS: NetSend>(
 
 /// Updates the last heartbeat we have received
 pub fn heartbeat_response<NS: NetSend>(
-    state: &mut ActionState,
+    state: &mut State,
     _msg: Msg,
     _ns: &NS,
 ) -> Result<(), ActionError> {
@@ -33,7 +34,7 @@ mod tests {
 
     #[test]
     fn heartbeat_request_should_send_heartbeat_response() {
-        let mut state = ActionState::default();
+        let mut state = State::default();
         let msg = Msg::from(Content::HeartbeatRequest);
         let mut ns = MockNetSend::default();
 
@@ -46,7 +47,7 @@ mod tests {
 
     #[test]
     fn heartbeat_response_should_log_latest_heartbeat() {
-        let mut state = ActionState::default();
+        let mut state = State::default();
         let old_last_heartbeat = state.last_heartbeat.clone();
         let msg = Msg::from(Content::HeartbeatResponse);
         let mut ns = MockNetSend::default();

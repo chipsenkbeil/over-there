@@ -1,10 +1,12 @@
 mod heartbeat;
 mod unknown;
 
-use crate::msg::{content::ContentType, Msg, MsgError};
+use crate::{
+    msg::{content::ContentType, Msg, MsgError},
+    state::State,
+};
 use over_there_derive::Error;
 use over_there_transport::{NetSend, NetSendError};
-use std::time::Instant;
 
 #[derive(Debug, Error)]
 pub enum ActionError {
@@ -13,23 +15,10 @@ pub enum ActionError {
     Unknown,
 }
 
-/// Represents the overall state that is passed around to actions
-pub struct ActionState {
-    last_heartbeat: Instant,
-}
-
-impl Default for ActionState {
-    fn default() -> Self {
-        Self {
-            last_heartbeat: Instant::now(),
-        }
-    }
-}
-
 /// Looks up an appropriate function pointer for the given content type
 pub fn route<NS: NetSend>(
     content_type: ContentType,
-) -> fn(&mut ActionState, Msg, &NS) -> Result<(), ActionError> {
+) -> fn(&mut State, Msg, &NS) -> Result<(), ActionError> {
     match content_type {
         ContentType::HeartbeatRequest => heartbeat::heartbeat_request,
         ContentType::HeartbeatResponse => heartbeat::heartbeat_response,
@@ -41,7 +30,7 @@ pub fn route<NS: NetSend>(
 
 /// Evaluate a message's content and potentially respond using the provided
 /// netsend component
-pub fn execute<NS: NetSend>(state: &mut ActionState, msg: Msg, ns: &NS) -> Result<(), ActionError> {
+pub fn execute<NS: NetSend>(state: &mut State, msg: Msg, ns: &NS) -> Result<(), ActionError> {
     (route(ContentType::from(&msg.content)))(state, msg, ns)
 }
 
