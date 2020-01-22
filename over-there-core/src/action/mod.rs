@@ -20,8 +20,18 @@ pub enum ActionError {
     Unknown,
 }
 
+/// Evaluate a message's content and potentially respond using the provided
+/// netsend component
+pub fn execute<R: Responder>(
+    state: &mut State,
+    msg: Msg,
+    responder: &R,
+) -> Result<(), ActionError> {
+    (route(ContentType::from(&msg.content)))(state, msg, responder)
+}
+
 /// Looks up an appropriate function pointer for the given content type
-pub fn route<R: Responder>(
+fn route<R: Responder>(
     content_type: ContentType,
 ) -> fn(&mut State, Msg, &R) -> Result<(), ActionError> {
     match content_type {
@@ -36,18 +46,8 @@ pub fn route<R: Responder>(
     }
 }
 
-/// Evaluate a message's content and potentially respond using the provided
-/// netsend component
-pub fn execute<R: Responder>(
-    state: &mut State,
-    msg: Msg,
-    responder: &R,
-) -> Result<(), ActionError> {
-    (route(ContentType::from(&msg.content)))(state, msg, responder)
-}
-
 /// Sends a response to the originator of a msg
-pub(crate) fn respond<R: Responder>(
+fn respond<R: Responder>(
     responder: &R,
     content: Content,
     parent_header: Header,
