@@ -1,7 +1,7 @@
 use over_there_auth::Sha256Authenticator;
 use over_there_crypto::{self as crypto, aes_gcm};
 use over_there_transport::{
-    net, NetSend, NetTransmission, TcpListenerTransceiver, TcpStreamTransceiver,
+    net, NetTransmission, Responder, TcpListenerTransceiver, TcpStreamTransceiver,
     TransceiverContext, UdpTransceiver,
 };
 use over_there_utils::exec;

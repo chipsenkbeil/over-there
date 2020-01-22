@@ -1,8 +1,8 @@
 pub mod tcp;
 pub mod udp;
 
+use super::Responder;
 use crate::net;
-use over_there_derive::Error;
 use std::net::SocketAddr;
 
 pub enum NetTransmission {
@@ -29,12 +29,6 @@ impl Into<usize> for NetTransmission {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum NetSendError {
-    Disconnected,
-}
-
-pub trait NetSend: Clone {
-    fn send(&self, data: &[u8]) -> Result<(), NetSendError>;
+pub trait NetResponder: Responder {
     fn addr(&self) -> SocketAddr;
 }

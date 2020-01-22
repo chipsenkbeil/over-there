@@ -6,7 +6,18 @@ use crate::assembler::Assembler;
 use crate::disassembler::Disassembler;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
+use over_there_derive::Error;
 use std::time::Duration;
+
+#[derive(Debug, Error)]
+pub enum ResponderError {
+    /// Indicates that the destination is no longer available for a response
+    NoLongerAvailable,
+}
+
+pub trait Responder: Clone {
+    fn send(&self, data: &[u8]) -> Result<(), ResponderError>;
+}
 
 pub struct TransceiverContext<A, B>
 where

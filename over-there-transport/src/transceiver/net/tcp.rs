@@ -1,8 +1,8 @@
 use crate::transceiver::{
-    net::{NetSend, NetSendError},
+    net::NetResponder,
     receiver::{self, ReceiverError},
     transmitter::{self, TransmitterError},
-    TransceiverContext,
+    Responder, ResponderError, TransceiverContext,
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
@@ -13,18 +13,20 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 #[derive(Clone)]
-pub struct TcpNetSend {
+pub struct TcpNetResponder {
     tx: mpsc::Sender<Vec<u8>>,
     addr: SocketAddr,
 }
 
-impl NetSend for TcpNetSend {
-    fn send(&self, data: &[u8]) -> Result<(), NetSendError> {
+impl Responder for TcpNetResponder {
+    fn send(&self, data: &[u8]) -> Result<(), ResponderError> {
         self.tx
             .send(data.to_vec())
-            .map_err(|_| NetSendError::Disconnected)
+            .map_err(|_| ResponderError::NoLongerAvailable)
     }
+}
 
+impl NetResponder for TcpNetResponder {
     fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -54,7 +56,7 @@ where
     pub fn spawn(
         &self,
         sleep_duration: Duration,
-        callback: impl Fn(Vec<u8>, TcpNetSend) + Send + 'static,
+        callback: impl Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
     ) -> Result<JoinHandle<()>, io::Error> {
         listener_spawn(
             self.listener.try_clone()?,
@@ -97,7 +99,7 @@ where
     pub fn spawn(
         &self,
         sleep_duration: Duration,
-        callback: impl Fn(Vec<u8>, TcpNetSend) + Send + 'static,
+        callback: impl Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
     ) -> Result<JoinHandle<()>, io::Error> {
         stream_spawn(
             self.stream.try_clone()?,
@@ -117,7 +119,7 @@ fn listener_spawn<A, B, C>(
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
-    C: Fn(Vec<u8>, TcpNetSend) + Send + 'static,
+    C: Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
 {
     // Must be non-blocking so we can accept new connections within the same
     // thread as sending/receiving data
@@ -140,7 +142,7 @@ where
             // Run through all streams
             let mut ctx_mut = ctx.write().unwrap();
             for (stream, addr, tx, rx) in connections.iter_mut() {
-                let tns = TcpNetSend {
+                let tns = TcpNetResponder {
                     tx: tx.clone(),
                     addr: *addr,
                 };
@@ -163,12 +165,12 @@ fn stream_spawn<A, B, C>(
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
-    C: Fn(Vec<u8>, TcpNetSend) + Send + 'static,
+    C: Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
 {
     let addr = stream.peer_addr()?;
     Ok(thread::spawn(move || {
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
-        let tns = TcpNetSend { tx, addr };
+        let tns = TcpNetResponder { tx, addr };
         loop {
             let mut ctx_mut = ctx.write().unwrap();
 
@@ -184,13 +186,13 @@ fn stream_process<A, B, C>(
     stream: &mut TcpStream,
     ctx: &mut TransceiverContext<A, B>,
     send_rx: &mpsc::Receiver<Vec<u8>>,
-    tns: &TcpNetSend,
+    tns: &TcpNetResponder,
     callback: &C,
 ) -> Result<(), io::Error>
 where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
-    C: Fn(Vec<u8>, TcpNetSend) + Send + 'static,
+    C: Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
 {
     // Attempt to send data on socket if there is any available
     match send_rx.try_recv() {

@@ -1,8 +1,8 @@
 use crate::transceiver::{
-    net::{NetSend, NetSendError},
+    net::NetResponder,
     receiver::{self, ReceiverError},
     transmitter::{self, TransmitterError},
-    TransceiverContext,
+    Responder, ResponderError, TransceiverContext,
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
@@ -13,18 +13,20 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 #[derive(Clone)]
-pub struct UdpNetSend {
+pub struct UdpNetResponder {
     tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
     addr: SocketAddr,
 }
 
-impl NetSend for UdpNetSend {
-    fn send(&self, data: &[u8]) -> Result<(), NetSendError> {
+impl Responder for UdpNetResponder {
+    fn send(&self, data: &[u8]) -> Result<(), ResponderError> {
         self.tx
             .send((data.to_vec(), self.addr))
-            .map_err(|_| NetSendError::Disconnected)
+            .map_err(|_| ResponderError::NoLongerAvailable)
     }
+}
 
+impl NetResponder for UdpNetResponder {
     fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -62,7 +64,7 @@ where
     pub fn spawn(
         &self,
         sleep_duration: Duration,
-        callback: impl Fn(Vec<u8>, UdpNetSend) + Send + 'static,
+        callback: impl Fn(Vec<u8>, UdpNetResponder) + Send + 'static,
     ) -> Result<JoinHandle<()>, io::Error> {
         spawn(
             self.socket.try_clone()?,
@@ -82,7 +84,7 @@ fn spawn<A, B, C>(
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
-    C: Fn(Vec<u8>, UdpNetSend) + Send + 'static,
+    C: Fn(Vec<u8>, UdpNetResponder) + Send + 'static,
 {
     Ok(thread::spawn(move || {
         let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>();
@@ -100,7 +102,7 @@ where
             match recv(&socket, &mut ctx_mut) {
                 Ok(Some((data, addr))) => callback(
                     data,
-                    UdpNetSend {
+                    UdpNetResponder {
                         tx: tx.clone(),
                         addr,
                     },
