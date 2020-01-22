@@ -5,7 +5,7 @@ mod version;
 use crate::{
     msg::{
         content::{Content, ContentType},
-        Msg, MsgError,
+        Header, Msg, MsgError,
     },
     state::State,
 };
@@ -50,9 +50,9 @@ pub fn execute<R: Responder>(
 pub(crate) fn respond<R: Responder>(
     responder: &R,
     content: Content,
-    parent_msg: Msg,
+    parent_header: Header,
 ) -> Result<(), ActionError> {
-    let new_msg = Msg::from((content, parent_msg));
+    let new_msg = Msg::from((content, parent_header));
     let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
     responder.send(&data).map_err(ActionError::ResponderError)
 }

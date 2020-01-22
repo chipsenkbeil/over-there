@@ -16,7 +16,7 @@ pub fn version_request<R: Responder>(
         Content::VersionResponse {
             version: env!("CARGO_PKG_VERSION").to_string(),
         },
-        msg,
+        msg.header,
     )
 }
 

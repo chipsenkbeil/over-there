@@ -62,8 +62,16 @@ impl From<Content> for Msg {
 /// being the parent
 impl From<(Content, Msg)> for Msg {
     fn from((content, msg): (Content, Msg)) -> Self {
-        let mut new_msg = Msg::from(content);
-        new_msg.parent_header = Some(msg.header);
+        Self::from((content, msg.header))
+    }
+}
+
+/// Produce a new message from the content with existing header
+/// being the parent
+impl From<(Content, Header)> for Msg {
+    fn from((content, header): (Content, Header)) -> Self {
+        let mut new_msg = Self::from(content);
+        new_msg.parent_header = Some(header);
         new_msg
     }
 }

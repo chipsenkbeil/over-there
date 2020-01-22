@@ -12,7 +12,7 @@ pub fn heartbeat_request<R: Responder>(
     msg: Msg,
     responder: &R,
 ) -> Result<(), ActionError> {
-    action::respond(responder, Content::HeartbeatResponse, msg)
+    action::respond(responder, Content::HeartbeatResponse, msg.header)
 }
 
 /// Updates the last heartbeat we have received
