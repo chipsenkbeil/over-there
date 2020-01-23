@@ -84,7 +84,6 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
     let client = UdpTransceiver::new(net::udp::local()?, ctx);
-    client.socket.set_nonblocking(true)?;
 
     let ctx = TransceiverContext::new(
         NetTransmission::UdpIpv4.into(),
@@ -93,7 +92,6 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
     let server = UdpTransceiver::new(net::udp::local()?, ctx);
-    server.socket.set_nonblocking(true)?;
 
     let mc_1 = Arc::new(Mutex::new(0));
     let mc_2 = Arc::clone(&mc_1);
@@ -224,7 +222,6 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
     let client = TcpStreamTransceiver::new(client_stream, ctx);
-    client.stream.set_nonblocking(true)?;
 
     let ctx = TransceiverContext::new(
         NetTransmission::TcpEthernet.into(),
@@ -276,9 +273,9 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     // Block until we verify the counts
     exec::loop_timeout_panic(Duration::from_millis(2500), || {
         thread::sleep(Duration::from_millis(50));
-        let tmc = *mc_2.lock().unwrap() == N;
-        let trc = *rc_2.lock().unwrap() == N;
-        tmc && trc
+        let mc = *mc_2.lock().unwrap();
+        let rc = *rc_2.lock().unwrap();
+        mc == N && rc == N
     });
 
     Ok(())
