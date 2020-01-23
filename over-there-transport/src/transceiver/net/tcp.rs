@@ -8,7 +8,7 @@ use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -38,7 +38,7 @@ where
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
     pub listener: TcpListener,
-    ctx: Arc<RwLock<TransceiverContext<A, B>>>,
+    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
 }
 
 impl<A, B> TcpListenerTransceiver<A, B>
@@ -49,7 +49,7 @@ where
     pub fn new(listener: TcpListener, ctx: TransceiverContext<A, B>) -> Self {
         Self {
             listener,
-            ctx: Arc::new(RwLock::new(ctx)),
+            ctx: Arc::new(Mutex::new(ctx)),
         }
     }
 
@@ -73,7 +73,7 @@ where
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
     pub stream: TcpStream,
-    ctx: Arc<RwLock<TransceiverContext<A, B>>>,
+    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
 }
 
 impl<A, B> TcpStreamTransceiver<A, B>
@@ -84,16 +84,16 @@ where
     pub fn new(stream: TcpStream, ctx: TransceiverContext<A, B>) -> Self {
         Self {
             stream,
-            ctx: Arc::new(RwLock::new(ctx)),
+            ctx: Arc::new(Mutex::new(ctx)),
         }
     }
 
     pub fn send(&mut self, data: &[u8]) -> Result<(), TransmitterError> {
-        stream_send(&mut self.stream, &mut self.ctx.write().unwrap(), data)
+        stream_send(&mut self.stream, &mut self.ctx.lock().unwrap(), data)
     }
 
     pub fn recv(&mut self) -> Result<Option<Vec<u8>>, ReceiverError> {
-        stream_recv(&mut self.stream, &mut self.ctx.write().unwrap())
+        stream_recv(&mut self.stream, &mut self.ctx.lock().unwrap())
     }
 
     pub fn spawn(
@@ -112,7 +112,7 @@ where
 
 fn listener_spawn<A, B, C>(
     listener: TcpListener,
-    ctx: Arc<RwLock<TransceiverContext<A, B>>>,
+    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
     sleep_duration: Duration,
     callback: C,
 ) -> Result<JoinHandle<()>, io::Error>
@@ -140,7 +140,7 @@ where
             }
 
             // Run through all streams
-            let mut ctx_mut = ctx.write().unwrap();
+            let mut ctx_mut = ctx.lock().unwrap();
             for (stream, addr, tx, rx) in connections.iter_mut() {
                 let tns = TcpNetResponder {
                     tx: tx.clone(),
@@ -158,7 +158,7 @@ where
 
 fn stream_spawn<A, B, C>(
     mut stream: TcpStream,
-    ctx: Arc<RwLock<TransceiverContext<A, B>>>,
+    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
     sleep_duration: Duration,
     callback: C,
 ) -> Result<JoinHandle<()>, io::Error>
@@ -172,7 +172,7 @@ where
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         let tns = TcpNetResponder { tx, addr };
         loop {
-            let mut ctx_mut = ctx.write().unwrap();
+            let mut ctx_mut = ctx.lock().unwrap();
 
             // TODO: Handle errors
             stream_process(&mut stream, &mut ctx_mut, &rx, &tns, &callback).unwrap();

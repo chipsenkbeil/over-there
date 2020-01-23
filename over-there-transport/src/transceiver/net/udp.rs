@@ -8,7 +8,7 @@ use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -38,7 +38,7 @@ where
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
     pub socket: UdpSocket,
-    ctx: Arc<RwLock<TransceiverContext<A, B>>>,
+    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
 }
 
 impl<A, B> UdpTransceiver<A, B>
@@ -49,16 +49,16 @@ where
     pub fn new(socket: UdpSocket, ctx: TransceiverContext<A, B>) -> Self {
         Self {
             socket,
-            ctx: Arc::new(RwLock::new(ctx)),
+            ctx: Arc::new(Mutex::new(ctx)),
         }
     }
 
     pub fn send(&self, addr: SocketAddr, data: &[u8]) -> Result<(), TransmitterError> {
-        send(&self.socket, addr, &mut self.ctx.write().unwrap(), data)
+        send(&self.socket, addr, &mut self.ctx.lock().unwrap(), data)
     }
 
     pub fn recv(&self) -> Result<Option<(Vec<u8>, SocketAddr)>, ReceiverError> {
-        recv(&self.socket, &mut self.ctx.write().unwrap())
+        recv(&self.socket, &mut self.ctx.lock().unwrap())
     }
 
     pub fn spawn(
@@ -77,7 +77,7 @@ where
 
 fn spawn<A, B, C>(
     socket: UdpSocket,
-    ctx: Arc<RwLock<TransceiverContext<A, B>>>,
+    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
     sleep_duration: Duration,
     callback: C,
 ) -> Result<JoinHandle<()>, io::Error>
@@ -89,7 +89,7 @@ where
     Ok(thread::spawn(move || {
         let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>();
         loop {
-            let mut ctx_mut = ctx.write().unwrap();
+            let mut ctx_mut = ctx.lock().unwrap();
 
             // Attempt to send data on socket if there is any available
             match rx.try_recv() {
