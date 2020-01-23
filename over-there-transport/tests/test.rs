@@ -28,7 +28,7 @@ fn test_udp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> 
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
-    let client = UdpTransceiver::new(net::udp::local()?, ctx);
+    let mut client = UdpTransceiver::new(net::udp::local()?, ctx);
 
     let ctx = TransceiverContext::new(
         NetTransmission::UdpIpv4.into(),
@@ -36,7 +36,7 @@ fn test_udp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> 
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
-    let server = UdpTransceiver::new(net::udp::local()?, ctx);
+    let mut server = UdpTransceiver::new(net::udp::local()?, ctx);
 
     // Send message to server
     let msg = b"test message";
@@ -100,7 +100,12 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     let rc_1 = Arc::new(Mutex::new(0));
     let rc_2 = Arc::clone(&rc_1);
 
-    server.spawn(Duration::from_millis(1), move |msg, s| {
+    let server_addr = server.socket.local_addr()?;
+
+    // TODO: Must keep in scope to not lose thread? Does not seem to be
+    //       an issue with UDP but does happen with TCP. Is there something
+    //       else going on here?
+    let _server_thread = server.spawn(Duration::from_millis(1), move |msg, s| {
         let msg = String::from_utf8(msg).unwrap();
 
         if !msg.starts_with("test message") {
@@ -110,9 +115,9 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         let msg = format!("reply {}", msg);
         s.send(msg.as_bytes()).unwrap();
         *mc_1.lock().unwrap() += 1;
-    })?;
+    });
 
-    client.spawn(Duration::from_millis(1), move |msg, _addr| {
+    let client_thread = client.spawn(Duration::from_millis(1), move |msg, _addr| {
         let msg = String::from_utf8(msg).unwrap();
 
         if !msg.starts_with("reply") {
@@ -120,15 +125,15 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         *rc_1.lock().unwrap() += 1;
-    })?;
+    });
 
     // Send N messages to server
     const N: usize = 7;
     for i in 0..N {
-        client.send(
-            server.socket.local_addr()?,
-            format!("test message {}", i).as_bytes(),
-        )?;
+        client_thread.send((
+            format!("test message {}", i).as_bytes().to_vec(),
+            server_addr,
+        ))?;
     }
 
     // Block until we verify the counts
@@ -218,7 +223,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
-    let mut client = TcpStreamTransceiver::new(client_stream, ctx);
+    let client = TcpStreamTransceiver::new(client_stream, ctx);
     client.stream.set_nonblocking(true)?;
 
     let ctx = TransceiverContext::new(
@@ -234,7 +239,8 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     let rc_1 = Arc::new(Mutex::new(0));
     let rc_2 = Arc::clone(&rc_1);
 
-    server.spawn(Duration::from_millis(1), move |msg, s| {
+    // NOTE: Must keep in scope otherwise connection is dropped
+    let _server_thread = server.spawn(Duration::from_millis(1), move |msg, s| {
         let msg = String::from_utf8(msg).unwrap();
 
         if !msg.starts_with("test message") {
@@ -246,7 +252,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         *mc_1.lock().unwrap() += 1;
     })?;
 
-    client.spawn(Duration::from_millis(1), move |msg, _send| {
+    let client_thread = client.spawn(Duration::from_millis(1), move |msg, _send| {
         let msg = String::from_utf8(msg).unwrap();
 
         if !msg.starts_with("reply") {
@@ -259,7 +265,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     // Send N messages to server
     const N: usize = 7;
     for i in 0..N {
-        client.send(format!("test message {}", i).as_bytes())?;
+        client_thread.send(format!("test message {}", i).as_bytes().to_vec())?;
 
         // NOTE: Without a sleep delay, TCP in testing appears to lose
         //       some of the data; it's correctly sent, and receive

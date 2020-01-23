@@ -13,4 +13,6 @@ pub use transceiver::net::{
 };
 pub use transceiver::receiver::ReceiverError;
 pub use transceiver::transmitter::TransmitterError;
-pub use transceiver::{Responder, ResponderError, TransceiverContext};
+pub use transceiver::{
+    Responder, ResponderError, TransceiverContext, TransceiverThread, TransceiverThreadError,
+};

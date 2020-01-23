@@ -7,6 +7,8 @@ use crate::disassembler::Disassembler;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use over_there_derive::Error;
+use std::sync::mpsc;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 #[derive(Debug, Error)]
@@ -17,6 +19,31 @@ pub enum ResponderError {
 
 pub trait Responder: Clone {
     fn send(&self, data: &[u8]) -> Result<(), ResponderError>;
+}
+
+#[derive(Debug, Error)]
+pub enum TransceiverThreadError {
+    FailedToSend,
+    FailedToJoin,
+}
+
+pub struct TransceiverThread<JT, ST> {
+    handle: JoinHandle<JT>,
+    tx: mpsc::Sender<ST>,
+}
+
+impl<JT, ST> TransceiverThread<JT, ST> {
+    pub fn send(&self, data: ST) -> Result<(), TransceiverThreadError> {
+        self.tx
+            .send(data)
+            .map_err(|_| TransceiverThreadError::FailedToSend)
+    }
+
+    pub fn join(self) -> Result<JT, TransceiverThreadError> {
+        self.handle
+            .join()
+            .map_err(|_| TransceiverThreadError::FailedToJoin)
+    }
 }
 
 pub struct TransceiverContext<A, B>

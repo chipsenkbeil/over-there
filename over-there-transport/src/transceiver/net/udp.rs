@@ -2,14 +2,14 @@ use crate::transceiver::{
     net::NetResponder,
     receiver::{self, ReceiverError},
     transmitter::{self, TransmitterError},
-    Responder, ResponderError, TransceiverContext,
+    Responder, ResponderError, TransceiverContext, TransceiverThread,
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 #[derive(Clone)]
@@ -38,7 +38,7 @@ where
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
     pub socket: UdpSocket,
-    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
+    ctx: TransceiverContext<A, B>,
 }
 
 impl<A, B> UdpTransceiver<A, B>
@@ -47,63 +47,57 @@ where
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
     pub fn new(socket: UdpSocket, ctx: TransceiverContext<A, B>) -> Self {
-        Self {
-            socket,
-            ctx: Arc::new(Mutex::new(ctx)),
-        }
+        Self { socket, ctx }
     }
 
-    pub fn send(&self, addr: SocketAddr, data: &[u8]) -> Result<(), TransmitterError> {
-        send(&self.socket, addr, &mut self.ctx.lock().unwrap(), data)
-    }
-
-    pub fn recv(&self) -> Result<Option<(Vec<u8>, SocketAddr)>, ReceiverError> {
-        recv(&self.socket, &mut self.ctx.lock().unwrap())
-    }
-
-    pub fn spawn(
-        &self,
+    pub fn spawn<C>(
+        self,
         sleep_duration: Duration,
-        callback: impl Fn(Vec<u8>, UdpNetResponder) + Send + 'static,
-    ) -> Result<JoinHandle<()>, io::Error> {
-        spawn(
-            self.socket.try_clone()?,
-            Arc::clone(&self.ctx),
-            sleep_duration,
-            callback,
-        )
+        callback: C,
+    ) -> TransceiverThread<(), (Vec<u8>, SocketAddr)>
+    where
+        C: Fn(Vec<u8>, UdpNetResponder) + Send + 'static,
+    {
+        spawn(self.socket, self.ctx, sleep_duration, callback)
+    }
+
+    pub fn send(&mut self, addr: SocketAddr, data: &[u8]) -> Result<(), TransmitterError> {
+        send(&self.socket, addr, &mut self.ctx, data)
+    }
+
+    pub fn recv(&mut self) -> Result<Option<(Vec<u8>, SocketAddr)>, ReceiverError> {
+        recv(&self.socket, &mut self.ctx)
     }
 }
 
 fn spawn<A, B, C>(
     socket: UdpSocket,
-    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
+    mut ctx: TransceiverContext<A, B>,
     sleep_duration: Duration,
     callback: C,
-) -> Result<JoinHandle<()>, io::Error>
+) -> TransceiverThread<(), (Vec<u8>, SocketAddr)>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
     C: Fn(Vec<u8>, UdpNetResponder) + Send + 'static,
 {
-    Ok(thread::spawn(move || {
-        let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>();
+    let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>();
+    let thread_tx = tx.clone();
+    let handle = thread::spawn(move || {
         loop {
-            let mut ctx_mut = ctx.lock().unwrap();
-
             // Attempt to send data on socket if there is any available
             match rx.try_recv() {
-                Ok((data, addr)) => send(&socket, addr, &mut ctx_mut, &data).unwrap(),
+                Ok((data, addr)) => send(&socket, addr, &mut ctx, &data).unwrap(),
                 Err(mpsc::TryRecvError::Empty) => (),
                 Err(x) => panic!("Unexpected error: {:?}", x),
             }
 
             // Attempt to get new data and pass it along
-            match recv(&socket, &mut ctx_mut) {
+            match recv(&socket, &mut ctx) {
                 Ok(Some((data, addr))) => callback(
                     data,
                     UdpNetResponder {
-                        tx: tx.clone(),
+                        tx: thread_tx.clone(),
                         addr,
                     },
                 ),
@@ -115,7 +109,8 @@ where
 
             thread::sleep(sleep_duration);
         }
-    }))
+    });
+    TransceiverThread { handle, tx }
 }
 
 fn send<A, B>(

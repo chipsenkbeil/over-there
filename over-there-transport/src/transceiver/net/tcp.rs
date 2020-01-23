@@ -2,14 +2,15 @@ use crate::transceiver::{
     net::NetResponder,
     receiver::{self, ReceiverError},
     transmitter::{self, TransmitterError},
-    Responder, ResponderError, TransceiverContext,
+    Responder, ResponderError, TransceiverContext, TransceiverThread,
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
+use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::sync::mpsc;
+use std::thread::{self};
 use std::time::Duration;
 
 #[derive(Clone)]
@@ -38,7 +39,7 @@ where
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
     pub listener: TcpListener,
-    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
+    ctx: TransceiverContext<A, B>,
 }
 
 impl<A, B> TcpListenerTransceiver<A, B>
@@ -47,23 +48,18 @@ where
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
     pub fn new(listener: TcpListener, ctx: TransceiverContext<A, B>) -> Self {
-        Self {
-            listener,
-            ctx: Arc::new(Mutex::new(ctx)),
-        }
+        Self { listener, ctx }
     }
 
-    pub fn spawn(
-        &self,
+    pub fn spawn<C>(
+        self,
         sleep_duration: Duration,
-        callback: impl Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
-    ) -> Result<JoinHandle<()>, io::Error> {
-        listener_spawn(
-            self.listener.try_clone()?,
-            Arc::clone(&self.ctx),
-            sleep_duration,
-            callback,
-        )
+        callback: C,
+    ) -> io::Result<TransceiverThread<(), (Vec<u8>, SocketAddr)>>
+    where
+        C: Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
+    {
+        listener_spawn(self.listener, self.ctx, sleep_duration, callback)
     }
 }
 
@@ -73,7 +69,7 @@ where
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
     pub stream: TcpStream,
-    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
+    ctx: TransceiverContext<A, B>,
 }
 
 impl<A, B> TcpStreamTransceiver<A, B>
@@ -82,40 +78,35 @@ where
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
     pub fn new(stream: TcpStream, ctx: TransceiverContext<A, B>) -> Self {
-        Self {
-            stream,
-            ctx: Arc::new(Mutex::new(ctx)),
-        }
+        Self { stream, ctx }
+    }
+
+    pub fn spawn<C>(
+        self,
+        sleep_duration: Duration,
+        callback: C,
+    ) -> io::Result<TransceiverThread<(), Vec<u8>>>
+    where
+        C: Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
+    {
+        stream_spawn(self.stream, self.ctx, sleep_duration, callback)
     }
 
     pub fn send(&mut self, data: &[u8]) -> Result<(), TransmitterError> {
-        stream_send(&mut self.stream, &mut self.ctx.lock().unwrap(), data)
+        stream_send(&mut self.stream, &mut self.ctx, data)
     }
 
     pub fn recv(&mut self) -> Result<Option<Vec<u8>>, ReceiverError> {
-        stream_recv(&mut self.stream, &mut self.ctx.lock().unwrap())
-    }
-
-    pub fn spawn(
-        &self,
-        sleep_duration: Duration,
-        callback: impl Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
-    ) -> Result<JoinHandle<()>, io::Error> {
-        stream_spawn(
-            self.stream.try_clone()?,
-            Arc::clone(&self.ctx),
-            sleep_duration,
-            callback,
-        )
+        stream_recv(&mut self.stream, &mut self.ctx)
     }
 }
 
 fn listener_spawn<A, B, C>(
     listener: TcpListener,
-    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
+    mut ctx: TransceiverContext<A, B>,
     sleep_duration: Duration,
     callback: C,
-) -> Result<JoinHandle<()>, io::Error>
+) -> Result<TransceiverThread<(), (Vec<u8>, SocketAddr)>, io::Error>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
@@ -125,61 +116,82 @@ where
     // thread as sending/receiving data
     listener.set_nonblocking(true)?;
 
-    Ok(thread::spawn(move || {
-        let mut connections = Vec::new();
+    let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>();
+
+    let handle = thread::spawn(move || {
+        let mut connections = HashMap::new();
         loop {
             // Process a new connection if we have one
             match listener.accept() {
                 Ok((stream, addr)) => {
                     let (tx, rx) = mpsc::channel::<Vec<u8>>();
-                    connections.push((stream, addr, tx, rx));
+                    connections.insert(addr, (stream, tx, rx));
                 }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => (),
                 // TODO: Handle errors
                 Err(_e) => (),
             }
 
+            // Attempt to send data on stream if there is any available
+            match rx.try_recv() {
+                Ok((data, addr)) => {
+                    if let Some((_, tx, _)) = connections.get(&addr) {
+                        // TODO: Handle errors
+                        tx.send(data).unwrap();
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty) => (),
+                // TODO: Handle errors
+                Err(mpsc::TryRecvError::Disconnected) => panic!("Disconnected!"),
+            }
+
             // Run through all streams
-            let mut ctx_mut = ctx.lock().unwrap();
-            for (stream, addr, tx, rx) in connections.iter_mut() {
+            for (addr, (stream, tx, rx)) in connections.iter_mut() {
                 let tns = TcpNetResponder {
                     tx: tx.clone(),
                     addr: *addr,
                 };
 
                 // TODO: Handle errors
-                stream_process(stream, &mut ctx_mut, rx, &tns, &callback).unwrap();
+                stream_process(stream, &mut ctx, rx, &tns, &callback).unwrap();
             }
 
             thread::sleep(sleep_duration);
         }
-    }))
+    });
+
+    Ok(TransceiverThread { handle, tx })
 }
 
 fn stream_spawn<A, B, C>(
     mut stream: TcpStream,
-    ctx: Arc<Mutex<TransceiverContext<A, B>>>,
+    mut ctx: TransceiverContext<A, B>,
     sleep_duration: Duration,
     callback: C,
-) -> Result<JoinHandle<()>, io::Error>
+) -> Result<TransceiverThread<(), Vec<u8>>, io::Error>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
     C: Fn(Vec<u8>, TcpNetResponder) + Send + 'static,
 {
     let addr = stream.peer_addr()?;
-    Ok(thread::spawn(move || {
-        let (tx, rx) = mpsc::channel::<Vec<u8>>();
-        let tns = TcpNetResponder { tx, addr };
-        loop {
-            let mut ctx_mut = ctx.lock().unwrap();
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    let thread_tx = tx.clone();
 
+    let handle = thread::spawn(move || {
+        let tns = TcpNetResponder {
+            tx: thread_tx,
+            addr,
+        };
+        loop {
             // TODO: Handle errors
-            stream_process(&mut stream, &mut ctx_mut, &rx, &tns, &callback).unwrap();
+            stream_process(&mut stream, &mut ctx, &rx, &tns, &callback).unwrap();
 
             thread::sleep(sleep_duration);
         }
-    }))
+    });
+
+    Ok(TransceiverThread { handle, tx })
 }
 
 fn stream_process<A, B, C>(
