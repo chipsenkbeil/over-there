@@ -9,16 +9,16 @@ use std::time::Instant;
 /// Requests a new heartbeat to confirm remote endpoint is alive
 pub fn heartbeat_request<R: Responder>(
     _state: &mut State,
-    msg: Msg,
+    msg: &Msg,
     responder: &R,
 ) -> Result<(), ActionError> {
-    action::respond(responder, Content::HeartbeatResponse, msg.header)
+    action::respond(responder, Content::HeartbeatResponse, msg.header.clone())
 }
 
 /// Updates the last heartbeat we have received
 pub fn heartbeat_response<R: Responder>(
     state: &mut State,
-    _msg: Msg,
+    _msg: &Msg,
     _responder: &R,
 ) -> Result<(), ActionError> {
     state.last_heartbeat = Instant::now();
@@ -28,7 +28,7 @@ pub fn heartbeat_response<R: Responder>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action::tests::MockResponder;
+    use crate::action::test_utils::MockResponder;
 
     #[test]
     fn heartbeat_request_should_send_heartbeat_response() {
@@ -36,7 +36,7 @@ mod tests {
         let msg = Msg::from(Content::HeartbeatRequest);
         let mut responder = MockResponder::default();
 
-        let result = heartbeat_request(&mut state, msg.clone(), &responder);
+        let result = heartbeat_request(&mut state, &msg, &responder);
         assert!(result.is_ok(), "Bad result: {:?}", result);
 
         let outgoing_msg = Msg::from_slice(&responder.take_last_sent().unwrap()).unwrap();
@@ -51,7 +51,7 @@ mod tests {
         let msg = Msg::from(Content::HeartbeatResponse);
         let mut responder = MockResponder::default();
 
-        let result = heartbeat_response(&mut state, msg.clone(), &responder);
+        let result = heartbeat_response(&mut state, &msg, &responder);
         assert!(result.is_ok(), "Bad result: {:?}", result);
 
         let last_sent = responder.take_last_sent();

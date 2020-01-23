@@ -21,6 +21,15 @@ pub struct Header {
     pub creation_date: DateTime<Utc>,
 }
 
+impl Default for Header {
+    fn default() -> Self {
+        Self {
+            id: random(),
+            creation_date: Utc::now(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Msg {
     /// Information associated with this message
@@ -48,10 +57,7 @@ impl Msg {
 impl From<Content> for Msg {
     fn from(content: Content) -> Self {
         Self {
-            header: Header {
-                id: random(),
-                creation_date: Utc::now(),
-            },
+            header: Header::default(),
             parent_header: None,
             content,
         }
