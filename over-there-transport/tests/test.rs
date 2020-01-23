@@ -263,11 +263,6 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     const N: usize = 7;
     for i in 0..N {
         client_thread.send(format!("test message {}", i).as_bytes().to_vec())?;
-
-        // NOTE: Without a sleep delay, TCP in testing appears to lose
-        //       some of the data; it's correctly sent, and receive
-        //       also seems to work fine, but it skips data consistently
-        thread::sleep(Duration::from_millis(1));
     }
 
     // Block until we verify the counts
