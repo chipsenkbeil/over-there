@@ -4,6 +4,10 @@ pub mod net;
 mod packet;
 mod transceiver;
 
+pub mod constants {
+    pub const DEFAULT_TTL_IN_SECS: u64 = 60 * 5;
+}
+
 pub use assembler::AssemblerError;
 pub use disassembler::DisassemblerError;
 pub use transceiver::net::{

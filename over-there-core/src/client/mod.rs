@@ -1,44 +1,84 @@
 pub mod state;
 
-use over_there_auth::NoopAuthenticator;
-use over_there_crypto::NoopBicrypter;
+use crate::msg::{Msg, MsgError};
+use over_there_auth::{Signer, Verifier};
+use over_there_crypto::{Decrypter, Encrypter};
 use over_there_transport::{
-    net, NetStream, NetTransmission, TcpStreamTransceiver, TransceiverContext,
+    net, NetStream, NetTransmission, TcpStreamTransceiver, TransceiverContext, TransceiverThread,
+    UdpStreamTransceiver, UdpTransceiver,
 };
+use std::io;
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 
-pub enum Connection {
-    /// Connects to a remote TCP port
-    Tcp,
-
-    /// Connects to a remote UDP port using
-    /// an arbitrary local UDP port
-    Udp,
-
-    /// Connects to a remote UDP port using
-    /// the provided local UDP port
-    UdpVia(SocketAddr),
-}
-
-pub fn connect<NS: NetStream>(remote_addr: SocketAddr, connection: Connection) -> Client<NS> {
-    match connection {
-        Connection::Tcp => Client {
-            state: state::State::default(),
-            ns: TcpStreamTransceiver::new(
-                TcpStream::connect(remote_addr),
-                TransceiverContext::new(
-                    NetTransmission::TcpEthernet.into(),
-                    Duration::from_secs(TransceiverContext::DEFAULT_TTL_IN_SECS),
-                    NoopAuthenticator,
-                    NoopBicrypter,
-                ),
-            ),
-        },
-    }
-}
-
-pub struct Client<NS: NetStream> {
+pub struct Client {
     state: state::State,
-    ns: NS,
+    thread: TransceiverThread<Vec<u8>, ()>,
+}
+
+impl Client {
+    pub fn heartbeat(&self) {}
+}
+
+pub fn tcp_connect<A, B>(
+    remote_addr: SocketAddr,
+    packet_ttl: Duration,
+    authenticator: A,
+    bicrypter: B,
+) -> Result<Client, io::Error>
+where
+    A: Signer + Verifier + Send + Sync + 'static,
+    B: Encrypter + Decrypter + Send + Sync + 'static,
+{
+    Ok(Client {
+        state: state::State::default(),
+        thread: TcpStreamTransceiver::new(
+            TcpStream::connect(remote_addr)?,
+            TransceiverContext::new(
+                NetTransmission::TcpEthernet.into(),
+                packet_ttl,
+                authenticator,
+                bicrypter,
+            ),
+        )
+        .spawn(Duration::from_millis(1), |data, responder| {
+            if let Ok(msg) = Msg::from_slice(&data) {}
+        })?,
+    })
+}
+
+pub fn udp_connect<A, B>(
+    remote_addr: SocketAddr,
+    packet_ttl: Duration,
+    authenticator: A,
+    bicrypter: B,
+) -> Result<Client, io::Error>
+where
+    A: Signer + Verifier + Send + Sync + 'static,
+    B: Encrypter + Decrypter + Send + Sync + 'static,
+{
+    let ctx = if remote_addr.is_ipv4() {
+        TransceiverContext::new(
+            NetTransmission::UdpIpv4.into(),
+            packet_ttl,
+            authenticator,
+            bicrypter,
+        )
+    } else {
+        TransceiverContext::new(
+            NetTransmission::UdpIpv6.into(),
+            packet_ttl,
+            authenticator,
+            bicrypter,
+        )
+    };
+
+    Ok(Client {
+        state: state::State::default(),
+        thread: UdpTransceiver::new(net::udp::connect(remote_addr)?, ctx)
+            .connect(remote_addr)?
+            .spawn(Duration::from_millis(1), |data, responder| {
+                if let Ok(msg) = Msg::from_slice(&data) {}
+            })?,
+    })
 }

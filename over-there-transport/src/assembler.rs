@@ -1,4 +1,4 @@
-use crate::packet::Packet;
+use crate::{constants, packet::Packet};
 use over_there_derive::Error;
 use over_there_utils::TtlValue;
 use std::collections::HashMap;
@@ -40,8 +40,6 @@ pub(crate) struct Assembler {
 }
 
 impl Assembler {
-    pub const DEFAULT_TTL_IN_SECS: u64 = 5 * 60;
-
     pub fn new(ttl: Duration) -> Self {
         Self {
             packet_groups: HashMap::new(),
@@ -143,7 +141,7 @@ impl Assembler {
 
 impl Default for Assembler {
     fn default() -> Self {
-        Self::new(Duration::from_secs(Self::DEFAULT_TTL_IN_SECS))
+        Self::new(Duration::from_secs(constants::DEFAULT_TTL_IN_SECS))
     }
 }
 

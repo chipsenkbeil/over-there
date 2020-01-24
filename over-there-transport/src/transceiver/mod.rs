@@ -76,8 +76,6 @@ where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
 {
-    pub const DEFAULT_TTL_IN_SECS: u64 = Assembler::DEFAULT_TTL_IN_SECS;
-
     pub fn new(
         transmission_size: usize,
         packet_ttl: Duration,
