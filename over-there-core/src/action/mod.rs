@@ -1,11 +1,8 @@
 mod handler;
 
-use crate::{
-    msg::{
-        content::{Content, ContentType},
-        Header, Msg, MsgError,
-    },
-    state::State,
+use crate::msg::{
+    content::{Content, ContentType},
+    Header, Msg, MsgError,
 };
 use over_there_derive::Error;
 use over_there_transport::{Responder, ResponderError};

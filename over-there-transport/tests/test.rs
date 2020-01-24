@@ -1,8 +1,8 @@
 use over_there_auth::Sha256Authenticator;
 use over_there_crypto::{self as crypto, aes_gcm};
 use over_there_transport::{
-    net, NetTransmission, Responder, TcpListenerTransceiver, TcpStreamTransceiver,
-    TransceiverContext, UdpTransceiver,
+    net, NetListener, NetStream, NetTransmission, Responder, TcpListenerTransceiver,
+    TcpStreamTransceiver, TransceiverContext, UdpTransceiver,
 };
 use over_there_utils::exec;
 use std::sync::{Arc, Mutex};
@@ -123,7 +123,7 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         *rc_1.lock().unwrap() += 1;
-    });
+    })?;
 
     // Send N messages to server
     const N: usize = 7;

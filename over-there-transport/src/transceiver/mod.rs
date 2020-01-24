@@ -27,19 +27,19 @@ pub enum TransceiverThreadError {
     FailedToJoin,
 }
 
-pub struct TransceiverThread<JT, ST> {
-    handle: JoinHandle<JT>,
-    tx: mpsc::Sender<ST>,
+pub struct TransceiverThread<T, R> {
+    handle: JoinHandle<R>,
+    tx: mpsc::Sender<T>,
 }
 
-impl<JT, ST> TransceiverThread<JT, ST> {
-    pub fn send(&self, data: ST) -> Result<(), TransceiverThreadError> {
+impl<T, R> TransceiverThread<T, R> {
+    pub fn send(&self, data: T) -> Result<(), TransceiverThreadError> {
         self.tx
             .send(data)
             .map_err(|_| TransceiverThreadError::FailedToSend)
     }
 
-    pub fn join(self) -> Result<JT, TransceiverThreadError> {
+    pub fn join(self) -> Result<R, TransceiverThreadError> {
         self.handle
             .join()
             .map_err(|_| TransceiverThreadError::FailedToJoin)
@@ -76,6 +76,8 @@ where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
 {
+    pub const DEFAULT_TTL_IN_SECS: u64 = Assembler::DEFAULT_TTL_IN_SECS;
+
     pub fn new(
         transmission_size: usize,
         packet_ttl: Duration,

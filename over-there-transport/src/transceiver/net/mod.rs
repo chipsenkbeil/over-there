@@ -1,9 +1,18 @@
 pub mod tcp;
 pub mod udp;
 
-use super::Responder;
+use super::{
+    receiver::ReceiverError, transmitter::TransmitterError, Responder, ResponderError,
+    TransceiverThread,
+};
 use crate::net;
+use std::io;
 use std::net::SocketAddr;
+use std::sync::mpsc;
+use std::time::Duration;
+
+pub type Data = Vec<u8>;
+pub type DataAndAddr = (Data, SocketAddr);
 
 pub enum NetTransmission {
     TcpEthernet,
@@ -29,6 +38,61 @@ impl Into<usize> for NetTransmission {
     }
 }
 
-pub trait NetResponder: Responder {
-    fn addr(&self) -> SocketAddr;
+#[derive(Clone)]
+pub struct NetResponder {
+    tx: mpsc::Sender<Data>,
+}
+
+impl Responder for NetResponder {
+    fn send(&self, data: &[u8]) -> Result<(), ResponderError> {
+        self.tx
+            .send(data.to_vec())
+            .map_err(|_| ResponderError::NoLongerAvailable)
+    }
+}
+
+#[derive(Clone)]
+pub struct AddrNetResponder {
+    tx: mpsc::Sender<DataAndAddr>,
+    pub addr: SocketAddr,
+}
+
+impl Responder for AddrNetResponder {
+    fn send(&self, data: &[u8]) -> Result<(), ResponderError> {
+        self.tx
+            .send((data.to_vec(), self.addr))
+            .map_err(|_| ResponderError::NoLongerAvailable)
+    }
+}
+
+pub trait NetStream {
+    /// Spawns a new transceiver thread to communicate between this stream
+    /// and the remote connection
+    fn spawn<C>(
+        self,
+        sleep_duration: Duration,
+        callback: C,
+    ) -> io::Result<TransceiverThread<Data, ()>>
+    where
+        C: Fn(Vec<u8>, NetResponder) + Send + 'static;
+
+    /// Sends data to the remote connection
+    fn send(&mut self, data: &[u8]) -> Result<(), TransmitterError>;
+
+    /// Receives data from the remote connection
+    fn recv(&mut self) -> Result<Option<Data>, ReceiverError>;
+}
+
+pub trait NetListener {
+    type Responder: Responder;
+
+    /// Spawns a new transceiver thread to communicate between this listener
+    /// and all remote connections
+    fn spawn<C>(
+        self,
+        sleep_duration: Duration,
+        callback: C,
+    ) -> io::Result<TransceiverThread<DataAndAddr, ()>>
+    where
+        C: Fn(Vec<u8>, Self::Responder) + Send + 'static;
 }
