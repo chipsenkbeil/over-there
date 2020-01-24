@@ -15,15 +15,18 @@ pub fn bind(host: IpAddr, port: Vec<u16>) -> Result<UdpSocket> {
 /// Connects to a remote address by binding to a local, ephemeral port
 /// and then issuing connect(...) on the socket to filter out all
 /// data not coming from the specified address
+///
+/// NOTE: This seems to be equivalent to a non-bound socket doing a connect,
+///       which could look like UdpSocket::bind("0.0.0.0:0").connect(...)
 pub fn connect(addr: SocketAddr) -> Result<UdpSocket> {
     let socket = if addr.is_ipv4() {
         bind(
-            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             super::IANA_EPHEMERAL_PORT_RANGE.collect(),
         )?
     } else {
         bind(
-            IpAddr::V6(Ipv6Addr::LOCALHOST),
+            IpAddr::V6(Ipv6Addr::UNSPECIFIED),
             super::IANA_EPHEMERAL_PORT_RANGE.collect(),
         )?
     };
