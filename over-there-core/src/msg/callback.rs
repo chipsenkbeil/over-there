@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
 
-pub type Callback = dyn FnMut(&Msg);
+pub type Callback = dyn FnMut(&Msg) + Send;
 
 pub struct CallbackManager {
     /// Contains callback functions to invoke when a
@@ -11,10 +11,8 @@ pub struct CallbackManager {
     callbacks: HashMap<u32, Box<Callback>>,
 }
 
-unsafe impl Send for CallbackManager {}
-
 impl CallbackManager {
-    pub fn add_callback(&mut self, id: u32, callback: impl FnMut(&Msg) + 'static) {
+    pub fn add_callback(&mut self, id: u32, callback: impl FnMut(&Msg) + Send + 'static) {
         self.callbacks.insert(id, Box::new(callback));
     }
 

@@ -50,8 +50,7 @@ fn respond<R: Responder>(
 mod tests {
     use super::*;
     use crate::client::state::ClientState;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
     use test_utils::MockResponder;
 
     #[test]
@@ -61,14 +60,14 @@ mod tests {
         let responder = MockResponder::default();
         let id = msg.parent_header.clone().unwrap().id;
 
-        let success_1 = Rc::new(RefCell::new(false));
-        let success_2 = Rc::clone(&success_1);
+        let success_1 = Arc::new(Mutex::new(false));
+        let success_2 = Arc::clone(&success_1);
         state.callback_manager().add_callback(id, move |_msg| {
-            *success_2.borrow_mut() = true;
+            *success_2.lock().unwrap() = true;
         });
 
         assert!(execute(&mut state, &msg, &responder, |_, _, _| { Ok(()) }).is_ok());
-        assert!(*success_1.borrow(), "Callback was not invoked!");
+        assert!(*success_1.lock().unwrap(), "Callback was not invoked!");
     }
 }
 
