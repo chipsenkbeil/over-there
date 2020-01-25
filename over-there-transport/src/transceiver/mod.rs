@@ -17,7 +17,7 @@ pub enum ResponderError {
     NoLongerAvailable,
 }
 
-pub trait Responder: Clone {
+pub trait Responder: Clone + Send {
     fn send(&self, data: &[u8]) -> Result<(), ResponderError>;
 }
 

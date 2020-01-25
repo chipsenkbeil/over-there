@@ -11,6 +11,8 @@ pub struct CallbackManager {
     callbacks: HashMap<u32, Box<Callback>>,
 }
 
+unsafe impl Send for CallbackManager {}
+
 impl CallbackManager {
     pub fn add_callback(&mut self, id: u32, callback: impl FnMut(&Msg) + 'static) {
         self.callbacks.insert(id, Box::new(callback));

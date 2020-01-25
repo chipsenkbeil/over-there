@@ -1,13 +1,13 @@
 use crate::{
     action::{self, ActionError},
+    client::state::ClientState,
     msg::{content::Content, Msg},
-    state::State,
+    server::state::ServerState,
 };
 use over_there_transport::Responder;
 
-/// Handles a request for current version
 pub fn version_request<R: Responder>(
-    _state: &mut State,
+    _state: &mut ServerState,
     msg: &Msg,
     responder: &R,
 ) -> Result<(), ActionError> {
@@ -22,7 +22,7 @@ pub fn version_request<R: Responder>(
 
 /// Updates the last version we have received
 pub fn version_response<R: Responder>(
-    state: &mut State,
+    state: &mut ClientState,
     msg: &Msg,
     _responder: &R,
 ) -> Result<(), ActionError> {
@@ -42,7 +42,7 @@ mod tests {
 
     #[test]
     fn version_request_should_send_version_response() {
-        let mut state = State::default();
+        let mut state = ServerState::default();
         let msg = Msg::from(Content::VersionRequest);
         let mut responder = MockResponder::default();
 
@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn version_response_should_log_remote_version() {
-        let mut state = State::default();
+        let mut state = ClientState::default();
         let version = env!("CARGO_PKG_VERSION").to_string();
         let msg = Msg::from(Content::VersionResponse {
             version: version.clone(),

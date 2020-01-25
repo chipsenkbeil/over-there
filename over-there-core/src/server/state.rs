@@ -1,8 +1,20 @@
-#[derive(Debug)]
-pub struct State {}
+use crate::{msg::callback::CallbackManager, state::State};
 
-impl Default for State {
+#[derive(Debug)]
+pub struct ServerState {
+    callback_manager: CallbackManager,
+}
+
+impl State for ServerState {
+    fn callback_manager(&mut self) -> &mut CallbackManager {
+        &mut self.callback_manager
+    }
+}
+
+impl Default for ServerState {
     fn default() -> Self {
-        Self {}
+        Self {
+            callback_manager: CallbackManager::default(),
+        }
     }
 }

@@ -1,8 +1,8 @@
-mod handler;
+pub mod handler;
 
-use crate::msg::{
-    content::{Content, ContentType},
-    Header, Msg, MsgError,
+use crate::{
+    msg::{content::Content, Header, Msg, MsgError},
+    state::State,
 };
 use over_there_derive::Error;
 use over_there_transport::{Responder, ResponderError};
@@ -15,18 +15,17 @@ pub enum ActionError {
     Unknown,
 }
 
-/// Evaluate a message's content and potentially respond using the provided
-/// netsend component
-pub fn execute<R: Responder>(
-    state: &mut State,
+/// Evaluate a message's content and potentially respond using the provided responder
+pub fn execute<R: Responder, S: State>(
+    state: &mut S,
     msg: &Msg,
     responder: &R,
-    mut handler: impl FnMut(&mut State, &Msg, &R) -> Result<(), ActionError>,
+    mut handler: impl FnMut(&mut S, &Msg, &R) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
     let maybe_callback = msg
         .parent_header
         .as_ref()
-        .and_then(|h| state.take_callback(h.id));
+        .and_then(|h| state.callback_manager().take_callback(h.id));
     let result = (handler)(state, msg, responder);
 
     if let Some(mut callback) = maybe_callback {
@@ -34,22 +33,6 @@ pub fn execute<R: Responder>(
     }
 
     result
-}
-
-/// Looks up an appropriate function pointer for the given content type
-pub fn route<R: Responder>(
-    content_type: ContentType,
-) -> fn(&mut State, &Msg, &R) -> Result<(), ActionError> {
-    match content_type {
-        ContentType::HeartbeatRequest => handler::heartbeat::heartbeat_request,
-        ContentType::HeartbeatResponse => handler::heartbeat::heartbeat_response,
-
-        ContentType::VersionRequest => handler::version::version_request,
-        ContentType::VersionResponse => handler::version::version_response,
-
-        // TODO: Remove unknown by completing all other content types
-        _ => handler::unknown::unknown,
-    }
 }
 
 /// Sends a response to the originator of a msg
@@ -66,20 +49,21 @@ fn respond<R: Responder>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::state::ClientState;
     use std::cell::RefCell;
     use std::rc::Rc;
     use test_utils::MockResponder;
 
     #[test]
     fn execute_should_invoke_callback_if_it_exists() {
-        let mut state = State::default();
+        let mut state = ClientState::default();
         let msg = Msg::from((Content::HeartbeatRequest, Header::default()));
         let responder = MockResponder::default();
         let id = msg.parent_header.clone().unwrap().id;
 
         let success_1 = Rc::new(RefCell::new(false));
         let success_2 = Rc::clone(&success_1);
-        state.add_callback(id, move |_msg| {
+        state.callback_manager().add_callback(id, move |_msg| {
             *success_2.borrow_mut() = true;
         });
 

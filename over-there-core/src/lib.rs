@@ -1,7 +1,8 @@
 pub mod action;
-mod client;
+pub mod client;
 mod msg;
-mod server;
+pub mod server;
+mod state;
 
 pub use msg::content::Content;
 pub use msg::{Msg, MsgError};

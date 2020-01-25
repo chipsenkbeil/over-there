@@ -1,23 +1,22 @@
 use crate::{
     action::{self, ActionError},
+    client::state::ClientState,
     msg::{content::Content, Msg},
-    state::State,
+    server::state::ServerState,
 };
 use over_there_transport::Responder;
 use std::time::Instant;
 
-/// Requests a new heartbeat to confirm remote endpoint is alive
 pub fn heartbeat_request<R: Responder>(
-    _state: &mut State,
+    _state: &mut ServerState,
     msg: &Msg,
     responder: &R,
 ) -> Result<(), ActionError> {
     action::respond(responder, Content::HeartbeatResponse, msg.header.clone())
 }
 
-/// Updates the last heartbeat we have received
 pub fn heartbeat_response<R: Responder>(
-    state: &mut State,
+    state: &mut ClientState,
     _msg: &Msg,
     _responder: &R,
 ) -> Result<(), ActionError> {
@@ -32,7 +31,7 @@ mod tests {
 
     #[test]
     fn heartbeat_request_should_send_heartbeat_response() {
-        let mut state = State::default();
+        let mut state = ServerState::default();
         let msg = Msg::from(Content::HeartbeatRequest);
         let mut responder = MockResponder::default();
 
@@ -46,7 +45,7 @@ mod tests {
 
     #[test]
     fn heartbeat_response_should_log_latest_heartbeat() {
-        let mut state = State::default();
+        let mut state = ClientState::default();
         let old_last_heartbeat = state.last_heartbeat.clone();
         let msg = Msg::from(Content::HeartbeatResponse);
         let mut responder = MockResponder::default();

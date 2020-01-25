@@ -1,13 +1,14 @@
+pub mod route;
 pub mod state;
 
 pub struct Server {
-    state: state::State,
+    state: state::ServerState,
 }
 
 impl Default for Server {
     fn default() -> Self {
         Self {
-            state: state::State::default(),
+            state: state::ServerState::default(),
         }
     }
 }
