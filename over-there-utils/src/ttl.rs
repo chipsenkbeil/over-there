@@ -114,12 +114,12 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn refresh_should_renew_lifetime_of_value() {
+    fn touch_should_renew_lifetime_of_value() {
         let mut ttl_value = TtlValue::new(0, Duration::from_millis(5));
 
         std::thread::sleep(Duration::from_millis(3));
 
-        ttl_value.refresh();
+        ttl_value.touch();
 
         std::thread::sleep(Duration::from_millis(3));
 

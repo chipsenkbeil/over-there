@@ -1,8 +1,11 @@
-use crate::transceiver::{
-    net::{Data, NetResponder, NetStream},
-    receiver::{self, ReceiverError},
-    transmitter::{self, TransmitterError},
-    TransceiverContext, TransceiverThread,
+use crate::{
+    net::tcp::BufTcpStream,
+    transceiver::{
+        net::{Data, NetResponder, NetStream},
+        receiver::{self, ReceiverError},
+        transmitter::{self, TransmitterError},
+        TransceiverContext, TransceiverThread,
+    },
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
@@ -25,7 +28,7 @@ where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
-    pub stream: TcpStream,
+    pub stream: BufTcpStream,
     ctx: TransceiverContext<A, B>,
 }
 
@@ -34,8 +37,11 @@ where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
-    pub fn new(stream: TcpStream, ctx: TransceiverContext<A, B>) -> Self {
-        Self { stream, ctx }
+    pub fn new(stream: TcpStream, ctx: TransceiverContext<A, B>) -> io::Result<Self> {
+        Ok(Self {
+            stream: BufTcpStream::new(stream, ctx.transmission_size)?,
+            ctx,
+        })
     }
 }
 
@@ -58,6 +64,7 @@ where
     {
         // NOTE: Stream MUST have a read timeout otherwise it will block indefinitely
         self.stream
+            .inner
             .set_read_timeout(Some(Duration::from_millis(1)))?;
 
         stream_spawn(
@@ -79,7 +86,7 @@ where
 }
 
 fn stream_spawn<A, B, C, D>(
-    mut stream: TcpStream,
+    mut stream: BufTcpStream,
     mut ctx: TransceiverContext<A, B>,
     sleep_duration: Duration,
     callback: C,
@@ -111,7 +118,7 @@ where
 }
 
 pub(super) fn stream_process<A, B, C>(
-    stream: &mut TcpStream,
+    stream: &mut BufTcpStream,
     ctx: &mut TransceiverContext<A, B>,
     send_rx: &mpsc::Receiver<Data>,
     ns: &NetResponder,
@@ -147,7 +154,7 @@ where
 
 /// Helper method to send data using the underlying stream
 fn stream_send<A, B>(
-    stream: &mut TcpStream,
+    stream: &mut BufTcpStream,
     ctx: &mut TransceiverContext<A, B>,
     data: &[u8],
 ) -> Result<(), TransmitterError>
@@ -177,7 +184,7 @@ where
 
 /// Helper method to receive data using the underlying stream
 fn stream_recv<A, B>(
-    stream: &mut TcpStream,
+    stream: &mut BufTcpStream,
     ctx: &mut TransceiverContext<A, B>,
 ) -> Result<Option<Data>, ReceiverError>
 where

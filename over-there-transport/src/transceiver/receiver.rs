@@ -73,9 +73,11 @@ where
         // Finally, if we get data, we continue
         Ok(x) => x,
     };
+    println!("do_receive: {} bytes", size);
 
     // Process the received packet
     let p = Packet::from_slice(&ctx.buffer[..size]).map_err(ReceiverError::DecodePacket)?;
+    println!("do_receive: data {:?}", p.data());
 
     // Verify the packet's signature, skipping any form of assembly if
     // it is not a legit packet
@@ -85,6 +87,7 @@ where
 
     let group_id = p.id();
     let nonce = p.nonce().cloned();
+    println!("do_receive: group {} | {:?}", group_id, nonce);
 
     // Ensure that packet groups are still valid
     ctx.assembler.remove_expired();
@@ -92,6 +95,8 @@ where
     // Add the packet, see if we are ready to assemble the data, and do so
     let do_assemble = add_packet_and_verify(ctx.assembler, p)?;
     if do_assemble {
+        println!("do_receive: assemble {}", group_id);
+
         // Gather the complete data
         let data = assemble_and_decrypt(group_id, ctx.assembler, ctx.decrypter, nonce)?;
 

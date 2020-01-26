@@ -1,13 +1,16 @@
-use crate::transceiver::{
-    net::{self, Data, DataAndAddr, NetListener, NetResponder},
-    TransceiverContext, TransceiverThread,
+use crate::{
+    net::tcp::BufTcpStream,
+    transceiver::{
+        net::{self, Data, DataAndAddr, NetListener, NetResponder},
+        TransceiverContext, TransceiverThread,
+    },
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use over_there_derive::Error;
 use std::collections::HashMap;
 use std::io;
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::sync::mpsc;
 use std::thread::{self};
 use std::time::Duration;
@@ -16,6 +19,7 @@ use std::time::Duration;
 pub enum TcpListenerTransceiverError {
     AcceptError(io::Error),
     TcpStreamError(net::tcp::stream::TcpStreamTransceiverError),
+    FailedToWrapTcpStreamError(io::Error),
     Disconnected,
 }
 
@@ -105,7 +109,7 @@ where
 
 fn process<A, B, C>(
     listener: &TcpListener,
-    connections: &mut HashMap<SocketAddr, (TcpStream, mpsc::Sender<Data>, mpsc::Receiver<Data>)>,
+    connections: &mut HashMap<SocketAddr, (BufTcpStream, mpsc::Sender<Data>, mpsc::Receiver<Data>)>,
     ctx: &mut TransceiverContext<A, B>,
     send_rx: &mpsc::Receiver<DataAndAddr>,
     callback: &C,
@@ -119,7 +123,15 @@ where
     match listener.accept() {
         Ok((stream, addr)) => {
             let (tx, rx) = mpsc::channel::<Data>();
-            connections.insert(addr, (stream, tx, rx));
+            connections.insert(
+                addr,
+                (
+                    BufTcpStream::new(stream, ctx.transmission_size)
+                        .map_err(TcpListenerTransceiverError::FailedToWrapTcpStreamError)?,
+                    tx,
+                    rx,
+                ),
+            );
         }
         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => (),
         Err(x) => return Err(TcpListenerTransceiverError::AcceptError(x)),
