@@ -6,11 +6,11 @@ use crate::{
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use over_there_transport::{
-    net, NetResponder, NetStream, NetTransmission, TcpStreamTransceiver, TransceiverContext,
+    NetResponder, NetStream, NetTransmission, TcpStreamTransceiver, TransceiverContext,
     TransceiverThread, UdpTransceiver,
 };
 use std::io;
-use std::net::{SocketAddr, TcpStream};
+use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -53,7 +53,7 @@ where
 }
 
 pub fn tcp_connect<A, B>(
-    remote_addr: SocketAddr,
+    stream: TcpStream,
     packet_ttl: Duration,
     authenticator: A,
     bicrypter: B,
@@ -62,9 +62,10 @@ where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
+    let remote_addr = stream.peer_addr()?;
     let state = Arc::new(Mutex::new(ClientState::default()));
     let stream = TcpStreamTransceiver::new(
-        TcpStream::connect(remote_addr)?,
+        stream,
         TransceiverContext::new(
             NetTransmission::TcpEthernet.into(),
             packet_ttl,
@@ -76,12 +77,14 @@ where
     let (transceiver_thread, msg_thread) = spawn_threads(Arc::clone(&state), stream)?;
     Ok(Client {
         state,
+        remote_addr,
         transceiver_thread,
         msg_thread,
     })
 }
 
 pub fn udp_connect<A, B>(
+    socket: UdpSocket,
     remote_addr: SocketAddr,
     packet_ttl: Duration,
     authenticator: A,
@@ -102,11 +105,12 @@ where
         authenticator,
         bicrypter,
     );
-    let stream = UdpTransceiver::new(net::udp::connect(remote_addr)?, ctx).connect(remote_addr)?;
+    let stream = UdpTransceiver::new(socket, ctx).connect(remote_addr)?;
     let (transceiver_thread, msg_thread) = spawn_threads(Arc::clone(&state), stream)?;
 
     Ok(Client {
         state,
+        remote_addr,
         transceiver_thread,
         msg_thread,
     })

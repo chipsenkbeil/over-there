@@ -6,11 +6,11 @@ use crate::{
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use over_there_transport::{
-    net, NetListener, NetTransmission, TcpListenerTransceiver, TransceiverContext,
-    TransceiverThread, UdpTransceiver,
+    NetListener, NetTransmission, TcpListenerTransceiver, TransceiverContext, TransceiverThread,
+    UdpTransceiver,
 };
 use std::io;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{SocketAddr, TcpListener, UdpSocket};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -56,8 +56,7 @@ where
 }
 
 pub fn tcp_listen<A, B>(
-    host: IpAddr,
-    port: Vec<u16>,
+    listener: TcpListener,
     packet_ttl: Duration,
     authenticator: A,
     bicrypter: B,
@@ -66,9 +65,10 @@ where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
+    let addr = listener.local_addr()?;
     let state = Arc::new(Mutex::new(ServerState::default()));
     let stream = TcpListenerTransceiver::new(
-        net::tcp::bind(host, port)?,
+        listener,
         TransceiverContext::new(
             NetTransmission::TcpEthernet.into(),
             packet_ttl,
@@ -80,14 +80,14 @@ where
     let (transceiver_thread, msg_thread) = spawn_threads(Arc::clone(&state), stream)?;
     Ok(Server {
         state,
+        addr,
         transceiver_thread,
         msg_thread,
     })
 }
 
 pub fn udp_listen<A, B>(
-    host: IpAddr,
-    port: Vec<u16>,
+    socket: UdpSocket,
     packet_ttl: Duration,
     authenticator: A,
     bicrypter: B,
@@ -96,9 +96,10 @@ where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
+    let addr = socket.local_addr()?;
     let state = Arc::new(Mutex::new(ServerState::default()));
     let ctx = TransceiverContext::new(
-        if host.is_ipv4() {
+        if socket.local_addr()?.is_ipv4() {
             NetTransmission::UdpIpv4.into()
         } else {
             NetTransmission::UdpIpv6.into()
@@ -107,11 +108,12 @@ where
         authenticator,
         bicrypter,
     );
-    let transceiver = UdpTransceiver::new(net::udp::bind(host, port)?, ctx);
+    let transceiver = UdpTransceiver::new(socket, ctx);
     let (transceiver_thread, msg_thread) = spawn_threads(Arc::clone(&state), transceiver)?;
 
     Ok(Server {
         state,
+        addr,
         transceiver_thread,
         msg_thread,
     })
