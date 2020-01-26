@@ -2,6 +2,10 @@ mod listen;
 pub mod route;
 pub mod state;
 
+use crate::{
+    msg::{callback::Callback, Msg},
+    state::State,
+};
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use over_there_transport::TransceiverThread;
@@ -48,5 +52,30 @@ impl Server {
         B: Encrypter + Decrypter + Send + Sync + 'static,
     {
         listen::udp_listen(host, port, packet_ttl, authenticator, bicrypter)
+    }
+
+    pub fn add_callback(&mut self, id: u32, callback: impl FnMut(&Msg) + Send + 'static) {
+        self.state
+            .lock()
+            .unwrap()
+            .callback_manager()
+            .add_callback(id, callback)
+    }
+
+    pub fn take_callback(&mut self, id: u32) -> Option<Box<Callback>> {
+        self.state
+            .lock()
+            .unwrap()
+            .callback_manager()
+            .take_callback(id)
+    }
+
+    pub fn join(self) -> Result<(), Box<dyn std::error::Error>> {
+        self.transceiver_thread.join()?;
+        self.msg_thread
+            .join()
+            .map_err(|_| "Msg Process Thread Join Error")?;
+
+        Ok(())
     }
 }
