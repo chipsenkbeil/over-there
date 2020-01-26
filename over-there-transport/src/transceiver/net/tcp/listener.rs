@@ -132,7 +132,7 @@ where
                 // If we get an error attempting to send data through the
                 // connection, we assume that the connection has been dropped
                 // and that we should remove it
-                if let Err(_) = tx.send(data) {
+                if tx.send(data).is_err() {
                     connections.remove(&addr);
                 }
             }

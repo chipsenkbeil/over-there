@@ -6,6 +6,7 @@ use over_there_transport::{
     TcpStreamTransceiver, TransceiverContext, UdpTransceiver,
 };
 use over_there_utils::exec;
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -96,8 +97,10 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
 
     let mc_1 = Arc::new(Mutex::new(0));
     let mc_2 = Arc::clone(&mc_1);
+    let mc_3 = Arc::clone(&mc_1);
     let rc_1 = Arc::new(Mutex::new(0));
     let rc_2 = Arc::clone(&rc_1);
+    let rc_3 = Arc::clone(&rc_1);
 
     let server_addr = server.socket.local_addr()?;
 
@@ -150,12 +153,24 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Block until we verify the counts
-    exec::loop_timeout_panic(Duration::from_millis(2500), || {
+    exec::loop_timeout(Duration::from_millis(2500), || {
         thread::sleep(Duration::from_millis(50));
         let tmc = *mc_2.lock().unwrap() == N;
         let trc = *rc_2.lock().unwrap() == N;
-        tmc && trc
-    });
+        Ok(tmc && trc)
+    })
+    .map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!(
+                "Client Received: {}/{} | Server Received: {}/{}",
+                rc_3.lock().unwrap(),
+                N,
+                mc_3.lock().unwrap(),
+                N
+            ),
+        )
+    })?;
 
     Ok(())
 }
@@ -248,8 +263,10 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
 
     let mc_1 = Arc::new(Mutex::new(0));
     let mc_2 = Arc::clone(&mc_1);
+    let mc_3 = Arc::clone(&mc_1);
     let rc_1 = Arc::new(Mutex::new(0));
     let rc_2 = Arc::clone(&rc_1);
+    let rc_3 = Arc::clone(&rc_1);
 
     // NOTE: Must keep in scope otherwise connection is dropped
     let _server_thread = server.spawn(
@@ -295,12 +312,24 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Block until we verify the counts
-    exec::loop_timeout_panic(Duration::from_millis(2500), || {
+    exec::loop_timeout(Duration::from_millis(2500), || {
         thread::sleep(Duration::from_millis(50));
         let mc = *mc_2.lock().unwrap();
         let rc = *rc_2.lock().unwrap();
-        mc == N && rc == N
-    });
+        Ok(mc == N && rc == N)
+    })
+    .map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::TimedOut,
+            format!(
+                "Client Received: {}/{} | Server Received: {}/{}",
+                rc_3.lock().unwrap(),
+                N,
+                mc_3.lock().unwrap(),
+                N
+            ),
+        )
+    })?;
 
     Ok(())
 }
