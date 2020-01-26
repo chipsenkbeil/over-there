@@ -7,6 +7,7 @@ use crate::disassembler::Disassembler;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use over_there_derive::Error;
+use std::fmt::Debug;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -17,7 +18,7 @@ pub enum ResponderError {
     NoLongerAvailable,
 }
 
-pub trait Responder: Clone + Send {
+pub trait Responder: Clone + Debug + Send {
     fn send(&self, data: &[u8]) -> Result<(), ResponderError>;
 }
 

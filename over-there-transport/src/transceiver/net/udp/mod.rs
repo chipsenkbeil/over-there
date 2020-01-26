@@ -8,11 +8,19 @@ use crate::transceiver::{
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
+use over_there_derive::Error;
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+
+#[derive(Debug, Error)]
+pub enum UdpTransceiverError {
+    SendError(TransmitterError),
+    RecvError(ReceiverError),
+    Disconnected,
+}
 
 pub struct UdpTransceiver<A, B>
 where
@@ -57,61 +65,93 @@ where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
+    type Error = UdpTransceiverError;
     type Responder = AddrNetResponder;
 
-    fn spawn<C>(
+    fn spawn<C, D>(
         self,
         sleep_duration: Duration,
         callback: C,
+        err_callback: D,
     ) -> io::Result<TransceiverThread<DataAndAddr, ()>>
     where
         C: Fn(Data, Self::Responder) + Send + 'static,
+        D: Fn(Self::Error) -> bool + Send + 'static,
     {
-        Ok(spawn(self.socket, self.ctx, sleep_duration, callback))
+        Ok(spawn(
+            self.socket,
+            self.ctx,
+            sleep_duration,
+            callback,
+            err_callback,
+        ))
     }
 }
 
-fn spawn<A, B, C>(
+fn spawn<A, B, C, D>(
     socket: UdpSocket,
     mut ctx: TransceiverContext<A, B>,
     sleep_duration: Duration,
     callback: C,
+    err_callback: D,
 ) -> TransceiverThread<DataAndAddr, ()>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
     C: Fn(Data, AddrNetResponder) + Send + 'static,
+    D: Fn(UdpTransceiverError) -> bool + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<DataAndAddr>();
     let thread_tx = tx.clone();
-    let handle = thread::spawn(move || {
-        loop {
-            // Attempt to send data on socket if there is any available
-            match rx.try_recv() {
-                Ok((data, addr)) => send(&socket, addr, &mut ctx, &data).unwrap(),
-                Err(mpsc::TryRecvError::Empty) => (),
-                Err(x) => panic!("Unexpected error: {:?}", x),
+    let handle = thread::spawn(move || loop {
+        if let Err(e) = process(&socket, &mut ctx, &rx, &thread_tx, &callback) {
+            if !err_callback(e) {
+                break;
             }
-
-            // Attempt to get new data and pass it along
-            match recv(&socket, &mut ctx) {
-                Ok(Some((data, addr))) => callback(
-                    data,
-                    AddrNetResponder {
-                        tx: thread_tx.clone(),
-                        addr,
-                    },
-                ),
-                Ok(None) => (),
-
-                // TODO: Handle errors
-                Err(_) => (),
-            }
-
-            thread::sleep(sleep_duration);
         }
+        thread::sleep(sleep_duration);
     });
     TransceiverThread { handle, tx }
+}
+
+fn process<A, B, C>(
+    socket: &UdpSocket,
+    ctx: &mut TransceiverContext<A, B>,
+    send_rx: &mpsc::Receiver<DataAndAddr>,
+    tx: &mpsc::Sender<DataAndAddr>,
+    callback: &C,
+) -> Result<(), UdpTransceiverError>
+where
+    A: Signer + Verifier,
+    B: Encrypter + Decrypter,
+    C: Fn(Data, AddrNetResponder) + Send + 'static,
+{
+    // Attempt to send data on socket if there is any available
+    match send_rx.try_recv() {
+        Ok((data, addr)) => {
+            if let Err(e) = send(socket, addr, ctx, &data) {
+                return Err(UdpTransceiverError::SendError(e));
+            }
+        }
+        Err(mpsc::TryRecvError::Empty) => (),
+        Err(mpsc::TryRecvError::Disconnected) => return Err(UdpTransceiverError::Disconnected),
+    }
+
+    // Attempt to get new data and pass it along
+    match recv(socket, ctx) {
+        Ok(Some((data, addr))) => {
+            callback(
+                data,
+                AddrNetResponder {
+                    tx: tx.clone(),
+                    addr,
+                },
+            );
+            Ok(())
+        }
+        Ok(None) => Ok(()),
+        Err(x) => Err(UdpTransceiverError::RecvError(x)),
+    }
 }
 
 fn send<A, B>(

@@ -11,8 +11,14 @@ pub mod constants {
 pub use assembler::AssemblerError;
 pub use disassembler::DisassemblerError;
 pub use transceiver::net::{
-    tcp::{listener::TcpListenerTransceiver, stream::TcpStreamTransceiver},
-    udp::{stream::UdpStreamTransceiver, UdpTransceiver},
+    tcp::{
+        listener::{TcpListenerTransceiver, TcpListenerTransceiverError},
+        stream::{TcpStreamTransceiver, TcpStreamTransceiverError},
+    },
+    udp::{
+        stream::{UdpStreamTransceiver, UdpStreamTransceiverError},
+        UdpTransceiver, UdpTransceiverError,
+    },
     AddrNetResponder, NetListener, NetResponder, NetStream, NetTransmission,
 };
 pub use transceiver::receiver::ReceiverError;

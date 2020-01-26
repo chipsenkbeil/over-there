@@ -1,3 +1,4 @@
+use log::error;
 use over_there_auth::Sha256Authenticator;
 use over_there_crypto::{self as crypto, aes_gcm};
 use over_there_transport::{
@@ -103,27 +104,41 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: Must keep in scope to not lose thread? Does not seem to be
     //       an issue with UDP but does happen with TCP. Is there something
     //       else going on here?
-    let _server_thread = server.spawn(Duration::from_millis(1), move |msg, s| {
-        let msg = String::from_utf8(msg).unwrap();
+    let _server_thread = server.spawn(
+        Duration::from_millis(1),
+        move |msg, s| {
+            let msg = String::from_utf8(msg).unwrap();
 
-        if !msg.starts_with("test message") {
-            panic!("Unexpected content {:?}", msg);
-        }
+            if !msg.starts_with("test message") {
+                panic!("Unexpected content {:?}", msg);
+            }
 
-        let msg = format!("reply {}", msg);
-        s.send(msg.as_bytes()).unwrap();
-        *mc_1.lock().unwrap() += 1;
-    });
+            let msg = format!("reply {}", msg);
+            s.send(msg.as_bytes()).unwrap();
+            *mc_1.lock().unwrap() += 1;
+        },
+        |e| {
+            error!("{:?}", e);
+            true
+        },
+    );
 
-    let client_thread = client.spawn(Duration::from_millis(1), move |msg, _addr| {
-        let msg = String::from_utf8(msg).unwrap();
+    let client_thread = client.spawn(
+        Duration::from_millis(1),
+        move |msg, _addr| {
+            let msg = String::from_utf8(msg).unwrap();
 
-        if !msg.starts_with("reply") {
-            panic!("Unexpected content {:?}", msg);
-        }
+            if !msg.starts_with("reply") {
+                panic!("Unexpected content {:?}", msg);
+            }
 
-        *rc_1.lock().unwrap() += 1;
-    })?;
+            *rc_1.lock().unwrap() += 1;
+        },
+        |e| {
+            error!("{:?}", e);
+            true
+        },
+    )?;
 
     // Send N messages to server
     const N: usize = 7;
@@ -237,27 +252,41 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     let rc_2 = Arc::clone(&rc_1);
 
     // NOTE: Must keep in scope otherwise connection is dropped
-    let _server_thread = server.spawn(Duration::from_millis(1), move |msg, s| {
-        let msg = String::from_utf8(msg).unwrap();
+    let _server_thread = server.spawn(
+        Duration::from_millis(1),
+        move |msg, s| {
+            let msg = String::from_utf8(msg).unwrap();
 
-        if !msg.starts_with("test message") {
-            panic!("Unexpected content {:?}", msg);
-        }
+            if !msg.starts_with("test message") {
+                panic!("Unexpected content {:?}", msg);
+            }
 
-        let msg = format!("reply {}", msg);
-        s.send(msg.as_bytes()).unwrap();
-        *mc_1.lock().unwrap() += 1;
-    })?;
+            let msg = format!("reply {}", msg);
+            s.send(msg.as_bytes()).unwrap();
+            *mc_1.lock().unwrap() += 1;
+        },
+        |e| {
+            error!("{:?}", e);
+            true
+        },
+    )?;
 
-    let client_thread = client.spawn(Duration::from_millis(1), move |msg, _send| {
-        let msg = String::from_utf8(msg).unwrap();
+    let client_thread = client.spawn(
+        Duration::from_millis(1),
+        move |msg, _send| {
+            let msg = String::from_utf8(msg).unwrap();
 
-        if !msg.starts_with("reply") {
-            panic!("Unexpected content {:?}", msg);
-        }
+            if !msg.starts_with("reply") {
+                panic!("Unexpected content {:?}", msg);
+            }
 
-        *rc_1.lock().unwrap() += 1;
-    })?;
+            *rc_1.lock().unwrap() += 1;
+        },
+        |e| {
+            error!("{:?}", e);
+            true
+        },
+    )?;
 
     // Send N messages to server
     const N: usize = 7;

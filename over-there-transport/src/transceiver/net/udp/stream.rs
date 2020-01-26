@@ -6,11 +6,19 @@ use crate::transceiver::{
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
+use over_there_derive::Error;
 use std::io;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+
+#[derive(Debug, Error)]
+pub enum UdpStreamTransceiverError {
+    SendError(TransmitterError),
+    RecvError(ReceiverError),
+    Disconnected,
+}
 
 pub struct UdpStreamTransceiver<A, B>
 where
@@ -27,16 +35,25 @@ where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
-    fn spawn<C>(
+    type Error = UdpStreamTransceiverError;
+
+    fn spawn<C, D>(
         self,
         sleep_duration: Duration,
         callback: C,
+        err_callback: D,
     ) -> io::Result<TransceiverThread<Data, ()>>
     where
         C: Fn(Data, NetResponder) + Send + 'static,
+        D: Fn(Self::Error) -> bool + Send + 'static,
     {
-        let thread = spawn(self.socket, self.ctx, sleep_duration, callback);
-        Ok(thread)
+        Ok(spawn(
+            self.socket,
+            self.ctx,
+            sleep_duration,
+            callback,
+            err_callback,
+        ))
     }
 
     fn send(&mut self, data: &[u8]) -> Result<(), TransmitterError> {
@@ -48,46 +65,66 @@ where
     }
 }
 
-fn spawn<A, B, C>(
+fn spawn<A, B, C, D>(
     socket: UdpSocket,
     mut ctx: TransceiverContext<A, B>,
     sleep_duration: Duration,
     callback: C,
+    err_callback: D,
 ) -> TransceiverThread<Data, ()>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
     C: Fn(Data, NetResponder) + Send + 'static,
+    D: Fn(UdpStreamTransceiverError) -> bool + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<Data>();
-    let thread_tx = tx.clone();
-    let handle = thread::spawn(move || {
-        loop {
-            // Attempt to send data on socket if there is any available
-            match rx.try_recv() {
-                Ok(data) => send(&socket, &mut ctx, &data).unwrap(),
-                Err(mpsc::TryRecvError::Empty) => (),
-                Err(x) => panic!("Unexpected error: {:?}", x),
+    let ns = NetResponder { tx: tx.clone() };
+    let handle = thread::spawn(move || loop {
+        if let Err(e) = process(&socket, &mut ctx, &rx, &ns, &callback) {
+            if !err_callback(e) {
+                break;
             }
-
-            // Attempt to get new data and pass it along
-            match recv(&socket, &mut ctx) {
-                Ok(Some(data)) => callback(
-                    data,
-                    NetResponder {
-                        tx: thread_tx.clone(),
-                    },
-                ),
-                Ok(None) => (),
-
-                // TODO: Handle errors
-                Err(_) => (),
-            }
-
-            thread::sleep(sleep_duration);
         }
+        thread::sleep(sleep_duration);
     });
     TransceiverThread { handle, tx }
+}
+
+fn process<A, B, C>(
+    socket: &UdpSocket,
+    ctx: &mut TransceiverContext<A, B>,
+    send_rx: &mpsc::Receiver<Data>,
+    ns: &NetResponder,
+    callback: &C,
+) -> Result<(), UdpStreamTransceiverError>
+where
+    A: Signer + Verifier,
+    B: Encrypter + Decrypter,
+    C: Fn(Data, NetResponder) + Send + 'static,
+{
+    // Attempt to send data on socket if there is any available
+    match send_rx.try_recv() {
+        Ok(data) => {
+            if let Err(e) = send(socket, ctx, &data) {
+                return Err(UdpStreamTransceiverError::SendError(e));
+            }
+        }
+        Err(mpsc::TryRecvError::Empty) => (),
+        Err(mpsc::TryRecvError::Disconnected) => {
+            return Err(UdpStreamTransceiverError::Disconnected)
+        }
+    }
+
+    // Attempt to get new data and pass it along
+    match recv(socket, ctx) {
+        Ok(Some(data)) => {
+            callback(data, ns.clone());
+            Ok(())
+        }
+        Ok(None) => Ok(()),
+        Err(x) => Err(UdpStreamTransceiverError::RecvError(x)),
+    }
 }
 
 fn send<A, B>(

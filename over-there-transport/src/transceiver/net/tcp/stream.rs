@@ -6,11 +6,19 @@ use crate::transceiver::{
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
+use over_there_derive::Error;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::sync::mpsc;
 use std::thread::{self};
 use std::time::Duration;
+
+#[derive(Debug, Error)]
+pub enum TcpStreamTransceiverError {
+    SendError(TransmitterError),
+    RecvError(ReceiverError),
+    Disconnected,
+}
 
 pub struct TcpStreamTransceiver<A, B>
 where
@@ -36,15 +44,25 @@ where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
 {
-    fn spawn<C>(
+    type Error = TcpStreamTransceiverError;
+
+    fn spawn<C, D>(
         self,
         sleep_duration: Duration,
         callback: C,
+        err_callback: D,
     ) -> io::Result<TransceiverThread<Data, ()>>
     where
         C: Fn(Data, NetResponder) + Send + 'static,
+        D: Fn(Self::Error) -> bool + Send + 'static,
     {
-        stream_spawn(self.stream, self.ctx, sleep_duration, callback)
+        stream_spawn(
+            self.stream,
+            self.ctx,
+            sleep_duration,
+            callback,
+            err_callback,
+        )
     }
 
     fn send(&mut self, data: &[u8]) -> Result<(), TransmitterError> {
@@ -56,16 +74,18 @@ where
     }
 }
 
-fn stream_spawn<A, B, C>(
+fn stream_spawn<A, B, C, D>(
     mut stream: TcpStream,
     mut ctx: TransceiverContext<A, B>,
     sleep_duration: Duration,
     callback: C,
+    err_callback: D,
 ) -> Result<TransceiverThread<Data, ()>, io::Error>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
     C: Fn(Data, NetResponder) + Send + 'static,
+    D: Fn(TcpStreamTransceiverError) -> bool + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<Data>();
     let thread_tx = tx.clone();
@@ -73,8 +93,11 @@ where
     let handle = thread::spawn(move || {
         let tns = NetResponder { tx: thread_tx };
         loop {
-            // TODO: Handle errors
-            stream_process(&mut stream, &mut ctx, &rx, &tns, &callback).unwrap();
+            if let Err(e) = stream_process(&mut stream, &mut ctx, &rx, &tns, &callback) {
+                if !err_callback(e) {
+                    break;
+                }
+            }
 
             thread::sleep(sleep_duration);
         }
@@ -89,7 +112,7 @@ pub(super) fn stream_process<A, B, C>(
     send_rx: &mpsc::Receiver<Data>,
     ns: &NetResponder,
     callback: &C,
-) -> Result<(), io::Error>
+) -> Result<(), TcpStreamTransceiverError>
 where
     A: Signer + Verifier,
     B: Encrypter + Decrypter,
@@ -97,10 +120,15 @@ where
 {
     // Attempt to send data on socket if there is any available
     match send_rx.try_recv() {
-        Ok(data) => stream_send(stream, ctx, &data).unwrap(),
+        Ok(data) => {
+            if let Err(e) = stream_send(stream, ctx, &data) {
+                return Err(TcpStreamTransceiverError::SendError(e));
+            }
+        }
         Err(mpsc::TryRecvError::Empty) => (),
-        // TODO: Handle errors
-        Err(mpsc::TryRecvError::Disconnected) => panic!("Disconnected!"),
+        Err(mpsc::TryRecvError::Disconnected) => {
+            return Err(TcpStreamTransceiverError::Disconnected)
+        }
     }
 
     match stream_recv(stream, ctx) {
@@ -109,8 +137,7 @@ where
             Ok(())
         }
         Ok(None) => Ok(()),
-        // TODO: Handle errors
-        Err(x) => panic!("Unexpected error: {:?}", x),
+        Err(x) => Err(TcpStreamTransceiverError::RecvError(x)),
     }
 }
 

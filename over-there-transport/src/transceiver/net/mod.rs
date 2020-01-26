@@ -38,7 +38,7 @@ impl Into<usize> for NetTransmission {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NetResponder {
     tx: mpsc::Sender<Data>,
 }
@@ -51,7 +51,7 @@ impl Responder for NetResponder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AddrNetResponder {
     tx: mpsc::Sender<DataAndAddr>,
     pub addr: SocketAddr,
@@ -66,15 +66,19 @@ impl Responder for AddrNetResponder {
 }
 
 pub trait NetStream {
+    type Error: std::error::Error;
+
     /// Spawns a new transceiver thread to communicate between this stream
     /// and the remote connection
-    fn spawn<C>(
+    fn spawn<C, D>(
         self,
         sleep_duration: Duration,
         callback: C,
+        err_callback: D,
     ) -> io::Result<TransceiverThread<Data, ()>>
     where
-        C: Fn(Vec<u8>, NetResponder) + Send + 'static;
+        C: Fn(Vec<u8>, NetResponder) + Send + 'static,
+        D: Fn(Self::Error) -> bool + Send + 'static;
 
     /// Sends data to the remote connection
     fn send(&mut self, data: &[u8]) -> Result<(), TransmitterError>;
@@ -84,15 +88,18 @@ pub trait NetStream {
 }
 
 pub trait NetListener {
+    type Error: std::error::Error;
     type Responder: Responder;
 
     /// Spawns a new transceiver thread to communicate between this listener
     /// and all remote connections
-    fn spawn<C>(
+    fn spawn<C, D>(
         self,
         sleep_duration: Duration,
         callback: C,
+        err_callback: D,
     ) -> io::Result<TransceiverThread<DataAndAddr, ()>>
     where
-        C: Fn(Vec<u8>, Self::Responder) + Send + 'static;
+        C: Fn(Vec<u8>, Self::Responder) + Send + 'static,
+        D: Fn(Self::Error) -> bool + Send + 'static;
 }
