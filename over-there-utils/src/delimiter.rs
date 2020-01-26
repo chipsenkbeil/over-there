@@ -147,7 +147,7 @@ where
         // Then enforce sending all queued data
         self.buf_writer.flush()?;
 
-        Ok(data.len() + self.delimiter.len())
+        Ok(data.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -348,11 +348,8 @@ mod tests {
         let mut delimiter_writer = DelimiterWriter::new_with_delimiter(writer, delimiter);
         let mut data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-        // Size should be the data and delimiter together
-        assert_eq!(
-            delimiter_writer.write(&data).unwrap(),
-            data.len() + delimiter.len()
-        );
+        // Size should be the data sent not including the delimiter
+        assert_eq!(delimiter_writer.write(&data).unwrap(), data.len());
 
         // Result should be the data and a delimiter appended
         data.extend_from_slice(delimiter);
