@@ -11,6 +11,9 @@ where
     /// Holds onto data that overflows past a delimiter
     buf: Box<[u8]>,
 
+    /// Indicator of start of search for delimiter within buf
+    buf_pos: usize,
+
     /// Indicator of how much of buffer is occupied with data
     buf_filled: usize,
 
@@ -28,6 +31,7 @@ where
         Self {
             buf_reader,
             buf: vec![0; max_data_size + delimiter.len()].into_boxed_slice(),
+            buf_pos: 0,
             buf_filled: 0,
             delimiter: delimiter.to_vec(),
         }
@@ -73,14 +77,12 @@ where
         // found our delimiter, we will shift by up to (not including) the
         // delimiter size and try again; this creates a sliding window where
         // we keep the max data size specified at all times
-        let buf_pos = if buf_len == self.buf_filled {
+        if buf_len == self.buf_filled {
             let (pd_pos, pd_len) = self.find_partial_delimiter();
             let shift_len = d_len - pd_len;
             self.buf.rotate_left(shift_len);
             self.buf_filled -= shift_len;
-            pd_pos - shift_len
-        } else {
-            self.buf_filled
+            self.buf_pos = pd_pos - shift_len;
         };
 
         // Attempt to fill up as much of buffer as possible without spilling over
@@ -91,13 +93,16 @@ where
 
         // Scan for the delimiter starting from the last place searched
         let mut size = 0;
-        for i in buf_pos..=(buf_len - d_len) {
+        for i in self.buf_pos..=(buf_len - d_len) {
+            self.buf_pos = i;
+
             // If we have a match, we want to copy the contents (minus the delimiter) to the
             // provided buffer, shift over any remaining data, and reset our buf filled count
             if self.buf[i..i + d_len] == self.delimiter[..] {
                 data[0..i].copy_from_slice(&self.buf[0..i]);
                 self.buf.rotate_left(i + d_len);
                 self.buf_filled -= i + d_len;
+                self.buf_pos = 0;
                 size = i;
                 break;
             }
@@ -309,6 +314,44 @@ mod tests {
     fn delimiter_reader_should_support_multiple_delimiters_being_encountered() {
         let delimiter = b"</test>";
         let max_data_size = 3;
+        let reader: Cursor<Vec<u8>> = {
+            let mut reader = Vec::new();
+            reader.extend(vec![1]);
+            reader.extend_from_slice(delimiter);
+            reader.extend(vec![4, 5, 6]);
+            reader.extend_from_slice(delimiter);
+            reader.extend(vec![2, 3]);
+            reader.extend_from_slice(delimiter);
+            Cursor::new(reader)
+        };
+
+        // Create our reader that supports the entire size of our data,
+        // not including the delimiter
+        let mut delimiter_reader =
+            DelimiterReader::new_with_delimiter(reader, max_data_size, delimiter);
+
+        // Read first data with delimiter
+        let mut buf = vec![0; max_data_size];
+        let size = delimiter_reader.read(&mut buf).unwrap();
+        assert_eq!(buf[..size], vec![1][..]);
+
+        // Read second data with delimiter
+        let mut buf = vec![0; max_data_size];
+        let size = delimiter_reader.read(&mut buf).unwrap();
+        assert_eq!(buf[..size], vec![4, 5, 6][..]);
+
+        // Read third data with delimiter
+        let mut buf = vec![0; max_data_size];
+        let size = delimiter_reader.read(&mut buf).unwrap();
+        assert_eq!(buf[..size], vec![2, 3][..]);
+    }
+
+    #[test]
+    fn delimiter_reader_should_support_multiple_delimited_chunks_in_one_read() {
+        let delimiter = b"</test>";
+
+        // Make the max size (of our internal buffer) much bigger than all data
+        let max_data_size = 100;
         let reader: Cursor<Vec<u8>> = {
             let mut reader = Vec::new();
             reader.extend(vec![1]);
