@@ -56,6 +56,9 @@ where
         C: Fn(Data, Self::Responder) + Send + 'static,
         D: Fn(Self::Error) -> bool + Send + 'static,
     {
+        // NOTE: Listener MUST be nonblocking, otherwise accept will stall
+        self.listener.set_nonblocking(true)?;
+
         spawn(
             self.listener,
             self.ctx,

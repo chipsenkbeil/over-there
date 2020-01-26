@@ -4,6 +4,7 @@ use crate::{
     msg::{content::Content, Msg},
     server::state::ServerState,
 };
+use log::debug;
 use over_there_transport::Responder;
 
 pub fn version_request<R: Responder>(
@@ -11,6 +12,10 @@ pub fn version_request<R: Responder>(
     msg: &Msg,
     responder: &R,
 ) -> Result<(), ActionError> {
+    debug!(
+        "Got version request! Sending response using {:?}",
+        responder
+    );
     action::respond(
         responder,
         Content::VersionResponse {
@@ -26,6 +31,7 @@ pub fn version_response<R: Responder>(
     msg: &Msg,
     _responder: &R,
 ) -> Result<(), ActionError> {
+    debug!("Received version!");
     let version = match &msg.content {
         Content::VersionResponse { version } => version,
         _ => return Err(ActionError::UnexpectedContent),

@@ -56,6 +56,10 @@ where
         C: Fn(Data, NetResponder) + Send + 'static,
         D: Fn(Self::Error) -> bool + Send + 'static,
     {
+        // NOTE: Stream MUST have a read timeout otherwise it will block indefinitely
+        self.stream
+            .set_read_timeout(Some(Duration::from_millis(1)))?;
+
         stream_spawn(
             self.stream,
             self.ctx,

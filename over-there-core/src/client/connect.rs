@@ -3,11 +3,12 @@ use crate::{
     client::{route, state::ClientState, Client},
     msg::{content::ContentType, Msg},
 };
+use log::trace;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use over_there_transport::{
-    NetResponder, NetStream, NetTransmission, TcpStreamTransceiver, TransceiverContext,
-    TransceiverThread, UdpTransceiver,
+    NetResponder, NetStream, NetTransmission, TcpStreamTransceiver, TcpStreamTransceiverError,
+    TransceiverContext, TransceiverThread, UdpStreamTransceiverError, UdpTransceiver,
 };
 use std::io;
 use std::net::{SocketAddr, TcpStream, UdpSocket};
@@ -15,22 +16,27 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-fn spawn_threads<S>(
+fn spawn_threads<S, C>(
     state: Arc<Mutex<ClientState>>,
     stream: S,
+    err_callback: C,
 ) -> Result<(TransceiverThread<Vec<u8>, ()>, thread::JoinHandle<()>), io::Error>
 where
     S: NetStream,
+    C: Fn(S::Error) -> bool + Send + 'static,
 {
     let (tx, rx) = mpsc::channel();
     let thread = stream.spawn(
         Duration::from_millis(1),
         move |data: Vec<u8>, responder: NetResponder| {
+            trace!("Incoming data of size {}", data.len());
             if let Ok(msg) = Msg::from_slice(&data) {
                 // TODO: Handle send error?
+                trace!("Forwarding {:?} using {:?}", msg, responder);
                 tx.send((msg, responder)).unwrap();
             }
         },
+        err_callback,
     )?;
 
     let handle = thread::spawn(move || {
@@ -38,6 +44,7 @@ where
             if let Ok((msg, responder)) = rx.try_recv() {
                 let s: &mut ClientState = &mut *state.lock().unwrap();
                 // TODO: Handle action errors?
+                trace!("Processing {:?} using {:?}", msg, responder);
                 action::execute(
                     s,
                     &msg,
@@ -52,15 +59,17 @@ where
     Ok((thread, handle))
 }
 
-pub fn tcp_connect<A, B>(
+pub fn tcp_connect<A, B, C>(
     stream: TcpStream,
     packet_ttl: Duration,
     authenticator: A,
     bicrypter: B,
+    err_callback: C,
 ) -> Result<Client, io::Error>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
+    C: Fn(TcpStreamTransceiverError) -> bool + Send + 'static,
 {
     let remote_addr = stream.peer_addr()?;
     let state = Arc::new(Mutex::new(ClientState::default()));
@@ -74,7 +83,7 @@ where
         ),
     );
 
-    let (transceiver_thread, msg_thread) = spawn_threads(Arc::clone(&state), stream)?;
+    let (transceiver_thread, msg_thread) = spawn_threads(Arc::clone(&state), stream, err_callback)?;
     Ok(Client {
         state,
         remote_addr,
@@ -83,16 +92,18 @@ where
     })
 }
 
-pub fn udp_connect<A, B>(
+pub fn udp_connect<A, B, C>(
     socket: UdpSocket,
     remote_addr: SocketAddr,
     packet_ttl: Duration,
     authenticator: A,
     bicrypter: B,
+    err_callback: C,
 ) -> Result<Client, io::Error>
 where
     A: Signer + Verifier + Send + Sync + 'static,
     B: Encrypter + Decrypter + Send + Sync + 'static,
+    C: Fn(UdpStreamTransceiverError) -> bool + Send + 'static,
 {
     let state = Arc::new(Mutex::new(ClientState::default()));
     let ctx = TransceiverContext::new(
@@ -106,7 +117,7 @@ where
         bicrypter,
     );
     let stream = UdpTransceiver::new(socket, ctx).connect(remote_addr)?;
-    let (transceiver_thread, msg_thread) = spawn_threads(Arc::clone(&state), stream)?;
+    let (transceiver_thread, msg_thread) = spawn_threads(Arc::clone(&state), stream, err_callback)?;
 
     Ok(Client {
         state,

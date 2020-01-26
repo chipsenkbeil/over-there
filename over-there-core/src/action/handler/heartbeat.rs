@@ -4,6 +4,7 @@ use crate::{
     msg::{content::Content, Msg},
     server::state::ServerState,
 };
+use log::debug;
 use over_there_transport::Responder;
 use std::time::Instant;
 
@@ -12,6 +13,10 @@ pub fn heartbeat_request<R: Responder>(
     msg: &Msg,
     responder: &R,
 ) -> Result<(), ActionError> {
+    debug!(
+        "Got heartbeat request! Sending response using {:?}",
+        responder
+    );
     action::respond(responder, Content::HeartbeatResponse, msg.header.clone())
 }
 
@@ -20,6 +25,7 @@ pub fn heartbeat_response<R: Responder>(
     _msg: &Msg,
     _responder: &R,
 ) -> Result<(), ActionError> {
+    debug!("Received heartbeat!");
     state.last_heartbeat = Instant::now();
     Ok(())
 }

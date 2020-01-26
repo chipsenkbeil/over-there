@@ -78,6 +78,10 @@ where
         C: Fn(Data, Self::Responder) + Send + 'static,
         D: Fn(Self::Error) -> bool + Send + 'static,
     {
+        // NOTE: Socket MUST have a read timeout otherwise it will block indefinitely
+        self.socket
+            .set_read_timeout(Some(Duration::from_millis(1)))?;
+
         Ok(spawn(
             self.socket,
             self.ctx,

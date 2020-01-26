@@ -8,7 +8,9 @@ use crate::{
 };
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
-use over_there_transport::{net, TransceiverThread};
+use over_there_transport::{
+    net, TcpListenerTransceiverError, TransceiverThread, UdpTransceiverError,
+};
 use std::io;
 use std::net::{IpAddr, SocketAddr, TcpListener, UdpSocket};
 use std::sync::{Arc, Mutex};
@@ -29,68 +31,78 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn listen_tcp<A, B>(
+    pub fn listen_tcp<A, B, C>(
         host: IpAddr,
         port: Vec<u16>,
         packet_ttl: Duration,
         authenticator: A,
         bicrypter: B,
+        err_callback: C,
     ) -> Result<Self, io::Error>
     where
         A: Signer + Verifier + Send + Sync + 'static,
         B: Encrypter + Decrypter + Send + Sync + 'static,
+        C: Fn(TcpListenerTransceiverError) -> bool + Send + 'static,
     {
         Self::listen_using_tcp_listener(
             net::tcp::bind(host, port)?,
             packet_ttl,
             authenticator,
             bicrypter,
+            err_callback,
         )
     }
 
-    pub fn listen_using_tcp_listener<A, B>(
+    pub fn listen_using_tcp_listener<A, B, C>(
         listener: TcpListener,
         packet_ttl: Duration,
         authenticator: A,
         bicrypter: B,
+        err_callback: C,
     ) -> Result<Self, io::Error>
     where
         A: Signer + Verifier + Send + Sync + 'static,
         B: Encrypter + Decrypter + Send + Sync + 'static,
+        C: Fn(TcpListenerTransceiverError) -> bool + Send + 'static,
     {
-        listen::tcp_listen(listener, packet_ttl, authenticator, bicrypter)
+        listen::tcp_listen(listener, packet_ttl, authenticator, bicrypter, err_callback)
     }
 
-    pub fn listen_udp<A, B>(
+    pub fn listen_udp<A, B, C>(
         host: IpAddr,
         port: Vec<u16>,
         packet_ttl: Duration,
         authenticator: A,
         bicrypter: B,
+        err_callback: C,
     ) -> Result<Self, io::Error>
     where
         A: Signer + Verifier + Send + Sync + 'static,
         B: Encrypter + Decrypter + Send + Sync + 'static,
+        C: Fn(UdpTransceiverError) -> bool + Send + 'static,
     {
         Self::listen_using_udp_socket(
             net::udp::bind(host, port)?,
             packet_ttl,
             authenticator,
             bicrypter,
+            err_callback,
         )
     }
 
-    pub fn listen_using_udp_socket<A, B>(
+    pub fn listen_using_udp_socket<A, B, C>(
         socket: UdpSocket,
         packet_ttl: Duration,
         authenticator: A,
         bicrypter: B,
+        err_callback: C,
     ) -> Result<Self, io::Error>
     where
         A: Signer + Verifier + Send + Sync + 'static,
         B: Encrypter + Decrypter + Send + Sync + 'static,
+        C: Fn(UdpTransceiverError) -> bool + Send + 'static,
     {
-        listen::udp_listen(socket, packet_ttl, authenticator, bicrypter)
+        listen::udp_listen(socket, packet_ttl, authenticator, bicrypter, err_callback)
     }
 
     pub fn add_callback(&mut self, id: u32, callback: impl FnMut(&Msg) + Send + 'static) {

@@ -4,6 +4,7 @@ use crate::{
     msg::{content::Content, Header, Msg, MsgError},
     state::State,
 };
+use log::trace;
 use over_there_derive::Error;
 use over_there_transport::{Responder, ResponderError};
 
@@ -22,6 +23,8 @@ pub fn execute<R: Responder, S: State>(
     responder: &R,
     mut handler: impl FnMut(&mut S, &Msg, &R) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
+    trace!("Received msg: {:?}", msg);
+
     let maybe_callback = msg
         .parent_header
         .as_ref()
@@ -29,6 +32,10 @@ pub fn execute<R: Responder, S: State>(
     let result = (handler)(state, msg, responder);
 
     if let Some(mut callback) = maybe_callback {
+        trace!(
+            "Invoking callback for response to {}",
+            msg.parent_header.as_ref().unwrap().id
+        );
         callback(msg);
     }
 
@@ -76,7 +83,7 @@ mod test_utils {
     use super::*;
     use std::cell::RefCell;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct MockResponder {
         last_sent: RefCell<Option<Vec<u8>>>,
     }

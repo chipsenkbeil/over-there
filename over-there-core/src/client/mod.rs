@@ -6,20 +6,18 @@ use crate::{
     msg::{callback::Callback, content::Content, Msg},
     state::State,
 };
+use log::trace;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use over_there_derive::Error;
-use over_there_transport::{net, TransceiverThread};
+use over_there_transport::{
+    net, TcpStreamTransceiverError, TransceiverThread, UdpStreamTransceiverError,
+};
 use std::io;
 use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::thread::JoinHandle;
 use std::time::Duration;
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll, Waker},
-};
 
 #[derive(Debug, Error)]
 pub enum ClientError {
@@ -41,46 +39,53 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn connect_tcp<A, B>(
+    pub fn connect_tcp<A, B, C>(
         remote_addr: SocketAddr,
         packet_ttl: Duration,
         authenticator: A,
         bicrypter: B,
+        err_callback: C,
     ) -> Result<Self, io::Error>
     where
         A: Signer + Verifier + Send + Sync + 'static,
         B: Encrypter + Decrypter + Send + Sync + 'static,
+        C: Fn(TcpStreamTransceiverError) -> bool + Send + 'static,
     {
         Self::connect_using_tcp_stream(
             TcpStream::connect(remote_addr)?,
             packet_ttl,
             authenticator,
             bicrypter,
+            err_callback,
         )
     }
 
-    pub fn connect_using_tcp_stream<A, B>(
+    pub fn connect_using_tcp_stream<A, B, C>(
         stream: TcpStream,
         packet_ttl: Duration,
         authenticator: A,
         bicrypter: B,
+        err_callback: C,
     ) -> Result<Self, io::Error>
     where
         A: Signer + Verifier + Send + Sync + 'static,
         B: Encrypter + Decrypter + Send + Sync + 'static,
+        C: Fn(TcpStreamTransceiverError) -> bool + Send + 'static,
     {
-        connect::tcp_connect(stream, packet_ttl, authenticator, bicrypter)
+        connect::tcp_connect(stream, packet_ttl, authenticator, bicrypter, err_callback)
     }
 
-    pub fn connect_udp<A, B>(
+    pub fn connect_udp<A, B, C>(
         remote_addr: SocketAddr,
         packet_ttl: Duration,
         authenticator: A,
         bicrypter: B,
+        err_callback: C,
     ) -> Result<Self, io::Error>
     where
         A: Signer + Verifier + Send + Sync + 'static,
         B: Encrypter + Decrypter + Send + Sync + 'static,
+        C: Fn(UdpStreamTransceiverError) -> bool + Send + 'static,
     {
         Self::connect_using_udp_socket(
             net::udp::connect(remote_addr)?,
@@ -88,21 +93,31 @@ impl Client {
             packet_ttl,
             authenticator,
             bicrypter,
+            err_callback,
         )
     }
 
-    pub fn connect_using_udp_socket<A, B>(
+    pub fn connect_using_udp_socket<A, B, C>(
         socket: UdpSocket,
         remote_addr: SocketAddr,
         packet_ttl: Duration,
         authenticator: A,
         bicrypter: B,
+        err_callback: C,
     ) -> Result<Self, io::Error>
     where
         A: Signer + Verifier + Send + Sync + 'static,
         B: Encrypter + Decrypter + Send + Sync + 'static,
+        C: Fn(UdpStreamTransceiverError) -> bool + Send + 'static,
     {
-        connect::udp_connect(socket, remote_addr, packet_ttl, authenticator, bicrypter)
+        connect::udp_connect(
+            socket,
+            remote_addr,
+            packet_ttl,
+            authenticator,
+            bicrypter,
+            err_callback,
+        )
     }
 
     pub fn add_callback(&mut self, id: u32, callback: impl FnMut(&Msg) + Send + 'static) {
@@ -133,6 +148,8 @@ impl Client {
     /// Generic ask of the server that is expecting a response, which
     /// will be passed back to the callback
     pub fn ask(&self, msg: Msg, f: impl FnMut(&Msg) + Send + 'static) -> Result<(), ClientError> {
+        trace!("Sending to {}: {:?}", self.remote_addr, msg);
+
         self.state
             .lock()
             .unwrap()
