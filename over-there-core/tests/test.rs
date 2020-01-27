@@ -27,8 +27,8 @@ fn test_tcp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
         |e| {
-            error!("{:?}", e);
-            true
+            error!("SERVER {:?}", e);
+            false
         },
     )?;
 
@@ -38,8 +38,8 @@ fn test_tcp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
         |e| {
-            error!("{:?}", e);
-            true
+            error!("CLIENT {:?}", e);
+            false
         },
     )?;
 
@@ -69,8 +69,8 @@ fn test_udp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
         |e| {
-            error!("{:?}", e);
-            true
+            error!("SERVER {:?}", e);
+            false
         },
     )?;
 
@@ -80,8 +80,8 @@ fn test_udp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
         |e| {
-            error!("{:?}", e);
-            true
+            error!("CLIENT {:?}", e);
+            false
         },
     )?;
 
