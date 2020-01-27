@@ -81,7 +81,7 @@ where
             authenticator,
             bicrypter,
         ),
-    );
+    )?;
 
     let (transceiver_thread, msg_thread) = spawn_threads(Arc::clone(&state), stream, err_callback)?;
     Ok(Client {
