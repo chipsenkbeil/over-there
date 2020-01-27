@@ -31,7 +31,6 @@ fn test_tcp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
             true
         },
     )?;
-    println!("TCP SERVER LISTENING: {}", server.addr);
 
     let client = Client::connect_tcp(
         server.addr,
@@ -43,7 +42,6 @@ fn test_tcp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
             true
         },
     )?;
-    println!("TCP CLIENT CONNECTED TO: {}", client.remote_addr);
 
     let version = Arc::new(Mutex::new(String::new()));
     let thread_version = Arc::clone(&version);
@@ -75,7 +73,6 @@ fn test_udp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
             true
         },
     )?;
-    println!("UDP SERVER LISTENING: {}", server.addr);
 
     let client = Client::connect_udp(
         server.addr,
@@ -87,7 +84,6 @@ fn test_udp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
             true
         },
     )?;
-    println!("UDP CLIENT CONNECTED TO: {}", client.remote_addr);
 
     let version = Arc::new(Mutex::new(String::new()));
     let thread_version = Arc::clone(&version);

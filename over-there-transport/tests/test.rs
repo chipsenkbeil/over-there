@@ -249,7 +249,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         NetTransmission::TcpEthernet.into(),
         Duration::from_secs(1),
         Sha256Authenticator::new(sign_key),
-        crypto::NoopBicrypter, // aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
     let client = TcpStreamTransceiver::new(client_stream, ctx)?;
 
@@ -257,7 +257,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         NetTransmission::TcpEthernet.into(),
         Duration::from_secs(1),
         Sha256Authenticator::new(sign_key),
-        crypto::NoopBicrypter, // aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
+        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
     );
     let server = TcpListenerTransceiver::new(server_listener, ctx);
 
@@ -283,12 +283,11 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
             *mc_1.lock().unwrap() += 1;
         },
         |e| {
-            error!("{:?}", e);
+            error!("SERVER {:?}", e);
             true
         },
     )?;
 
-    // client.send(&vec![0, 1, 2])?;
     let client_thread = client.spawn(
         Duration::from_millis(1),
         move |msg, _send| {
@@ -301,7 +300,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
             *rc_1.lock().unwrap() += 1;
         },
         |e| {
-            error!("{:?}", e);
+            error!("CLIENT {:?}", e);
             true
         },
     )?;

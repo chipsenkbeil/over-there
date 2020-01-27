@@ -12,13 +12,13 @@ where
     pub buf: Box<[u8]>,
 
     /// Indicator of start of search for delimiter within buf
-    buf_pos: usize,
+    pub buf_pos: usize,
 
     /// Indicator of how much of buffer is occupied with data
-    buf_filled: usize,
+    pub buf_filled: usize,
 
     /// The delimiter to look for in read data
-    delimiter: Vec<u8>,
+    pub delimiter: Vec<u8>,
 }
 
 impl<T> DelimiterReader<T>
@@ -77,7 +77,7 @@ where
         // found our delimiter, we will shift by up to (not including) the
         // delimiter size and try again; this creates a sliding window where
         // we keep the max data size specified at all times
-        if buf_len == self.buf_filled {
+        if self.buf_pos > (buf_len - d_len) {
             let (pd_pos, pd_len) = self.find_partial_delimiter();
             let shift_len = d_len - pd_len;
             self.buf.rotate_left(shift_len);
@@ -86,29 +86,49 @@ where
         };
 
         // Attempt to fill up as much of buffer as possible without spilling over
-        let bytes_read = self.buf_reader.read(&mut self.buf[self.buf_filled..])?;
+        //
+        // NOTE: This causes problems because we could have bytes still remaining
+        //       in our buffer, but we will never get them because we exit
+        //       immediately due to being unavailable; so, we wait to fully
+        //       evaluate and return the error until the end in case we can
+        //       process our buffer from existing data instead
+        let read_result = self.buf_reader.read(&mut self.buf[self.buf_filled..]);
 
         // Mark where we will start reading and then update the filled count
-        self.buf_filled += bytes_read;
+        if let Ok(bytes_read) = read_result {
+            self.buf_filled += bytes_read;
+        }
 
         // Scan for the delimiter starting from the last place searched
         let mut size = 0;
-        for i in self.buf_pos..=(buf_len - d_len) {
-            self.buf_pos = i;
+        if self.buf_filled > 0 {
+            for i in self.buf_pos..=(buf_len - d_len) {
+                // If we have a match, we want to copy the contents (minus the delimiter) to the
+                // provided buffer, shift over any remaining data, and reset our buf filled count
+                if self.buf[i..i + d_len] == self.delimiter[..] {
+                    data[..i].copy_from_slice(&self.buf[..i]);
+                    for j in &mut self.buf[..i + d_len] {
+                        *j = 0;
+                    }
+                    self.buf.rotate_left(i + d_len);
+                    self.buf_filled -= i + d_len;
+                    self.buf_pos = 0;
+                    size = i;
+                    break;
+                }
 
-            // If we have a match, we want to copy the contents (minus the delimiter) to the
-            // provided buffer, shift over any remaining data, and reset our buf filled count
-            if self.buf[i..i + d_len] == self.delimiter[..] {
-                data[0..i].copy_from_slice(&self.buf[0..i]);
-                self.buf.rotate_left(i + d_len);
-                self.buf_filled -= i + d_len;
-                self.buf_pos = 0;
-                size = i;
-                break;
+                // Move buffer position after what we just checked
+                self.buf_pos = i + 1;
             }
         }
 
-        Ok(size)
+        // If we didn't find anything new in our internal buffer and the read
+        // result failed, we want to return the failure
+        if size == 0 && read_result.is_err() {
+            read_result
+        } else {
+            Ok(size)
+        }
     }
 }
 
@@ -164,6 +184,14 @@ where
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    /// Test reader that will always indicate nothing else available
+    pub struct EmptyNonblockingReader;
+    impl Read for EmptyNonblockingReader {
+        fn read(&mut self, _data: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::from(io::ErrorKind::WouldBlock))
+        }
+    }
 
     #[test]
     fn delimiter_reader_find_partial_delimiter_if_it_exists() {
@@ -382,6 +410,32 @@ mod tests {
         let mut buf = vec![0; max_data_size];
         let size = delimiter_reader.read(&mut buf).unwrap();
         assert_eq!(buf[..size], vec![2, 3][..]);
+    }
+
+    #[test]
+    fn delimiter_reader_should_continue_using_internal_buffer_even_if_internal_reader_fails() {
+        // Delimiter (7 bytes) * 2 + Data (1 byte) * 2 = 2 writes
+        let delimiter = b"</test>";
+        let max_data_size = 9;
+
+        // Prep our reader to have a certain state where data is still available
+        // internally but the underlying reader will always yield an error
+        let mut delimiter_reader =
+            DelimiterReader::new_with_delimiter(EmptyNonblockingReader, max_data_size, delimiter);
+        delimiter_reader.buf.copy_from_slice(b"0</test>1</test>");
+        delimiter_reader.buf_pos = 0;
+        delimiter_reader.buf_filled = delimiter_reader.buf.len();
+
+        let mut buf = vec![0; max_data_size];
+
+        let size = delimiter_reader.read(&mut buf).unwrap();
+        assert_eq!(&buf[..size], b"0");
+
+        let size = delimiter_reader.read(&mut buf).unwrap();
+        assert_eq!(&buf[..size], b"1");
+
+        let result = delimiter_reader.read(&mut buf);
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::WouldBlock);
     }
 
     #[test]
