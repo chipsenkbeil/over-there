@@ -144,7 +144,7 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     // Send N messages to server
-    const N: usize = 7;
+    const N: usize = 100;
     for i in 0..N {
         client_thread.send((
             format!("test message {}", i).as_bytes().to_vec(),
@@ -307,7 +307,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     // Send N messages to server
-    const N: usize = 7;
+    const N: usize = 100;
     for i in 0..N {
         client_thread.send(format!("test message {}", i).as_bytes().to_vec())?;
     }
