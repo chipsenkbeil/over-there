@@ -122,7 +122,7 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         },
         |e| {
             error!("{:?}", e);
-            true
+            false
         },
     );
 
@@ -139,7 +139,7 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         },
         |e| {
             error!("{:?}", e);
-            true
+            false
         },
     )?;
 
@@ -284,7 +284,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         },
         |e| {
             error!("SERVER {:?}", e);
-            true
+            false
         },
     )?;
 
@@ -301,7 +301,7 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         },
         |e| {
             error!("CLIENT {:?}", e);
-            true
+            false
         },
     )?;
 

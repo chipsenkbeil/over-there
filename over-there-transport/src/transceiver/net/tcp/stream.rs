@@ -39,6 +39,10 @@ where
 {
     pub fn new(stream: TcpStream, ctx: TransceiverContext<A, B>) -> io::Result<Self> {
         Ok(Self {
+            // TODO: The buffered TCP Stream will add extra bytes to each
+            //       write via the delimiter; we need to figure out where in
+            //       the pipeline to alter the transmission size to reflect
+            //       the size of the delimiter by subtracting it
             stream: BufTcpStream::new(stream, ctx.transmission_size)?,
             ctx,
         })

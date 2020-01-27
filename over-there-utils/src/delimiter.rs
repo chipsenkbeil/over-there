@@ -9,13 +9,13 @@ where
     buf_reader: BufReader<T>,
 
     /// Holds onto data that overflows past a delimiter
-    pub buf: Box<[u8]>,
+    buf: Box<[u8]>,
 
     /// Indicator of start of search for delimiter within buf
-    pub buf_pos: usize,
+    buf_pos: usize,
 
     /// Indicator of how much of buffer is occupied with data
-    pub buf_filled: usize,
+    buf_filled: usize,
 
     /// The delimiter to look for in read data
     pub delimiter: Vec<u8>,
@@ -137,7 +137,7 @@ where
     T: Write,
 {
     buf_writer: BufWriter<T>,
-    delimiter: Vec<u8>,
+    pub delimiter: Vec<u8>,
 }
 
 impl<T> DelimiterWriter<T>
