@@ -1,6 +1,6 @@
 use std::io::{self, BufReader, BufWriter, Read, Write};
 
-pub const DEFAULT_DELIMITER: &'static [u8] = b"</>";
+pub const DEFAULT_DELIMITER: &[u8] = b"</>";
 
 pub struct DelimiterReader<T>
 where
@@ -9,7 +9,7 @@ where
     buf_reader: BufReader<T>,
 
     /// Holds onto data that overflows past a delimiter
-    buf: Box<[u8]>,
+    pub buf: Box<[u8]>,
 
     /// Indicator of start of search for delimiter within buf
     buf_pos: usize,

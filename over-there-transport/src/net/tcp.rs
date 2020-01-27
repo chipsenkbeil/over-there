@@ -25,7 +25,7 @@ pub fn local() -> io::Result<TcpListener> {
 /// without capturing other bytes
 pub struct BufTcpStream {
     pub inner: TcpStream,
-    input: DelimiterReader<TcpStream>,
+    pub(crate) input: DelimiterReader<TcpStream>,
     output: DelimiterWriter<TcpStream>,
 }
 

@@ -20,6 +20,7 @@ pub enum TcpListenerTransceiverError {
     AcceptError(io::Error),
     TcpStreamError(net::tcp::stream::TcpStreamTransceiverError),
     FailedToWrapTcpStreamError(io::Error),
+    NonblockingConnectionError(io::Error),
     Disconnected,
 }
 
@@ -122,6 +123,12 @@ where
     // Process a new connection if we have one
     match listener.accept() {
         Ok((stream, addr)) => {
+            // NOTE: We require the stream to be non-blocking, otherwise it can block
+            //       indefinitely on recv
+            stream
+                .set_nonblocking(true)
+                .map_err(TcpListenerTransceiverError::NonblockingConnectionError)?;
+
             let (tx, rx) = mpsc::channel::<Data>();
             connections.insert(
                 addr,
