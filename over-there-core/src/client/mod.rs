@@ -189,11 +189,11 @@ impl Client {
         f: impl FnOnce(Result<&String, AskError>) + Send + 'static,
     ) -> Result<(), ClientError> {
         self.ask(Msg::from(Content::VersionRequest), move |result| {
-            if let Ok(Content::VersionResponse { version }) = result.map(|m| &m.content) {
-                f(Ok(&version));
-            } else {
-                f(Err(AskError::InvalidResponse));
-            }
+            f(match result.map(|m| &m.content) {
+                Ok(Content::VersionResponse { version }) => Ok(&version),
+                Ok(_) => Err(AskError::InvalidResponse),
+                Err(x) => Err(x),
+            })
         })
     }
 
@@ -203,11 +203,11 @@ impl Client {
         f: impl FnOnce(Result<&Vec<String>, AskError>) + Send + 'static,
     ) -> Result<(), ClientError> {
         self.ask(Msg::from(Content::CapabilitiesRequest), move |result| {
-            if let Ok(Content::CapabilitiesResponse { capabilities }) = result.map(|m| &m.content) {
-                f(Ok(&capabilities));
-            } else {
-                f(Err(AskError::InvalidResponse));
-            }
+            f(match result.map(|m| &m.content) {
+                Ok(Content::CapabilitiesResponse { capabilities }) => Ok(&capabilities),
+                Ok(_) => Err(AskError::InvalidResponse),
+                Err(x) => Err(x),
+            })
         })
     }
 }
