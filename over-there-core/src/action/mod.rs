@@ -31,7 +31,7 @@ pub fn execute<R: Responder, S: State>(
         .and_then(|h| state.callback_manager().take_callback(h.id));
     let result = (handler)(state, msg, responder);
 
-    if let Some(mut callback) = maybe_callback {
+    if let Some(callback) = maybe_callback {
         trace!(
             "Invoking callback for response to {}",
             msg.parent_header.as_ref().unwrap().id

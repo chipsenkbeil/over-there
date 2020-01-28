@@ -45,7 +45,8 @@ fn test_tcp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
 
     let version = Arc::new(Mutex::new(String::new()));
     let thread_version = Arc::clone(&version);
-    client.ask_version(move |v| *thread_version.lock().unwrap() = v)?;
+    client
+        .ask_version(move |result| *thread_version.lock().unwrap() = result.unwrap().to_string())?;
 
     // Block until we verify the version
     exec::loop_timeout_panic(Duration::from_millis(2500), || {
@@ -87,7 +88,8 @@ fn test_udp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
 
     let version = Arc::new(Mutex::new(String::new()));
     let thread_version = Arc::clone(&version);
-    client.ask_version(move |v| *thread_version.lock().unwrap() = v)?;
+    client
+        .ask_version(move |result| *thread_version.lock().unwrap() = result.unwrap().to_string())?;
 
     // Block until we verify the version
     exec::loop_timeout_panic(Duration::from_millis(2500), || {

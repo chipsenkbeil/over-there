@@ -25,6 +25,12 @@ pub enum ClientError {
     SendFailed,
 }
 
+#[derive(Debug, Error)]
+pub enum AskError {
+    Failure { msg: String },
+    InvalidResponse,
+}
+
 pub struct Client {
     state: Arc<Mutex<state::ClientState>>,
 
@@ -147,15 +153,31 @@ impl Client {
 
     /// Generic ask of the server that is expecting a response, which
     /// will be passed back to the callback
-    pub fn ask(&self, msg: Msg, f: impl FnMut(&Msg) + Send + 'static) -> Result<(), ClientError> {
-        trace!("Sending to {}: {:?}", self.remote_addr, msg);
-
+    pub fn ask(
+        &self,
+        msg: Msg,
+        f: impl FnOnce(Result<&Msg, AskError>) + Send + 'static,
+    ) -> Result<(), ClientError> {
         self.state
             .lock()
             .unwrap()
             .callback_manager()
-            .add_callback(msg.header.id, f);
+            .add_callback(msg.header.id, move |msg| {
+                if let Content::Error { msg } = &msg.content {
+                    f(Err(AskError::Failure {
+                        msg: msg.to_string(),
+                    }));
+                } else {
+                    f(Ok(msg));
+                }
+            });
 
+        self.tell(msg)
+    }
+
+    /// Sends a msg to the server
+    pub fn tell(&self, msg: Msg) -> Result<(), ClientError> {
+        trace!("Sending to {}: {:?}", self.remote_addr, msg);
         self.transceiver_thread
             .send(msg.to_vec().map_err(|_| ClientError::EncodingFailed)?)
             .map_err(|_| ClientError::SendFailed)
@@ -164,11 +186,27 @@ impl Client {
     /// Requests the version from the server
     pub fn ask_version(
         &self,
-        mut f: impl FnMut(String) + Send + 'static,
+        f: impl FnOnce(Result<&String, AskError>) + Send + 'static,
     ) -> Result<(), ClientError> {
-        self.ask(Msg::from(Content::VersionRequest), move |msg| {
-            if let Content::VersionResponse { version } = &msg.content {
-                f(version.to_string());
+        self.ask(Msg::from(Content::VersionRequest), move |result| {
+            if let Ok(Content::VersionResponse { version }) = result.map(|m| &m.content) {
+                f(Ok(&version));
+            } else {
+                f(Err(AskError::InvalidResponse));
+            }
+        })
+    }
+
+    /// Requests the version from the server
+    pub fn ask_capabilities(
+        &self,
+        f: impl FnOnce(Result<&Vec<String>, AskError>) + Send + 'static,
+    ) -> Result<(), ClientError> {
+        self.ask(Msg::from(Content::CapabilitiesRequest), move |result| {
+            if let Ok(Content::CapabilitiesResponse { capabilities }) = result.map(|m| &m.content) {
+                f(Ok(&capabilities));
+            } else {
+                f(Err(AskError::InvalidResponse));
             }
         })
     }
