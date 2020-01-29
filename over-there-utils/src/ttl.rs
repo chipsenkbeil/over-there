@@ -12,6 +12,12 @@ pub struct TtlValue<T> {
     ttl: Duration,
 }
 
+impl TtlValue<()> {
+    pub fn empty(ttl: Duration) -> Self {
+        Self::new((), ttl)
+    }
+}
+
 impl<T> TtlValue<T> {
     pub fn new(value: T, ttl: Duration) -> Self {
         Self {

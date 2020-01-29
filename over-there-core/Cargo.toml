@@ -35,5 +35,6 @@ over-there-transport = { path = "../over-there-transport" }
 over-there-utils = { path = "../over-there-utils" }
 
 [dev-dependencies]
+futures = "0.3.1"
 env_logger = "0.7.1"
 tempfile = "3.1.0"

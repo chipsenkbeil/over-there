@@ -1,11 +1,9 @@
+use futures::executor;
 use log::error;
 use over_there_auth::Sha256Authenticator;
 use over_there_core::{Client, Server};
 use over_there_crypto::{self as crypto, aes_gcm};
 use over_there_transport::{constants, net};
-use over_there_utils::exec;
-use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
 
 fn init() {
@@ -16,13 +14,13 @@ fn init() {
 }
 
 #[test]
-fn test_tcp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
+fn test_tcp_version_request_reply() {
     init();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
 
     let server = Server::listen_using_tcp_listener(
-        net::tcp::local()?,
+        net::tcp::local().unwrap(),
         Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
@@ -30,9 +28,10 @@ fn test_tcp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
             error!("SERVER {:?}", e);
             false
         },
-    )?;
+    )
+    .unwrap();
 
-    let client = Client::connect_tcp(
+    let mut client = Client::connect_tcp(
         server.addr,
         Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
         Sha256Authenticator::new(sign_key),
@@ -41,31 +40,23 @@ fn test_tcp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
             error!("CLIENT {:?}", e);
             false
         },
-    )?;
+    )
+    .unwrap();
 
-    let version = Arc::new(Mutex::new(String::new()));
-    let thread_version = Arc::clone(&version);
-    client
-        .ask_version(move |result| *thread_version.lock().unwrap() = result.unwrap().to_string())?;
-
-    // Block until we verify the version
-    exec::loop_timeout_panic(Duration::from_millis(2500), || {
-        thread::sleep(Duration::from_millis(50));
-        let version = version.lock().unwrap().to_string();
-        version == env!("CARGO_PKG_VERSION").to_string()
-    });
-
-    Ok(())
+    // Ensure that we fail after 2.5s
+    client.timeout = Duration::from_millis(2500);
+    let result = executor::block_on(client.ask_version());
+    assert_eq!(result.unwrap(), env!("CARGO_PKG_VERSION").to_string());
 }
 
 #[test]
-fn test_udp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
+fn test_udp_version_request_reply() {
     init();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
 
     let server = Server::listen_using_udp_socket(
-        net::udp::local()?,
+        net::udp::local().unwrap(),
         Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
@@ -73,9 +64,10 @@ fn test_udp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
             error!("SERVER {:?}", e);
             false
         },
-    )?;
+    )
+    .unwrap();
 
-    let client = Client::connect_udp(
+    let mut client = Client::connect_udp(
         server.addr,
         Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
         Sha256Authenticator::new(sign_key),
@@ -84,19 +76,11 @@ fn test_udp_version_request_reply() -> Result<(), Box<dyn std::error::Error>> {
             error!("CLIENT {:?}", e);
             false
         },
-    )?;
+    )
+    .unwrap();
 
-    let version = Arc::new(Mutex::new(String::new()));
-    let thread_version = Arc::clone(&version);
-    client
-        .ask_version(move |result| *thread_version.lock().unwrap() = result.unwrap().to_string())?;
-
-    // Block until we verify the version
-    exec::loop_timeout_panic(Duration::from_millis(2500), || {
-        thread::sleep(Duration::from_millis(50));
-        let version = version.lock().unwrap().to_string();
-        version == env!("CARGO_PKG_VERSION").to_string()
-    });
-
-    Ok(())
+    // Ensure that we fail after 2.5s
+    client.timeout = Duration::from_millis(2500);
+    let result = executor::block_on(client.ask_version());
+    assert_eq!(result.unwrap(), env!("CARGO_PKG_VERSION").to_string());
 }

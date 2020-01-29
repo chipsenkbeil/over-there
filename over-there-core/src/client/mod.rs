@@ -1,4 +1,5 @@
 mod connect;
+pub mod future;
 pub mod route;
 pub mod state;
 
@@ -6,6 +7,7 @@ use crate::{
     msg::{callback::Callback, content::Content, Msg},
     state::State,
 };
+use future::{AskError, AskFuture, AskFutureState};
 use log::trace;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
@@ -25,17 +27,14 @@ pub enum ClientError {
     SendFailed,
 }
 
-#[derive(Debug, Error)]
-pub enum AskError {
-    Failure { msg: String },
-    InvalidResponse,
-}
-
 pub struct Client {
     state: Arc<Mutex<state::ClientState>>,
 
     /// Represents the address the client is connected to
     pub remote_addr: SocketAddr,
+
+    /// Represents maximum to wait on responses before timing out
+    pub timeout: Duration,
 
     /// Performs sending/receiving over network
     transceiver_thread: TransceiverThread<Vec<u8>, ()>,
@@ -45,6 +44,8 @@ pub struct Client {
 }
 
 impl Client {
+    pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+
     pub fn connect_tcp<A, B, C>(
         remote_addr: SocketAddr,
         packet_ttl: Duration,
@@ -153,26 +154,33 @@ impl Client {
 
     /// Generic ask of the server that is expecting a response, which
     /// will be passed back to the callback
-    pub fn ask(
-        &self,
-        msg: Msg,
-        f: impl FnOnce(Result<&Msg, AskError>) + Send + 'static,
-    ) -> Result<(), ClientError> {
+    pub fn ask(&self, msg: Msg) -> AskFuture {
+        let state = Arc::new(Mutex::new(AskFutureState::new(self.timeout)));
+
+        let callback_state = Arc::clone(&state);
         self.state
             .lock()
             .unwrap()
             .callback_manager()
             .add_callback(msg.header.id, move |msg| {
+                let mut s = callback_state.lock().unwrap();
                 if let Content::Error { msg } = &msg.content {
-                    f(Err(AskError::Failure {
+                    s.result = Some(Err(AskError::Failure {
                         msg: msg.to_string(),
                     }));
                 } else {
-                    f(Ok(msg));
+                    s.result = Some(Ok(msg.clone()));
+                }
+
+                if let Some(waker) = s.waker.take() {
+                    waker.wake();
                 }
             });
 
-        self.tell(msg)
+        // TODO: Convert to async
+        self.tell(msg).unwrap();
+
+        AskFuture { state }
     }
 
     /// Sends a msg to the server
@@ -184,30 +192,20 @@ impl Client {
     }
 
     /// Requests the version from the server
-    pub fn ask_version(
-        &self,
-        f: impl FnOnce(Result<&String, AskError>) + Send + 'static,
-    ) -> Result<(), ClientError> {
-        self.ask(Msg::from(Content::VersionRequest), move |result| {
-            f(match result.map(|m| &m.content) {
-                Ok(Content::VersionResponse { version }) => Ok(&version),
-                Ok(_) => Err(AskError::InvalidResponse),
-                Err(x) => Err(x),
-            })
-        })
+    pub async fn ask_version(&self) -> Result<String, AskError> {
+        let msg = self.ask(Msg::from(Content::VersionRequest)).await?;
+        match msg.content {
+            Content::VersionResponse { version } => Ok(version),
+            _ => Err(AskError::InvalidResponse),
+        }
     }
 
     /// Requests the version from the server
-    pub fn ask_capabilities(
-        &self,
-        f: impl FnOnce(Result<&Vec<String>, AskError>) + Send + 'static,
-    ) -> Result<(), ClientError> {
-        self.ask(Msg::from(Content::CapabilitiesRequest), move |result| {
-            f(match result.map(|m| &m.content) {
-                Ok(Content::CapabilitiesResponse { capabilities }) => Ok(&capabilities),
-                Ok(_) => Err(AskError::InvalidResponse),
-                Err(x) => Err(x),
-            })
-        })
+    pub async fn ask_capabilities(&self) -> Result<Vec<String>, AskError> {
+        let msg = self.ask(Msg::from(Content::CapabilitiesRequest)).await?;
+        match msg.content {
+            Content::CapabilitiesResponse { capabilities } => Ok(capabilities),
+            _ => Err(AskError::InvalidResponse),
+        }
     }
 }

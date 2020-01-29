@@ -87,6 +87,7 @@ where
     Ok(Client {
         state,
         remote_addr,
+        timeout: Client::DEFAULT_TIMEOUT,
         transceiver_thread,
         msg_thread,
     })
@@ -122,6 +123,7 @@ where
     Ok(Client {
         state,
         remote_addr,
+        timeout: Client::DEFAULT_TIMEOUT,
         transceiver_thread,
         msg_thread,
     })
