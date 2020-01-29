@@ -14,7 +14,7 @@ fn init() {
 }
 
 #[test]
-fn test_tcp_version_request_reply() {
+fn test_tcp_client_ask_version() {
     init();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
@@ -50,7 +50,7 @@ fn test_tcp_version_request_reply() {
 }
 
 #[test]
-fn test_udp_version_request_reply() {
+fn test_udp_client_ask_version() {
     init();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";

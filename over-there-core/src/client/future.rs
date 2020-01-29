@@ -1,18 +1,11 @@
+use super::AskError;
 use crate::msg::Msg;
-use over_there_derive::Error;
 use over_there_utils::TtlValue;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
-
-#[derive(Debug, Error)]
-pub enum AskError {
-    Failure { msg: String },
-    InvalidResponse,
-    Timeout,
-}
 
 pub(crate) struct AskFutureState {
     timer: TtlValue<()>,

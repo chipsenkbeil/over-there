@@ -7,7 +7,7 @@ use crate::{
     msg::{callback::Callback, content::Content, Msg},
     state::State,
 };
-use future::{AskError, AskFuture, AskFutureState};
+use future::{AskFuture, AskFutureState};
 use log::trace;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
@@ -22,7 +22,16 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 #[derive(Debug, Error)]
-pub enum ClientError {
+pub enum TellError {
+    EncodingFailed,
+    SendFailed,
+}
+
+#[derive(Debug, Error)]
+pub enum AskError {
+    Failure { msg: String },
+    InvalidResponse,
+    Timeout,
     EncodingFailed,
     SendFailed,
 }
@@ -152,9 +161,8 @@ impl Client {
         Ok(())
     }
 
-    /// Generic ask of the server that is expecting a response, which
-    /// will be passed back to the callback
-    pub fn ask(&self, msg: Msg) -> AskFuture {
+    /// Generic ask of the server that is expecting a response
+    pub async fn ask(&self, msg: Msg) -> Result<Msg, AskError> {
         let state = Arc::new(Mutex::new(AskFutureState::new(self.timeout)));
 
         let callback_state = Arc::clone(&state);
@@ -177,18 +185,28 @@ impl Client {
                 }
             });
 
-        // TODO: Convert to async
-        self.tell(msg).unwrap();
+        let f = AskFuture { state };
 
-        AskFuture { state }
+        // Convert the tell errors to ask equivalents
+        match self.tell(msg).await {
+            Err(TellError::EncodingFailed) => return Err(AskError::EncodingFailed),
+            Err(TellError::SendFailed) => return Err(AskError::SendFailed),
+            Ok(_) => (),
+        }
+
+        let msg = f.await?;
+        Ok(msg)
     }
 
-    /// Sends a msg to the server
-    pub fn tell(&self, msg: Msg) -> Result<(), ClientError> {
+    /// Sends a msg to the server, not expecting a response
+    pub async fn tell(&self, msg: Msg) -> Result<(), TellError> {
         trace!("Sending to {}: {:?}", self.remote_addr, msg);
+
+        // TODO: Make non-blocking, would involve re-writing transport to use
+        //       async implementation
         self.transceiver_thread
-            .send(msg.to_vec().map_err(|_| ClientError::EncodingFailed)?)
-            .map_err(|_| ClientError::SendFailed)
+            .send(msg.to_vec().map_err(|_| TellError::EncodingFailed)?)
+            .map_err(|_| TellError::SendFailed)
     }
 
     /// Requests the version from the server
