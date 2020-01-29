@@ -2,7 +2,7 @@ pub mod handler;
 
 use crate::{
     msg::{content::Content, Header, Msg, MsgError},
-    state::State,
+    server::state::ServerState,
 };
 use log::trace;
 use over_there_derive::Error;
@@ -17,29 +17,14 @@ pub enum ActionError {
 }
 
 /// Evaluate a message's content and potentially respond using the provided responder
-pub fn execute<R: Responder, S: State>(
-    state: &mut S,
+pub fn execute<R: Responder>(
+    state: &mut ServerState,
     msg: &Msg,
     responder: &R,
-    mut handler: impl FnMut(&mut S, &Msg, &R) -> Result<(), ActionError>,
+    mut handler: impl FnMut(&mut ServerState, &Msg, &R) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
     trace!("Received msg: {:?}", msg);
-
-    let maybe_callback = msg
-        .parent_header
-        .as_ref()
-        .and_then(|h| state.callback_manager().take_callback(h.id));
-    let result = (handler)(state, msg, responder);
-
-    if let Some(callback) = maybe_callback {
-        trace!(
-            "Invoking callback for response to {}",
-            msg.parent_header.as_ref().unwrap().id
-        );
-        callback(msg);
-    }
-
-    result
+    (handler)(state, msg, responder)
 }
 
 /// Sends a response to the originator of a msg
@@ -51,31 +36,6 @@ fn respond<R: Responder>(
     let new_msg = Msg::from((content, parent_header));
     let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
     responder.send(&data).map_err(ActionError::ResponderError)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::client::state::ClientState;
-    use std::sync::{Arc, Mutex};
-    use test_utils::MockResponder;
-
-    #[test]
-    fn execute_should_invoke_callback_if_it_exists() {
-        let mut state = ClientState::default();
-        let msg = Msg::from((Content::HeartbeatRequest, Header::default()));
-        let responder = MockResponder::default();
-        let id = msg.parent_header.clone().unwrap().id;
-
-        let success_1 = Arc::new(Mutex::new(false));
-        let success_2 = Arc::clone(&success_1);
-        state.callback_manager().add_callback(id, move |_msg| {
-            *success_2.lock().unwrap() = true;
-        });
-
-        assert!(execute(&mut state, &msg, &responder, |_, _, _| { Ok(()) }).is_ok());
-        assert!(*success_1.lock().unwrap(), "Callback was not invoked!");
-    }
 }
 
 #[cfg(test)]

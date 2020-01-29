@@ -1,7 +1,6 @@
 use crate::{
-    action,
-    client::{route, state::ClientState, Client},
-    msg::{content::ContentType, Msg},
+    client::{state::ClientState, Client},
+    msg::Msg,
 };
 use log::trace;
 use over_there_auth::{Signer, Verifier};
@@ -45,13 +44,14 @@ where
                 let s: &mut ClientState = &mut *state.lock().unwrap();
                 // TODO: Handle action errors?
                 trace!("Processing {:?} using {:?}", msg, responder);
-                action::execute(
-                    s,
-                    &msg,
-                    &responder,
-                    route::route(ContentType::from(msg.content.clone())),
-                )
-                .unwrap();
+
+                if let Some(callback) = msg
+                    .parent_header
+                    .as_ref()
+                    .and_then(|h| s.callback_manager.take_callback(h.id))
+                {
+                    callback(&msg);
+                }
             }
         }
     });

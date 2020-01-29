@@ -1,4 +1,4 @@
-use crate::{msg::callback::CallbackManager, state::State};
+use crate::msg::callback::CallbackManager;
 use std::fmt::Debug;
 use std::time::Instant;
 
@@ -11,13 +11,7 @@ pub struct ClientState {
     /// Contains the version of the remote instance
     pub remote_version: String,
 
-    callback_manager: CallbackManager,
-}
-
-impl State for ClientState {
-    fn callback_manager(&mut self) -> &mut CallbackManager {
-        &mut self.callback_manager
-    }
+    pub callback_manager: CallbackManager,
 }
 
 impl Default for ClientState {

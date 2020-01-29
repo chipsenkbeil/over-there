@@ -1,12 +1,8 @@
 mod connect;
 pub mod future;
-pub mod route;
 pub mod state;
 
-use crate::{
-    msg::{callback::Callback, content::Content, Msg},
-    state::State,
-};
+use crate::msg::{content::Content, Msg};
 use future::{AskFuture, AskFutureState};
 use log::trace;
 use over_there_auth::{Signer, Verifier};
@@ -136,22 +132,6 @@ impl Client {
         )
     }
 
-    pub fn add_callback(&mut self, id: u32, callback: impl FnMut(&Msg) + Send + 'static) {
-        self.state
-            .lock()
-            .unwrap()
-            .callback_manager()
-            .add_callback(id, callback)
-    }
-
-    pub fn take_callback(&mut self, id: u32) -> Option<Box<Callback>> {
-        self.state
-            .lock()
-            .unwrap()
-            .callback_manager()
-            .take_callback(id)
-    }
-
     pub fn join(self) -> Result<(), Box<dyn std::error::Error>> {
         self.transceiver_thread.join()?;
         self.msg_thread
@@ -169,7 +149,7 @@ impl Client {
         self.state
             .lock()
             .unwrap()
-            .callback_manager()
+            .callback_manager
             .add_callback(msg.header.id, move |msg| {
                 let mut s = callback_state.lock().unwrap();
                 if let Content::Error { msg } = &msg.content {
@@ -218,7 +198,7 @@ impl Client {
         }
     }
 
-    /// Requests the version from the server
+    /// Requests the capabilities from the server
     pub async fn ask_capabilities(&self) -> Result<Vec<String>, AskError> {
         let msg = self.ask(Msg::from(Content::CapabilitiesRequest)).await?;
         match msg.content {

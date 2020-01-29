@@ -1,7 +1,9 @@
 use crate::{
-    action::{handler, ActionError},
     msg::{content::ContentType, Msg},
-    server::state::ServerState,
+    server::{
+        action::{handler, ActionError},
+        state::ServerState,
+    },
 };
 use over_there_transport::Responder;
 

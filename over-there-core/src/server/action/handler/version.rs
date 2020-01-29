@@ -1,8 +1,9 @@
 use crate::{
-    action::{self, ActionError},
-    client::state::ClientState,
     msg::{content::Content, Msg},
-    server::state::ServerState,
+    server::{
+        action::{self, ActionError},
+        state::ServerState,
+    },
 };
 use log::debug;
 use over_there_transport::Responder;
@@ -25,26 +26,10 @@ pub fn version_request<R: Responder>(
     )
 }
 
-/// Updates the last version we have received
-pub fn version_response<R: Responder>(
-    state: &mut ClientState,
-    msg: &Msg,
-    _responder: &R,
-) -> Result<(), ActionError> {
-    debug!("Received version!");
-    let version = match &msg.content {
-        Content::VersionResponse { version } => version,
-        _ => return Err(ActionError::UnexpectedContent),
-    };
-
-    state.remote_version = version.to_string();
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action::test_utils::MockResponder;
+    use crate::server::action::test_utils::MockResponder;
 
     #[test]
     fn version_request_should_send_version_response() {
@@ -63,22 +48,5 @@ mod tests {
                 version: env!("CARGO_PKG_VERSION").to_string(),
             }
         );
-    }
-
-    #[test]
-    fn version_response_should_log_remote_version() {
-        let mut state = ClientState::default();
-        let version = env!("CARGO_PKG_VERSION").to_string();
-        let msg = Msg::from(Content::VersionResponse {
-            version: version.clone(),
-        });
-        let mut responder = MockResponder::default();
-
-        let result = version_response(&mut state, &msg, &responder);
-        assert!(result.is_ok(), "Bad result: {:?}", result);
-
-        let last_sent = responder.take_last_sent();
-        assert!(last_sent.is_none(), "Unexpected last sent {:?}", last_sent);
-        assert!(state.remote_version == version);
     }
 }

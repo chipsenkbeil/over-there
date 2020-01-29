@@ -1,7 +1,6 @@
 use crate::{
-    action,
     msg::{content::ContentType, Msg},
-    server::{route, state::ServerState, Server},
+    server::{action, route, state::ServerState, Server},
 };
 use log::trace;
 use over_there_auth::{Signer, Verifier};
