@@ -45,12 +45,8 @@ where
                 // TODO: Handle action errors?
                 trace!("Processing {:?} using {:?}", msg, responder);
 
-                if let Some(callback) = msg
-                    .parent_header
-                    .as_ref()
-                    .and_then(|h| s.callback_manager.take_callback(h.id))
-                {
-                    callback(&msg);
+                if let Some(header) = msg.parent_header.as_ref() {
+                    s.callback_manager.invoke_callback(header.id, &msg)
                 }
             }
         }

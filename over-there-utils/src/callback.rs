@@ -11,12 +11,21 @@ pub struct CallbackManager<T> {
 }
 
 impl<T> CallbackManager<T> {
+    /// Adds a new callback, associated with the given id
     pub fn add_callback(&mut self, id: u32, callback: impl FnOnce(&T) + Send + 'static) {
         self.callbacks.insert(id, Box::new(callback));
     }
 
+    /// Retrieves the callback with the associated id, but does not invoke it
     pub fn take_callback(&mut self, id: u32) -> Option<Box<Callback<T>>> {
         self.callbacks.remove(&id)
+    }
+
+    /// Retrieves and invokes the callback with the associated id
+    pub fn invoke_callback(&mut self, id: u32, input: &T) {
+        if let Some(callback) = self.take_callback(id) {
+            callback(input)
+        }
     }
 }
 
