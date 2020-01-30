@@ -1,4 +1,5 @@
 use super::Msg;
+use over_there_utils::serializers;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use strum_macros::{Display, EnumDiscriminants, EnumString};
@@ -30,9 +31,14 @@ pub enum Content {
 
     // ------------------------------------------------------------------------
     // Miscellaneous, adhoc messages
+    /// This will be returned upon a generic error being encountered on the
+    /// server (like an HTTP 500 error)
     Error {
         msg: String,
     },
+
+    /// This will be sent to either the client or server and the msg will be
+    /// passed along to the associated address (if possible)
     Forward {
         address: SocketAddr,
         msg: Box<Msg>,
@@ -40,27 +46,68 @@ pub enum Content {
 
     // ------------------------------------------------------------------------
     // File-based operations such as reading and writing
-    ListFilesRequest {
+    /// This will be sent to indicate the desire to list all files/directories
+    /// at the provided path
+    FileDoList {
         path: String,
     },
-    WriteFileRequest {
+
+    /// This will be returned upon collecting the list of files and directories
+    /// at the provided path
+    FileList {
+        entries: Vec<()>,
+    },
+
+    /// This will be sent to indicate the desire to read/write a file
+    FileDoOpen {
         path: String,
-        contents: String,
+        create_if_missing: bool,
+        write_access: bool,
     },
-    ReadFileRequest {
-        path: String,
-        start: u32,
-        size: u32,
+
+    /// This will be returned upon a file being opened or refreshed
+    FileOpened {
+        id: u32,
+        sig: u32,
     },
-    ListFilesResponse {
-        paths: Vec<String>,
+
+    /// This will be sent to indicate the desire to read a file's contents
+    FileDoRead {
+        id: u32,
+        sig: u32,
     },
-    WriteFileResponse {
-        bytes_written: u32,
-    },
-    ReadFileResponse {
+
+    /// This will be returned upon reading a file's contents
+    FileContents {
         data: Vec<u8>,
     },
+
+    /// This will be sent to indicate the desire to write a file's contents
+    FileDoWrite {
+        id: u32,
+        sig: u32,
+        data: Vec<u8>,
+    },
+
+    /// This will be returned upon writing a file's contents
+    /// Contains the updated signature for the file
+    FileWritten {
+        sig: u32,
+    },
+
+    /// This will be returned upon encountering a generic IO error
+    FileError {
+        description: String,
+        #[serde(
+            serialize_with = "serializers::error_kind::serialize",
+            deserialize_with = "serializers::error_kind::deserialize"
+        )]
+        error_kind: std::io::ErrorKind,
+    },
+
+    /// If a file operation fails due to the signature changing,
+    /// this will be returned
+    FileSigChanged,
 
     // ------------------------------------------------------------------------
     // Program execution operations such as running and streaming

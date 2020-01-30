@@ -1,8 +1,10 @@
 mod connect;
+pub mod file;
 pub mod future;
 pub mod state;
 
 use crate::msg::{content::Content, Msg};
+use file::RemoteFile;
 use future::{AskFuture, AskFutureState};
 use log::trace;
 use over_there_auth::{Signer, Verifier};
@@ -30,6 +32,12 @@ pub enum AskError {
     Timeout,
     EncodingFailed,
     SendFailed,
+}
+
+#[derive(Debug, Error)]
+pub enum FileAskError {
+    GeneralAskFailed(AskError),
+    FileSignatureChanged { id: u32 },
 }
 
 pub struct Client {
@@ -204,6 +212,86 @@ impl Client {
         match msg.content {
             Content::CapabilitiesResponse { capabilities } => Ok(capabilities),
             _ => Err(AskError::InvalidResponse),
+        }
+    }
+
+    /// Requests to open a file for reading/writing on the server
+    pub async fn ask_file_open(&self, path: &str) -> Result<RemoteFile, FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::FileDoOpen {
+                path: path.to_string(),
+                create_if_missing: true,
+                write_access: true,
+            }))
+            .await;
+
+        if let Err(x) = result {
+            return Err(FileAskError::GeneralAskFailed(x));
+        }
+
+        match result.unwrap().content {
+            Content::FileOpened { id, sig } => Ok(RemoteFile {
+                id,
+                sig,
+                path: path.to_string(),
+            }),
+            _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
+        }
+    }
+
+    /// Requests the full contents of a file on the server
+    pub async fn ask_file_read(&self, file: &RemoteFile) -> Result<Vec<u8>, FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::FileDoRead {
+                id: file.id,
+                sig: file.sig.clone(),
+            }))
+            .await;
+
+        if let Err(x) = result {
+            return Err(FileAskError::GeneralAskFailed(x));
+        }
+
+        match result.unwrap().content {
+            Content::FileContents { data, .. } => Ok(data),
+            _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
+        }
+    }
+
+    /// Requests to write the contents of a file on the server
+    pub async fn ask_file_write(
+        &self,
+        file: &RemoteFile,
+        contents: &[u8],
+    ) -> Result<(), FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::FileDoWrite {
+                id: file.id,
+                sig: file.sig.clone(),
+                data: contents.to_vec(),
+            }))
+            .await;
+
+        if let Err(x) = result {
+            return Err(FileAskError::GeneralAskFailed(x));
+        }
+
+        match result.unwrap().content {
+            Content::FileWritten { sig } => {
+                let mut s = self.state.lock().unwrap();
+                s.files.remove(&file.sig);
+                s.files.insert(
+                    sig,
+                    RemoteFile {
+                        id: file.id,
+                        sig,
+                        path: file.path,
+                    },
+                );
+
+                Ok(())
+            }
+            _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
         }
     }
 }

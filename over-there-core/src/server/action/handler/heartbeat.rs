@@ -1,23 +1,11 @@
-use crate::{
-    msg::{content::Content, Msg},
-    server::{
-        action::{self, ActionError},
-        state::ServerState,
-    },
-};
+use crate::{msg::content::Content, server::action::ActionError};
 use log::debug;
-use over_there_transport::Responder;
 
-pub fn heartbeat_request<R: Responder>(
-    _state: &mut ServerState,
-    msg: &Msg,
-    responder: &R,
+pub fn heartbeat_request(
+    respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
-    debug!(
-        "Got heartbeat request! Sending response using {:?}",
-        responder
-    );
-    action::respond(responder, Content::HeartbeatResponse, msg.header.clone())
+    debug!("heartbeat_request");
+    respond(Content::HeartbeatResponse)
 }
 
 #[cfg(test)]

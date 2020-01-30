@@ -1,29 +1,13 @@
-use crate::{
-    msg::{content::Content, Msg},
-    server::{
-        action::{self, ActionError},
-        state::ServerState,
-    },
-};
+use crate::{msg::content::Content, server::action::ActionError};
 use log::debug;
-use over_there_transport::Responder;
 
-pub fn version_request<R: Responder>(
-    _state: &mut ServerState,
-    msg: &Msg,
-    responder: &R,
+pub fn version_request(
+    respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
-    debug!(
-        "Got version request! Sending response using {:?}",
-        responder
-    );
-    action::respond(
-        responder,
-        Content::VersionResponse {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-        },
-        msg.header.clone(),
-    )
+    debug!("version_request");
+    respond(Content::VersionResponse {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+    })
 }
 
 #[cfg(test)]

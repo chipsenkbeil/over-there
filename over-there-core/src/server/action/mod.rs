@@ -1,4 +1,4 @@
-pub mod handler;
+mod handler;
 
 use crate::{
     msg::{content::Content, Header, Msg, MsgError},
@@ -20,10 +20,28 @@ pub fn execute<R: Responder>(
     state: &mut ServerState,
     msg: &Msg,
     responder: &R,
-    mut handler: impl FnMut(&mut ServerState, &Msg, &R) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
     trace!("Received msg: {:?}", msg);
-    (handler)(state, msg, responder)
+
+    let header = msg.header.clone();
+    let do_respond = |content: Content| respond(responder, content, header);
+
+    match &msg.content {
+        Content::HeartbeatRequest => handler::heartbeat::heartbeat_request(do_respond),
+        Content::VersionRequest => handler::version::version_request(do_respond),
+        Content::FileDoOpen {
+            path,
+            create_if_missing,
+            write_access,
+        } => handler::file::file_do_open(
+            state,
+            path.clone(),
+            create_if_missing,
+            write_access,
+            do_respond,
+        ),
+        _ => Err(ActionError::Unknown),
+    }
 }
 
 /// Sends a response to the originator of a msg

@@ -3,6 +3,7 @@ mod capture;
 mod delimiter;
 mod either;
 pub mod exec;
+pub mod serializers;
 mod ttl;
 pub use callback::CallbackManager;
 pub use capture::Capture;

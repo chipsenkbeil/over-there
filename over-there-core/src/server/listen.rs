@@ -1,6 +1,6 @@
 use crate::{
-    msg::{content::ContentType, Msg},
-    server::{action, route, state::ServerState, Server},
+    msg::Msg,
+    server::{action, state::ServerState, Server},
 };
 use log::trace;
 use over_there_auth::{Signer, Verifier};
@@ -50,13 +50,7 @@ where
                 let s: &mut ServerState = &mut *state.lock().unwrap();
                 // TODO: Handle action errors?
                 trace!("Processing {:?} using {:?}", msg, responder);
-                action::execute(
-                    s,
-                    &msg,
-                    &responder,
-                    route::route(ContentType::from(msg.content.clone())),
-                )
-                .unwrap();
+                action::execute(s, &msg, &responder).unwrap();
             }
         }
     });
