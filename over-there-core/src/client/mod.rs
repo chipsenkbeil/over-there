@@ -206,7 +206,7 @@ impl Client {
         let msg = self.ask(Msg::from(Content::DoGetVersion)).await?;
         match msg.content {
             Content::Version(args) => Ok(args.version),
-            _ => Err(AskError::InvalidResponse),
+            x => Err(make_ask_error(x)),
         }
     }
 
@@ -215,7 +215,7 @@ impl Client {
         let msg = self.ask(Msg::from(Content::DoGetCapabilities)).await?;
         match msg.content {
             Content::Capabilities(args) => Ok(args.capabilities),
-            _ => Err(AskError::InvalidResponse),
+            x => Err(make_ask_error(x)),
         }
     }
 
@@ -240,11 +240,7 @@ impl Client {
 
         match result.unwrap().content {
             Content::DirContentsList(args) => Ok(args.entries),
-            Content::FileError(args) => Err(FileAskError::IoError(io::Error::new(
-                args.error_kind,
-                args.description,
-            ))),
-            _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
+            x => Err(make_file_ask_error(x)),
         }
     }
 
@@ -268,11 +264,7 @@ impl Client {
                 sig: args.sig,
                 path: path.to_string(),
             }),
-            Content::FileError(args) => Err(FileAskError::IoError(io::Error::new(
-                args.error_kind,
-                args.description,
-            ))),
-            _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
+            x => Err(make_file_ask_error(x)),
         }
     }
 
@@ -291,11 +283,7 @@ impl Client {
 
         match result.unwrap().content {
             Content::FileContents(args) => Ok(args.data),
-            Content::FileError(args) => Err(FileAskError::IoError(io::Error::new(
-                args.error_kind,
-                args.description,
-            ))),
-            _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
+            x => Err(make_file_ask_error(x)),
         }
     }
 
@@ -332,11 +320,22 @@ impl Client {
 
                 Ok(())
             }
-            Content::FileError(args) => Err(FileAskError::IoError(io::Error::new(
-                args.error_kind,
-                args.description,
-            ))),
-            _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
+            x => Err(make_file_ask_error(x)),
         }
+    }
+}
+
+fn make_file_ask_error(x: Content) -> FileAskError {
+    match x {
+        Content::FileError(args) => {
+            FileAskError::IoError(io::Error::new(args.error_kind, args.description))
+        }
+        x => FileAskError::GeneralAskFailed(make_ask_error(x)),
+    }
+}
+
+fn make_ask_error(x: Content) -> AskError {
+    match x {
+        _ => AskError::InvalidResponse,
     }
 }
