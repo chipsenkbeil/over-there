@@ -40,6 +40,7 @@ pub enum AskError {
 #[derive(Debug, Error)]
 pub enum FileAskError {
     GeneralAskFailed(AskError),
+    IoError(io::Error),
     FileSignatureChanged { id: u32 },
 }
 
@@ -218,6 +219,11 @@ impl Client {
         }
     }
 
+    /// Requests to get a list of the root directory's contents on the server
+    pub async fn ask_list_root_dir_contents(&self) -> Result<Vec<DirEntry>, FileAskError> {
+        self.ask_list_dir_contents(".").await
+    }
+
     /// Requests to get a list of a directory's contents on the server
     pub async fn ask_list_dir_contents(&self, path: &str) -> Result<Vec<DirEntry>, FileAskError> {
         let result = self
@@ -234,6 +240,10 @@ impl Client {
 
         match result.unwrap().content {
             Content::DirContentsList(args) => Ok(args.entries),
+            Content::FileError(args) => Err(FileAskError::IoError(io::Error::new(
+                args.error_kind,
+                args.description,
+            ))),
             _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
         }
     }
@@ -258,6 +268,10 @@ impl Client {
                 sig: args.sig,
                 path: path.to_string(),
             }),
+            Content::FileError(args) => Err(FileAskError::IoError(io::Error::new(
+                args.error_kind,
+                args.description,
+            ))),
             _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
         }
     }
@@ -277,6 +291,10 @@ impl Client {
 
         match result.unwrap().content {
             Content::FileContents(args) => Ok(args.data),
+            Content::FileError(args) => Err(FileAskError::IoError(io::Error::new(
+                args.error_kind,
+                args.description,
+            ))),
             _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
         }
     }
@@ -314,6 +332,10 @@ impl Client {
 
                 Ok(())
             }
+            Content::FileError(args) => Err(FileAskError::IoError(io::Error::new(
+                args.error_kind,
+                args.description,
+            ))),
             _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
         }
     }
