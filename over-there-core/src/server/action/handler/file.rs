@@ -17,10 +17,10 @@ pub fn do_open_file(
     match OpenOptions::new()
         .create(args.create_if_missing)
         .write(args.write_access)
-        .open(args.path)
+        .open(&args.path)
     {
         Ok(file) => {
-            let r = rand::thread_rng();
+            let mut r = rand::thread_rng();
             let id = r.next_u32();
             let sig = r.next_u32();
 
@@ -46,17 +46,23 @@ pub fn do_read_file(
 ) -> Result<(), ActionError> {
     debug!("do_read_file: {:?}", args);
 
-    match state.files.get(&args.id) {
+    match state.files.get_mut(&args.id) {
         Some(local_file) => {
             if local_file.sig == args.sig {
-                respond(Content::FileContents(FileContentsArgs {
-                    data: {
-                        use std::io::Read;
-                        let mut buf = Vec::new();
-                        local_file.file.read_to_end(&mut buf);
-                        buf
-                    },
-                }))
+                match {
+                    use std::io::Read;
+                    let mut buf = Vec::new();
+                    local_file.file.read_to_end(&mut buf).map(|_| buf)
+                } {
+                    Ok(data) => respond(Content::FileContents(FileContentsArgs { data })),
+                    Err(x) => {
+                        use std::error::Error;
+                        respond(Content::FileError(FileErrorArgs {
+                            description: x.description().to_string(),
+                            error_kind: x.kind(),
+                        }))
+                    }
+                }
             } else {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
                     sig: local_file.sig,
@@ -64,7 +70,7 @@ pub fn do_read_file(
             }
         }
         None => respond(Content::FileError(FileErrorArgs {
-            description: String::from(format!("No file open with id {}", args.id)),
+            description: format!("No file open with id {}", args.id),
             error_kind: ErrorKind::InvalidInput,
         })),
     }
@@ -136,7 +142,7 @@ pub fn do_list_dir_contents(
         Ok(entries)
     };
 
-    match lookup_entries(args.path) {
+    match lookup_entries(&args.path) {
         Ok(entries) => respond(Content::DirContentsList(DirContentsListArgs { entries })),
         Err(x) => {
             use std::error::Error;
@@ -169,6 +175,11 @@ mod tests {
 
     #[test]
     fn do_read_file_should_send_contents_if_read_successful() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_read_file_should_send_error_if_io_error_occurs() {
         unimplemented!();
     }
 

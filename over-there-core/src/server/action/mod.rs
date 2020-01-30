@@ -50,35 +50,3 @@ fn respond<R: Responder>(
     let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
     responder.send(&data).map_err(ActionError::ResponderError)
 }
-
-#[cfg(test)]
-mod test_utils {
-    use super::*;
-    use std::cell::RefCell;
-
-    #[derive(Clone, Debug)]
-    pub struct MockResponder {
-        last_sent: RefCell<Option<Vec<u8>>>,
-    }
-
-    impl MockResponder {
-        pub fn take_last_sent(&mut self) -> Option<Vec<u8>> {
-            self.last_sent.borrow_mut().take()
-        }
-    }
-
-    impl Default for MockResponder {
-        fn default() -> Self {
-            Self {
-                last_sent: RefCell::new(None),
-            }
-        }
-    }
-
-    impl Responder for MockResponder {
-        fn send(&self, data: &[u8]) -> Result<(), ResponderError> {
-            *self.last_sent.borrow_mut() = Some(data.to_vec());
-            Ok(())
-        }
-    }
-}

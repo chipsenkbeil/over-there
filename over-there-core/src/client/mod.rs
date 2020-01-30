@@ -267,7 +267,7 @@ impl Client {
         let result = self
             .ask(Msg::from(Content::DoReadFile(DoReadFileArgs {
                 id: file.id,
-                sig: file.sig.clone(),
+                sig: file.sig,
             })))
             .await;
 
@@ -290,7 +290,7 @@ impl Client {
         let result = self
             .ask(Msg::from(Content::DoWriteFile(DoWriteFileArgs {
                 id: file.id,
-                sig: file.sig.clone(),
+                sig: file.sig,
                 data: contents.to_vec(),
             })))
             .await;
@@ -308,7 +308,7 @@ impl Client {
                     RemoteFile {
                         id: file.id,
                         sig: args.sig,
-                        path: file.path,
+                        path: file.path.clone(),
                     },
                 );
 
