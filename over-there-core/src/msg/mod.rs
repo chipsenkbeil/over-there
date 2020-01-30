@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn from_should_produce_a_new_msg_with_that_content() {
-        let msg = Msg::from(Content::HeartbeatRequest);
+        let msg = Msg::from(Content::Heartbeat);
 
         // Verify creation date was set to around now
         assert!(
@@ -102,7 +102,7 @@ mod tests {
 
         // Verify that our message was set to the right type
         match msg.content {
-            Content::HeartbeatRequest => (),
+            Content::Heartbeat => (),
             x => panic!("Unexpected content: {:?}", x),
         }
     }

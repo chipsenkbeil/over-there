@@ -27,19 +27,15 @@ pub fn execute<R: Responder>(
     let do_respond = |content: Content| respond(responder, content, header);
 
     match &msg.content {
-        Content::HeartbeatRequest => handler::heartbeat::heartbeat_request(do_respond),
-        Content::VersionRequest => handler::version::version_request(do_respond),
-        Content::FileDoOpen {
-            path,
-            create_if_missing,
-            write_access,
-        } => handler::file::file_do_open(
-            state,
-            path.clone(),
-            create_if_missing,
-            write_access,
-            do_respond,
-        ),
+        Content::Heartbeat => handler::heartbeat::heartbeat(do_respond),
+        Content::DoGetVersion => handler::version::do_get_version(do_respond),
+        Content::DoGetCapabilities => handler::capabilities::do_get_capabilities(do_respond),
+        Content::DoOpenFile(args) => handler::file::do_open_file(state, args, do_respond),
+        Content::DoReadFile(args) => handler::file::do_read_file(state, args, do_respond),
+        Content::DoWriteFile(args) => handler::file::do_write_file(state, args, do_respond),
+        Content::DoListDirContents(args) => {
+            handler::file::do_list_dir_contents(state, args, do_respond)
+        }
         _ => Err(ActionError::Unknown),
     }
 }

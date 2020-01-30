@@ -3,7 +3,10 @@ pub mod file;
 pub mod future;
 pub mod state;
 
-use crate::msg::{content::Content, Msg};
+use crate::msg::{
+    content::{file::*, Content},
+    Msg,
+};
 use file::RemoteFile;
 use future::{AskFuture, AskFutureState};
 use log::trace;
@@ -160,9 +163,9 @@ impl Client {
             .callback_manager
             .add_callback(msg.header.id, move |msg| {
                 let mut s = callback_state.lock().unwrap();
-                if let Content::Error { msg } = &msg.content {
+                if let Content::Error(args) = &msg.content {
                     s.result = Some(Err(AskError::Failure {
-                        msg: msg.to_string(),
+                        msg: args.msg.to_string(),
                     }));
                 } else {
                     s.result = Some(Ok(msg.clone()));
@@ -199,30 +202,30 @@ impl Client {
 
     /// Requests the version from the server
     pub async fn ask_version(&self) -> Result<String, AskError> {
-        let msg = self.ask(Msg::from(Content::VersionRequest)).await?;
+        let msg = self.ask(Msg::from(Content::DoGetVersion)).await?;
         match msg.content {
-            Content::VersionResponse { version } => Ok(version),
+            Content::Version(args) => Ok(args.version),
             _ => Err(AskError::InvalidResponse),
         }
     }
 
     /// Requests the capabilities from the server
     pub async fn ask_capabilities(&self) -> Result<Vec<String>, AskError> {
-        let msg = self.ask(Msg::from(Content::CapabilitiesRequest)).await?;
+        let msg = self.ask(Msg::from(Content::DoGetCapabilities)).await?;
         match msg.content {
-            Content::CapabilitiesResponse { capabilities } => Ok(capabilities),
+            Content::Capabilities(args) => Ok(args.capabilities),
             _ => Err(AskError::InvalidResponse),
         }
     }
 
-    /// Requests to open a file for reading/writing on the server
-    pub async fn ask_file_open(&self, path: &str) -> Result<RemoteFile, FileAskError> {
+    /// Requests to get a list of a directory's contents on the server
+    pub async fn ask_list_dir_contents(&self, path: &str) -> Result<Vec<DirEntry>, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::FileDoOpen {
-                path: path.to_string(),
-                create_if_missing: true,
-                write_access: true,
-            }))
+            .ask(Msg::from(Content::DoListDirContents(
+                DoListDirContentsArgs {
+                    path: path.to_string(),
+                },
+            )))
             .await;
 
         if let Err(x) = result {
@@ -230,9 +233,29 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::FileOpened { id, sig } => Ok(RemoteFile {
-                id,
-                sig,
+            Content::DirContentsList(args) => Ok(args.entries),
+            _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
+        }
+    }
+
+    /// Requests to open a file for reading/writing on the server
+    pub async fn ask_open_file(&self, path: &str) -> Result<RemoteFile, FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoOpenFile(DoOpenFileArgs {
+                path: path.to_string(),
+                create_if_missing: true,
+                write_access: true,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(FileAskError::GeneralAskFailed(x));
+        }
+
+        match result.unwrap().content {
+            Content::FileOpened(args) => Ok(RemoteFile {
+                id: args.id,
+                sig: args.sig,
                 path: path.to_string(),
             }),
             _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
@@ -240,12 +263,12 @@ impl Client {
     }
 
     /// Requests the full contents of a file on the server
-    pub async fn ask_file_read(&self, file: &RemoteFile) -> Result<Vec<u8>, FileAskError> {
+    pub async fn ask_read_file(&self, file: &RemoteFile) -> Result<Vec<u8>, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::FileDoRead {
+            .ask(Msg::from(Content::DoReadFile(DoReadFileArgs {
                 id: file.id,
                 sig: file.sig.clone(),
-            }))
+            })))
             .await;
 
         if let Err(x) = result {
@@ -253,23 +276,23 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::FileContents { data, .. } => Ok(data),
+            Content::FileContents(args) => Ok(args.data),
             _ => Err(FileAskError::GeneralAskFailed(AskError::InvalidResponse)),
         }
     }
 
     /// Requests to write the contents of a file on the server
-    pub async fn ask_file_write(
+    pub async fn ask_write_file(
         &self,
         file: &RemoteFile,
         contents: &[u8],
     ) -> Result<(), FileAskError> {
         let result = self
-            .ask(Msg::from(Content::FileDoWrite {
+            .ask(Msg::from(Content::DoWriteFile(DoWriteFileArgs {
                 id: file.id,
                 sig: file.sig.clone(),
                 data: contents.to_vec(),
-            }))
+            })))
             .await;
 
         if let Err(x) = result {
@@ -277,14 +300,14 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::FileWritten { sig } => {
+            Content::FileWritten(args) => {
                 let mut s = self.state.lock().unwrap();
                 s.files.remove(&file.sig);
                 s.files.insert(
-                    sig,
+                    file.id,
                     RemoteFile {
                         id: file.id,
-                        sig,
+                        sig: args.sig,
                         path: file.path,
                     },
                 );

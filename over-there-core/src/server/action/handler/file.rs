@@ -1,5 +1,5 @@
 use crate::{
-    msg::content::Content,
+    msg::content::{file::*, Content},
     server::{action::ActionError, file::LocalFile, state::ServerState},
 };
 use log::debug;
@@ -7,22 +7,17 @@ use rand::RngCore;
 use std::fs::{self, OpenOptions};
 use std::io::{self, ErrorKind};
 
-pub fn file_do_open(
+pub fn do_open_file(
     state: &mut ServerState,
-    path: String,
-    create_if_missing: bool,
-    write_access: bool,
+    args: &DoOpenFileArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
-    debug!(
-        "file_do_open: {} ; create: {} ; write: {}",
-        path, create_if_missing, write_access
-    );
+    debug!("do_open_file: {:?}", args);
 
     match OpenOptions::new()
-        .create(create_if_missing)
-        .write(write_access)
-        .open(path)
+        .create(args.create_if_missing)
+        .write(args.write_access)
+        .open(args.path)
     {
         Ok(file) => {
             let r = rand::thread_rng();
@@ -32,113 +27,123 @@ pub fn file_do_open(
             // Store the opened file so we can operate on it later
             state.files.insert(id, LocalFile { id, sig, file });
 
-            respond(Content::FileOpened { id, sig })
+            respond(Content::FileOpened(FileOpenedArgs { id, sig }))
         }
         Err(x) => {
             use std::error::Error;
-            respond(Content::FileError {
+            respond(Content::FileError(FileErrorArgs {
                 description: x.description().to_string(),
                 error_kind: x.kind(),
-            })
+            }))
         }
     }
 }
 
-pub fn file_do_read(
+pub fn do_read_file(
     state: &mut ServerState,
-    id: u32,
-    sig: u32,
+    args: &DoReadFileArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
-    debug!("file_do_read: id: {} ; sig: {}", id, sig);
+    debug!("do_read_file: {:?}", args);
 
-    match state.files.get(&id) {
+    match state.files.get(&args.id) {
         Some(local_file) => {
-            if local_file.sig == sig {
-                respond(Content::FileContents {
+            if local_file.sig == args.sig {
+                respond(Content::FileContents(FileContentsArgs {
                     data: {
                         use std::io::Read;
                         let mut buf = Vec::new();
                         local_file.file.read_to_end(&mut buf);
                         buf
                     },
-                })
+                }))
             } else {
-                respond(Content::FileSigChanged)
+                respond(Content::FileSigChanged(FileSigChangedArgs {
+                    sig: local_file.sig,
+                }))
             }
         }
-        None => respond(Content::FileError {
-            description: String::from(format!("No file open with id {}", id)),
+        None => respond(Content::FileError(FileErrorArgs {
+            description: String::from(format!("No file open with id {}", args.id)),
             error_kind: ErrorKind::InvalidInput,
-        }),
+        })),
     }
 }
 
-pub fn file_do_write(
+pub fn do_write_file(
     state: &mut ServerState,
-    id: u32,
-    sig: u32,
-    data: &[u8],
+    args: &DoWriteFileArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
-    debug!(
-        "file_do_write: id: {} ; sig: {} ; data: {} bytes",
-        id,
-        sig,
-        data.len()
-    );
+    debug!("do_write_file: {:?}", args);
 
-    match state.files.get_mut(&id) {
+    match state.files.get_mut(&args.id) {
         Some(local_file) => {
-            if local_file.sig == sig {
+            if local_file.sig == args.sig {
                 use std::io::Write;
-                match local_file.file.write_all(data) {
+                match local_file.file.write_all(&args.data) {
                     Ok(_) => {
                         let new_sig = rand::thread_rng().next_u32();
                         local_file.sig = new_sig;
 
-                        respond(Content::FileWritten { sig: new_sig })
+                        respond(Content::FileWritten(FileWrittenArgs { sig: new_sig }))
                     }
                     Err(x) => {
                         use std::error::Error;
-                        respond(Content::FileError {
+                        respond(Content::FileError(FileErrorArgs {
                             description: x.description().to_string(),
                             error_kind: x.kind(),
-                        })
+                        }))
                     }
                 }
             } else {
-                respond(Content::FileSigChanged)
+                respond(Content::FileSigChanged(FileSigChangedArgs {
+                    sig: local_file.sig,
+                }))
             }
         }
-        None => respond(Content::FileError {
-            description: String::from(format!("No file open with id {}", id)),
+        None => respond(Content::FileError(FileErrorArgs {
+            description: String::from(format!("No file open with id {}", args.id)),
             error_kind: ErrorKind::InvalidInput,
-        }),
+        })),
     }
 }
 
-pub fn file_do_list(
+pub fn do_list_dir_contents(
     _state: &mut ServerState,
-    path: String,
+    args: &DoListDirContentsArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
-    debug!("file_do_list: path: {}", path);
+    debug!("do_list_dir_contents: {:?}", args);
 
-    let lookup_entries = |path| -> Result<(), io::Error> {
-        fs::read_dir(path)?
-            .map(|res| res.map(|e| (e.file_type(), e.path())))
-            .collect::<Result<Vec<_>, io::Error>>()
+    let lookup_entries = |path| -> Result<Vec<DirEntry>, io::Error> {
+        let mut entries = Vec::new();
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            entries.push(DirEntry {
+                path: entry.path().into_os_string().into_string().map_err(|_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "OS String does not contain valid unicode",
+                    )
+                })?,
+                is_file: file_type.is_file(),
+                is_dir: file_type.is_dir(),
+                is_symlink: file_type.is_symlink(),
+            });
+        }
+        Ok(entries)
     };
 
-    match lookup_entries(path) {
-        Ok(entries) => respond(Content::FileList { entries }),
+    match lookup_entries(args.path) {
+        Ok(entries) => respond(Content::DirContentsList(DirContentsListArgs { entries })),
         Err(x) => {
             use std::error::Error;
-            respond(Content::FileError {
+            respond(Content::FileError(FileErrorArgs {
                 description: x.description().to_string(),
                 error_kind: x.kind(),
-            })
+            }))
         }
     }
 }
@@ -146,24 +151,64 @@ pub fn file_do_list(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::action::test_utils::MockResponder;
 
     #[test]
-    fn version_request_should_send_version_response() {
-        let mut state = ServerState::default();
-        let msg = Msg::from(Content::VersionRequest);
-        let mut responder = MockResponder::default();
+    fn do_open_file_should_send_success_if_no_io_error_occurs() {
+        unimplemented!();
+    }
 
-        let result = version_request(&mut state, &msg, &responder);
-        assert!(result.is_ok(), "Bad result: {:?}", result);
+    #[test]
+    fn do_open_file_should_send_error_if_file_missing_and_create_flag_not_set() {
+        unimplemented!();
+    }
 
-        let outgoing_msg = Msg::from_slice(&responder.take_last_sent().unwrap()).unwrap();
-        assert_eq!(outgoing_msg.parent_header, Some(msg.header));
-        assert_eq!(
-            outgoing_msg.content,
-            Content::VersionResponse {
-                version: env!("CARGO_PKG_VERSION").to_string(),
-            }
-        );
+    #[test]
+    fn do_open_file_should_send_error_if_io_error_occurs() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_read_file_should_send_contents_if_read_successful() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_read_file_should_send_error_if_file_not_open() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_read_file_should_send_error_if_file_sig_has_changed() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_write_file_should_send_success_if_write_successful() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_write_file_should_send_error_if_io_error_occurs() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_write_file_should_send_error_if_file_sig_has_changed() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_list_dir_contents_should_send_entries_if_successful() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_list_dir_contents_should_send_error_if_path_invalid() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn do_list_dir_contents_should_send_error_if_unable_to_read_entries() {
+        unimplemented!();
     }
 }
