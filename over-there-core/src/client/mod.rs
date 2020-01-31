@@ -318,9 +318,7 @@ impl Client {
 
 fn make_file_ask_error(x: Content) -> FileAskError {
     match x {
-        Content::FileError(args) => {
-            FileAskError::IoError(io::Error::new(args.error_kind, args.description))
-        }
+        Content::FileError(args) => FileAskError::IoError(args.into()),
         x => FileAskError::GeneralAskFailed(make_ask_error(x)),
     }
 }

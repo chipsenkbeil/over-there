@@ -5,7 +5,7 @@ use crate::{
 use log::debug;
 use rand::RngCore;
 use std::fs::{self, OpenOptions};
-use std::io::{self, ErrorKind};
+use std::io;
 
 pub fn do_open_file(
     state: &mut ServerState,
@@ -29,13 +29,7 @@ pub fn do_open_file(
 
             respond(Content::FileOpened(FileOpenedArgs { id, sig }))
         }
-        Err(x) => {
-            use std::error::Error;
-            respond(Content::FileError(FileErrorArgs {
-                description: x.description().to_string(),
-                error_kind: x.kind(),
-            }))
-        }
+        Err(x) => respond(Content::FileError(From::from(x))),
     }
 }
 
@@ -54,16 +48,12 @@ pub fn do_read_file(
                     let mut buf = Vec::new();
                     let file = &mut local_file.file;
                     file.seek(SeekFrom::Start(0))
+                        .map_err(|e| io::Error::new(e.kind(), format!("Seek(0): {}", e)))
                         .and_then(|_| file.read_to_end(&mut buf).map(|_| buf))
+                        .map_err(|e| io::Error::new(e.kind(), format!("ReadToEnd: {}", e)))
                 } {
                     Ok(data) => respond(Content::FileContents(FileContentsArgs { data })),
-                    Err(x) => {
-                        use std::error::Error;
-                        respond(Content::FileError(FileErrorArgs {
-                            description: x.description().to_string(),
-                            error_kind: x.kind(),
-                        }))
-                    }
+                    Err(x) => respond(Content::FileError(From::from(x))),
                 }
             } else {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
@@ -71,10 +61,7 @@ pub fn do_read_file(
                 }))
             }
         }
-        None => respond(Content::FileError(FileErrorArgs {
-            description: format!("No file open with id {}", args.id),
-            error_kind: ErrorKind::InvalidInput,
-        })),
+        None => respond(Content::FileError(FileErrorArgs::invalid_file_id(args.id))),
     }
 }
 
@@ -92,8 +79,11 @@ pub fn do_write_file(
                 let file = &mut local_file.file;
                 match file
                     .seek(SeekFrom::Start(0))
+                    .map_err(|e| io::Error::new(e.kind(), format!("Seek(0): {}", e)))
                     .and_then(|_| file.set_len(0))
+                    .map_err(|e| io::Error::new(e.kind(), format!("SetLen(0): {}", e)))
                     .and_then(|_| file.write_all(&args.data))
+                    .map_err(|e| io::Error::new(e.kind(), format!("WriteAll: {}", e)))
                 {
                     Ok(_) => {
                         let new_sig = rand::thread_rng().next_u32();
@@ -101,13 +91,7 @@ pub fn do_write_file(
 
                         respond(Content::FileWritten(FileWrittenArgs { sig: new_sig }))
                     }
-                    Err(x) => {
-                        use std::error::Error;
-                        respond(Content::FileError(FileErrorArgs {
-                            description: x.description().to_string(),
-                            error_kind: x.kind(),
-                        }))
-                    }
+                    Err(x) => respond(Content::FileError(From::from(x))),
                 }
             } else {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
@@ -115,10 +99,7 @@ pub fn do_write_file(
                 }))
             }
         }
-        None => respond(Content::FileError(FileErrorArgs {
-            description: format!("No file open with id {}", args.id),
-            error_kind: ErrorKind::InvalidInput,
-        })),
+        None => respond(Content::FileError(FileErrorArgs::invalid_file_id(args.id))),
     }
 }
 
@@ -151,13 +132,7 @@ pub fn do_list_dir_contents(
 
     match lookup_entries(&args.path) {
         Ok(entries) => respond(Content::DirContentsList(DirContentsListArgs { entries })),
-        Err(x) => {
-            use std::error::Error;
-            respond(Content::FileError(FileErrorArgs {
-                description: x.description().to_string(),
-                error_kind: x.kind(),
-            }))
-        }
+        Err(x) => respond(Content::FileError(From::from(x))),
     }
 }
 
