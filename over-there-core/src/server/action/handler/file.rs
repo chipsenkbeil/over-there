@@ -50,9 +50,11 @@ pub fn do_read_file(
         Some(local_file) => {
             if local_file.sig == args.sig {
                 match {
-                    use std::io::Read;
+                    use std::io::{Read, Seek, SeekFrom};
                     let mut buf = Vec::new();
-                    local_file.file.read_to_end(&mut buf).map(|_| buf)
+                    let file = &mut local_file.file;
+                    file.seek(SeekFrom::Start(0))
+                        .and_then(|_| file.read_to_end(&mut buf).map(|_| buf))
                 } {
                     Ok(data) => respond(Content::FileContents(FileContentsArgs { data })),
                     Err(x) => {
@@ -86,8 +88,13 @@ pub fn do_write_file(
     match state.files.get_mut(&args.id) {
         Some(local_file) => {
             if local_file.sig == args.sig {
-                use std::io::Write;
-                match local_file.file.write_all(&args.data) {
+                use std::io::{Seek, SeekFrom, Write};
+                let file = &mut local_file.file;
+                match file
+                    .seek(SeekFrom::Start(0))
+                    .and_then(|_| file.set_len(0))
+                    .and_then(|_| file.write_all(&args.data))
+                {
                     Ok(_) => {
                         let new_sig = rand::thread_rng().next_u32();
                         local_file.sig = new_sig;
@@ -226,43 +233,175 @@ mod tests {
     }
 
     #[test]
-    fn do_open_file_should_send_error_if_io_error_occurs() {
-        unimplemented!();
-    }
-
-    #[test]
     fn do_read_file_should_send_contents_if_read_successful() {
-        unimplemented!();
-    }
+        let mut state = ServerState::default();
+        let mut content: Option<Content> = None;
+        let file_data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-    #[test]
-    fn do_read_file_should_send_error_if_io_error_occurs() {
-        unimplemented!();
+        let id = 999;
+        let sig = 12345;
+        let mut file = tempfile::tempfile().unwrap();
+
+        use std::io::Write;
+        file.write_all(&file_data).unwrap();
+        file.flush().unwrap();
+
+        state.files.insert(id, LocalFile { id, sig, file });
+
+        do_read_file(&mut state, &DoReadFileArgs { id, sig }, |c| {
+            content = Some(c);
+            Ok(())
+        })
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileContents(FileContentsArgs { data }) => {
+                assert_eq!(data, file_data);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
     }
 
     #[test]
     fn do_read_file_should_send_error_if_file_not_open() {
-        unimplemented!();
+        let mut content: Option<Content> = None;
+
+        do_read_file(
+            &mut ServerState::default(),
+            &DoReadFileArgs { id: 0, sig: 0 },
+            |c| {
+                content = Some(c);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileError(FileErrorArgs { error_kind, .. }) => {
+                assert_eq!(error_kind, io::ErrorKind::InvalidInput);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
     }
 
     #[test]
     fn do_read_file_should_send_error_if_file_sig_has_changed() {
-        unimplemented!();
+        let mut state = ServerState::default();
+        let mut content: Option<Content> = None;
+
+        let id = 999;
+        let cur_sig = 12345;
+        let file = tempfile::tempfile().unwrap();
+        state.files.insert(
+            id,
+            LocalFile {
+                id,
+                sig: cur_sig,
+                file,
+            },
+        );
+
+        do_read_file(&mut state, &DoReadFileArgs { id, sig: 99999 }, |c| {
+            content = Some(c);
+            Ok(())
+        })
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileSigChanged(FileSigChangedArgs { sig }) => {
+                assert_eq!(sig, cur_sig);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
     }
 
     #[test]
     fn do_write_file_should_send_success_if_write_successful() {
-        unimplemented!();
-    }
+        let mut state = ServerState::default();
+        let mut content: Option<Content> = None;
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-    #[test]
-    fn do_write_file_should_send_error_if_io_error_occurs() {
-        unimplemented!();
+        let id = 999;
+        let sig = 12345;
+        let mut file = tempfile::tempfile().unwrap();
+        state.files.insert(
+            id,
+            LocalFile {
+                id,
+                sig,
+                file: file.try_clone().unwrap(),
+            },
+        );
+
+        do_write_file(
+            &mut state,
+            &DoWriteFileArgs {
+                id,
+                sig,
+                data: data.clone(),
+            },
+            |c| {
+                content = Some(c);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileWritten(FileWrittenArgs { sig: new_sig }) => {
+                assert_ne!(new_sig, sig);
+
+                use std::io::{Seek, SeekFrom};
+                file.seek(SeekFrom::Start(0)).unwrap();
+
+                use std::io::Read;
+                let mut file_data = Vec::new();
+                file.read_to_end(&mut file_data).unwrap();
+
+                assert_eq!(data, file_data);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
     }
 
     #[test]
     fn do_write_file_should_send_error_if_file_sig_has_changed() {
-        unimplemented!();
+        let mut state = ServerState::default();
+        let mut content: Option<Content> = None;
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+        let id = 999;
+        let cur_sig = 12345;
+        let file = tempfile::tempfile().unwrap();
+        state.files.insert(
+            id,
+            LocalFile {
+                id,
+                sig: cur_sig,
+                file,
+            },
+        );
+
+        do_write_file(
+            &mut state,
+            &DoWriteFileArgs {
+                id,
+                sig: 99999,
+                data: data.clone(),
+            },
+            |c| {
+                content = Some(c);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileSigChanged(FileSigChangedArgs { sig }) => {
+                assert_eq!(sig, cur_sig);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
     }
 
     #[test]
