@@ -31,7 +31,7 @@ pub enum TellError {
 #[derive(Debug, Error)]
 pub enum AskError {
     Failure { msg: String },
-    InvalidResponse,
+    InvalidResponse { content: Content },
     Timeout,
     EncodingFailed,
     SendFailed,
@@ -291,7 +291,7 @@ impl Client {
     /// Requests to write the contents of a file on the server
     pub async fn ask_write_file(
         &self,
-        file: &RemoteFile,
+        file: &mut RemoteFile,
         contents: &[u8],
     ) -> Result<(), FileAskError> {
         let result = self
@@ -308,17 +308,7 @@ impl Client {
 
         match result.unwrap().content {
             Content::FileWritten(args) => {
-                let mut s = self.state.lock().unwrap();
-                s.files.remove(&file.sig);
-                s.files.insert(
-                    file.id,
-                    RemoteFile {
-                        id: file.id,
-                        sig: args.sig,
-                        path: file.path.clone(),
-                    },
-                );
-
+                file.sig = args.sig;
                 Ok(())
             }
             x => Err(make_file_ask_error(x)),
@@ -337,6 +327,6 @@ fn make_file_ask_error(x: Content) -> FileAskError {
 
 fn make_ask_error(x: Content) -> AskError {
     match x {
-        _ => AskError::InvalidResponse,
+        content => AskError::InvalidResponse { content },
     }
 }
