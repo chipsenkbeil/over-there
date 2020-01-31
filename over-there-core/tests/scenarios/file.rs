@@ -1,10 +1,6 @@
 use over_there_core::Client;
-use std::time::Duration;
 
-pub async fn async_test(mut client: Client) {
-    // Ensure that we fail after 2.5s
-    client.timeout = Duration::from_millis(2500);
-
+pub async fn async_test(client: Client) {
     // Produce a new directory to work in
     let dir = tempfile::TempDir::new().unwrap();
     let dir_path = dir.path().to_string_lossy().to_string();

@@ -10,12 +10,29 @@ pub enum TestMode {
     Udp,
 }
 
-pub fn setup(mode: TestMode) -> (Client, Server) {
+pub struct TestBench {
+    pub client: Client,
+    pub server: Server,
+}
+
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_millis(2500);
+
+pub fn setup(mode: TestMode) -> TestBench {
+    setup_with_timeout(mode, DEFAULT_TIMEOUT)
+}
+
+pub fn setup_with_timeout(mode: TestMode, timeout: Duration) -> TestBench {
     init_logger();
-    match mode {
+
+    let mut test_bench = match mode {
         TestMode::Tcp => start_tcp_client_and_server(),
         TestMode::Udp => start_udp_client_and_server(),
-    }
+    };
+
+    // Ensure that we fail after the provided timeout
+    test_bench.client.timeout = timeout;
+
+    test_bench
 }
 
 fn init_logger() {
@@ -25,7 +42,7 @@ fn init_logger() {
         .try_init();
 }
 
-fn start_tcp_client_and_server() -> (Client, Server) {
+fn start_tcp_client_and_server() -> TestBench {
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
 
@@ -53,10 +70,10 @@ fn start_tcp_client_and_server() -> (Client, Server) {
     )
     .unwrap();
 
-    (client, server)
+    TestBench { client, server }
 }
 
-fn start_udp_client_and_server() -> (Client, Server) {
+fn start_udp_client_and_server() -> TestBench {
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
 
@@ -84,5 +101,5 @@ fn start_udp_client_and_server() -> (Client, Server) {
     )
     .unwrap();
 
-    (client, server)
+    TestBench { client, server }
 }
