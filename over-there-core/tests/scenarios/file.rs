@@ -20,10 +20,7 @@ pub async fn async_test(mut client: Client) {
     assert_eq!(dir_contents.len(), 0);
 
     // Open/create file with read & write access
-    let mut file = client
-        .ask_open_file(&file_path, true, true, true)
-        .await
-        .unwrap();
+    let mut file = client.ask_open_file(&file_path).await.unwrap();
     client
         .ask_write_file(&mut file, b"Hello!\nThis is a test!\nGoodbye!")
         .await

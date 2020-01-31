@@ -245,8 +245,15 @@ impl Client {
         }
     }
 
-    /// Requests to open a file for reading/writing on the server
-    pub async fn ask_open_file(
+    /// Requests to open a file for reading/writing on the server,
+    /// creating the file if it does not exist
+    pub async fn ask_open_file(&self, path: &str) -> Result<RemoteFile, FileAskError> {
+        self.ask_open_file_with_options(path, true, true, true)
+            .await
+    }
+
+    /// Requests to open a file on the server, opening using the provided options
+    pub async fn ask_open_file_with_options(
         &self,
         path: &str,
         create: bool,
