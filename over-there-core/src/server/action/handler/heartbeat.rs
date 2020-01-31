@@ -13,7 +13,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn heartbeat_should_update_last_active_status() {
-        unimplemented!();
+    fn heartbeat_should_send_a_heartbeat() {
+        let mut content: Option<Content> = None;
+
+        heartbeat(|c| {
+            content = Some(c);
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(content.unwrap(), Content::Heartbeat);
     }
 }

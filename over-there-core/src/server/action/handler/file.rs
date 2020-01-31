@@ -109,7 +109,7 @@ pub fn do_write_file(
             }
         }
         None => respond(Content::FileError(FileErrorArgs {
-            description: String::from(format!("No file open with id {}", args.id)),
+            description: format!("No file open with id {}", args.id),
             error_kind: ErrorKind::InvalidInput,
         })),
     }
@@ -160,12 +160,69 @@ mod tests {
 
     #[test]
     fn do_open_file_should_send_success_if_no_io_error_occurs() {
-        unimplemented!();
+        let mut state = ServerState::default();
+        let mut content: Option<Content> = None;
+
+        let tmp_path = tempfile::NamedTempFile::new()
+            .unwrap()
+            .into_temp_path()
+            .to_string_lossy()
+            .to_string();
+
+        do_open_file(
+            &mut state,
+            &DoOpenFileArgs {
+                path: tmp_path,
+                create_if_missing: true,
+                write_access: true,
+            },
+            |c| {
+                content = Some(c);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileOpened(args) => {
+                let local_file = state.files.get(&args.id).unwrap();
+                assert_eq!(args.sig, local_file.sig);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
     }
 
     #[test]
     fn do_open_file_should_send_error_if_file_missing_and_create_flag_not_set() {
-        unimplemented!();
+        let mut state = ServerState::default();
+        let mut content: Option<Content> = None;
+
+        let tmp_path = tempfile::NamedTempFile::new()
+            .unwrap()
+            .into_temp_path()
+            .to_string_lossy()
+            .to_string();
+
+        do_open_file(
+            &mut state,
+            &DoOpenFileArgs {
+                path: tmp_path,
+                create_if_missing: false,
+                write_access: true,
+            },
+            |c| {
+                content = Some(c);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileError(FileErrorArgs { error_kind, .. }) => {
+                assert_eq!(error_kind, io::ErrorKind::NotFound)
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
     }
 
     #[test]
@@ -210,16 +267,71 @@ mod tests {
 
     #[test]
     fn do_list_dir_contents_should_send_entries_if_successful() {
-        unimplemented!();
+        let mut content: Option<Content> = None;
+
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_string_lossy().to_string();
+
+        let tmp_file = tempfile::NamedTempFile::new_in(&dir).unwrap();
+        let tmp_dir = tempfile::tempdir_in(&dir).unwrap();
+
+        do_list_dir_contents(
+            &mut ServerState::default(),
+            &DoListDirContentsArgs {
+                path: dir_path.clone(),
+            },
+            |c| {
+                content = Some(c);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        fs::remove_dir_all(dir_path).unwrap();
+
+        match content.unwrap() {
+            Content::DirContentsList(args) => {
+                assert_eq!(args.entries.len(), 2, "Unexpected number of entries");
+
+                assert!(args.entries.contains(&DirEntry {
+                    path: tmp_file.path().to_string_lossy().to_string(),
+                    is_file: true,
+                    is_dir: false,
+                    is_symlink: false
+                }));
+
+                assert!(args.entries.contains(&DirEntry {
+                    path: tmp_dir.path().to_string_lossy().to_string(),
+                    is_file: false,
+                    is_dir: true,
+                    is_symlink: false
+                }));
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
     }
 
     #[test]
     fn do_list_dir_contents_should_send_error_if_path_invalid() {
-        unimplemented!();
-    }
+        let mut content: Option<Content> = None;
 
-    #[test]
-    fn do_list_dir_contents_should_send_error_if_unable_to_read_entries() {
-        unimplemented!();
+        do_list_dir_contents(
+            &mut ServerState::default(),
+            &DoListDirContentsArgs {
+                path: String::from(""),
+            },
+            |c| {
+                content = Some(c);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileError(FileErrorArgs { error_kind, .. }) => {
+                assert_eq!(error_kind, io::ErrorKind::NotFound)
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
     }
 }

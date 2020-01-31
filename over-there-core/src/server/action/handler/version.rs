@@ -19,6 +19,19 @@ mod tests {
 
     #[test]
     fn do_get_version_should_send_version() {
-        unimplemented!();
+        let mut content: Option<Content> = None;
+
+        do_get_version(|c| {
+            content = Some(c);
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(
+            content.unwrap(),
+            Content::Version(VersionArgs {
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            })
+        );
     }
 }

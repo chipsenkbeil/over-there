@@ -1,5 +1,8 @@
 use crate::{
-    msg::content::{capabilities::*, Content},
+    msg::content::{
+        capabilities::{CapabilitiesArgs, Capability},
+        Content,
+    },
     server::action::ActionError,
 };
 use log::debug;
@@ -9,7 +12,15 @@ pub fn do_get_capabilities(
 ) -> Result<(), ActionError> {
     debug!("do_get_capabilities");
     respond(Content::Capabilities(CapabilitiesArgs {
-        capabilities: vec![],
+        capabilities: vec![
+            // TODO: Custom
+            #[cfg(feature = "exec")]
+            Capability::Exec,
+            #[cfg(feature = "file-system")]
+            Capability::File,
+            #[cfg(feature = "forward")]
+            Capability::Forward,
+        ],
     }))
 }
 
@@ -19,6 +30,19 @@ mod tests {
 
     #[test]
     fn do_get_capabilities_should_send_capabilities() {
-        unimplemented!();
+        let mut content: Option<Content> = None;
+
+        do_get_capabilities(|c| {
+            content = Some(c);
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(
+            content.unwrap(),
+            Content::Capabilities(CapabilitiesArgs {
+                capabilities: vec![Capability::Exec, Capability::File, Capability::Forward],
+            })
+        );
     }
 }

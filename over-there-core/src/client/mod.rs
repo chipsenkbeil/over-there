@@ -4,7 +4,7 @@ pub mod future;
 pub mod state;
 
 use crate::msg::{
-    content::{file::*, Content},
+    content::{capabilities::Capability, file::*, Content},
     Msg,
 };
 use file::RemoteFile;
@@ -61,6 +61,7 @@ pub struct Client {
 }
 
 impl Client {
+    /// Default timeout applied to a new client for any ask made
     pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
     pub fn connect_tcp<A, B, C>(
@@ -211,7 +212,7 @@ impl Client {
     }
 
     /// Requests the capabilities from the server
-    pub async fn ask_capabilities(&self) -> Result<Vec<String>, AskError> {
+    pub async fn ask_capabilities(&self) -> Result<Vec<Capability>, AskError> {
         let msg = self.ask(Msg::from(Content::DoGetCapabilities)).await?;
         match msg.content {
             Content::Capabilities(args) => Ok(args.capabilities),
