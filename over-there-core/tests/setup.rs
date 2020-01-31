@@ -1,4 +1,3 @@
-use log::error;
 use over_there_auth::Sha256Authenticator;
 use over_there_core::{Client, Server};
 use over_there_crypto::{self as crypto, aes_gcm};
@@ -51,10 +50,7 @@ fn start_tcp_client_and_server() -> TestBench {
         Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
-        |e| {
-            error!("TCP SERVER {:?}", e);
-            false
-        },
+        |_| false,
     )
     .unwrap();
 
@@ -63,10 +59,7 @@ fn start_tcp_client_and_server() -> TestBench {
         Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
-        |e| {
-            error!("TCP CLIENT {:?}", e);
-            false
-        },
+        |_| false,
     )
     .unwrap();
 
@@ -82,10 +75,7 @@ fn start_udp_client_and_server() -> TestBench {
         Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
-        |e| {
-            error!("UDP SERVER {:?}", e);
-            false
-        },
+        |_| false,
     )
     .unwrap();
 
@@ -94,10 +84,7 @@ fn start_udp_client_and_server() -> TestBench {
         Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
-        |e| {
-            error!("UDP CLIENT {:?}", e);
-            false
-        },
+        |_| false,
     )
     .unwrap();
 
