@@ -246,12 +246,19 @@ impl Client {
     }
 
     /// Requests to open a file for reading/writing on the server
-    pub async fn ask_open_file(&self, path: &str) -> Result<RemoteFile, FileAskError> {
+    pub async fn ask_open_file(
+        &self,
+        path: &str,
+        create: bool,
+        write: bool,
+        read: bool,
+    ) -> Result<RemoteFile, FileAskError> {
         let result = self
             .ask(Msg::from(Content::DoOpenFile(DoOpenFileArgs {
                 path: path.to_string(),
-                create_if_missing: true,
-                write_access: true,
+                create_if_missing: create,
+                write_access: write,
+                read_access: read,
             })))
             .await;
 

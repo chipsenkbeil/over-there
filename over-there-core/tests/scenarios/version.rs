@@ -1,7 +1,7 @@
 use over_there_core::Client;
 use std::time::Duration;
 
-pub async fn test(mut client: Client) {
+pub async fn async_test(mut client: Client) {
     // Ensure that we fail after 2.5s
     client.timeout = Duration::from_millis(2500);
 

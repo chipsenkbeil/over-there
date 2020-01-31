@@ -12,6 +12,12 @@ pub struct DirContentsListArgs {
     pub entries: Vec<DirEntry>,
 }
 
+impl From<Vec<DirEntry>> for DirContentsListArgs {
+    fn from(entries: Vec<DirEntry>) -> Self {
+        Self { entries }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DirEntry {
     pub path: String,
@@ -25,6 +31,18 @@ pub struct DoOpenFileArgs {
     pub path: String,
     pub create_if_missing: bool,
     pub write_access: bool,
+    pub read_access: bool,
+}
+
+impl From<String> for DoOpenFileArgs {
+    fn from(path: String) -> Self {
+        Self {
+            path,
+            create_if_missing: true,
+            write_access: true,
+            read_access: true,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -74,6 +92,14 @@ impl FileErrorArgs {
             error_kind: io::ErrorKind::InvalidInput,
             os_code: None,
         }
+    }
+
+    pub fn from_error_with_prefix(error: io::Error, prefix: &str) -> Self {
+        let mut args = Self::from(error);
+
+        args.description = format!("{}{}", prefix, args.description);
+
+        args
     }
 }
 

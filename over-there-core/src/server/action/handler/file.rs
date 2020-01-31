@@ -17,6 +17,7 @@ pub fn do_open_file(
     match OpenOptions::new()
         .create(args.create_if_missing)
         .write(args.write_access)
+        .read(true)
         .open(&args.path)
     {
         Ok(file) => {
@@ -43,17 +44,9 @@ pub fn do_read_file(
     match state.files.get_mut(&args.id) {
         Some(local_file) => {
             if local_file.sig == args.sig {
-                match {
-                    use std::io::{Read, Seek, SeekFrom};
-                    let mut buf = Vec::new();
-                    let file = &mut local_file.file;
-                    file.seek(SeekFrom::Start(0))
-                        .map_err(|e| io::Error::new(e.kind(), format!("Seek(0): {}", e)))
-                        .and_then(|_| file.read_to_end(&mut buf).map(|_| buf))
-                        .map_err(|e| io::Error::new(e.kind(), format!("ReadToEnd: {}", e)))
-                } {
+                match do_read_file_impl(&mut local_file.file) {
                     Ok(data) => respond(Content::FileContents(FileContentsArgs { data })),
-                    Err(x) => respond(Content::FileError(From::from(x))),
+                    Err(x) => respond(Content::FileError(x)),
                 }
             } else {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
@@ -63,6 +56,19 @@ pub fn do_read_file(
         }
         None => respond(Content::FileError(FileErrorArgs::invalid_file_id(args.id))),
     }
+}
+
+fn do_read_file_impl(file: &mut fs::File) -> Result<Vec<u8>, FileErrorArgs> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut buf = Vec::new();
+
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
+
+    file.read_to_end(&mut buf)
+        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "ReadToEnd: "))?;
+
+    Ok(buf)
 }
 
 pub fn do_write_file(
@@ -75,23 +81,14 @@ pub fn do_write_file(
     match state.files.get_mut(&args.id) {
         Some(local_file) => {
             if local_file.sig == args.sig {
-                use std::io::{Seek, SeekFrom, Write};
-                let file = &mut local_file.file;
-                match file
-                    .seek(SeekFrom::Start(0))
-                    .map_err(|e| io::Error::new(e.kind(), format!("Seek(0): {}", e)))
-                    .and_then(|_| file.set_len(0))
-                    .map_err(|e| io::Error::new(e.kind(), format!("SetLen(0): {}", e)))
-                    .and_then(|_| file.write_all(&args.data))
-                    .map_err(|e| io::Error::new(e.kind(), format!("WriteAll: {}", e)))
-                {
+                match do_write_file_impl(&mut local_file.file, &args.data) {
                     Ok(_) => {
                         let new_sig = rand::thread_rng().next_u32();
                         local_file.sig = new_sig;
 
                         respond(Content::FileWritten(FileWrittenArgs { sig: new_sig }))
                     }
-                    Err(x) => respond(Content::FileError(From::from(x))),
+                    Err(x) => respond(Content::FileError(x)),
                 }
             } else {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
@@ -101,6 +98,19 @@ pub fn do_write_file(
         }
         None => respond(Content::FileError(FileErrorArgs::invalid_file_id(args.id))),
     }
+}
+
+fn do_write_file_impl(file: &mut fs::File, buf: &[u8]) -> Result<(), FileErrorArgs> {
+    use std::io::{Seek, SeekFrom, Write};
+
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
+
+    file.set_len(0)
+        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "SetLen(0): "))?;
+
+    file.write_all(buf)
+        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "WriteAll: "))
 }
 
 pub fn do_list_dir_contents(
@@ -131,7 +141,7 @@ pub fn do_list_dir_contents(
     };
 
     match lookup_entries(&args.path) {
-        Ok(entries) => respond(Content::DirContentsList(DirContentsListArgs { entries })),
+        Ok(entries) => respond(Content::DirContentsList(From::from(entries))),
         Err(x) => respond(Content::FileError(From::from(x))),
     }
 }
@@ -141,7 +151,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn do_open_file_should_send_success_if_no_io_error_occurs() {
+    fn do_open_file_should_send_success_if_create_flag_set_and_opening_new_file() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -157,6 +167,39 @@ mod tests {
                 path: tmp_path,
                 create_if_missing: true,
                 write_access: true,
+                read_access: true,
+            },
+            |c| {
+                content = Some(c);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileOpened(args) => {
+                let local_file = state.files.get(&args.id).unwrap();
+                assert_eq!(args.sig, local_file.sig);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[test]
+    fn do_open_file_should_send_success_opening_existing_file() {
+        let mut state = ServerState::default();
+        let mut content: Option<Content> = None;
+
+        let tmp_file = tempfile::NamedTempFile::new().unwrap();
+        let tmp_file_path = tmp_file.path().to_string_lossy().to_string();
+
+        do_open_file(
+            &mut state,
+            &DoOpenFileArgs {
+                path: tmp_file_path,
+                create_if_missing: false,
+                write_access: true,
+                read_access: true,
             },
             |c| {
                 content = Some(c);
@@ -191,6 +234,7 @@ mod tests {
                 path: tmp_path,
                 create_if_missing: false,
                 write_access: true,
+                read_access: true,
             },
             |c| {
                 content = Some(c);
@@ -254,6 +298,42 @@ mod tests {
         match content.unwrap() {
             Content::FileError(FileErrorArgs { error_kind, .. }) => {
                 assert_eq!(error_kind, io::ErrorKind::InvalidInput);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[test]
+    fn do_read_file_should_send_error_if_not_readable() {
+        let mut state = ServerState::default();
+        let mut content: Option<Content> = None;
+
+        let id = 999;
+        let sig = 12345;
+        let tmp_file = tempfile::NamedTempFile::new().unwrap();
+
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new()
+            .read(false)
+            .write(true)
+            .create(true)
+            .open(tmp_file.path())
+            .unwrap();
+        file.write_all(&vec![1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
+        file.flush().unwrap();
+
+        state.files.insert(id, LocalFile { id, sig, file });
+
+        do_read_file(&mut state, &DoReadFileArgs { id, sig }, |c| {
+            content = Some(c);
+            Ok(())
+        })
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileError(FileErrorArgs { os_code, .. }) => {
+                // Should be an OS-related error
+                assert!(os_code.is_some());
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -334,6 +414,39 @@ mod tests {
                 file.read_to_end(&mut file_data).unwrap();
 
                 assert_eq!(data, file_data);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[test]
+    fn do_write_file_should_send_error_if_not_writeable() {
+        let mut state = ServerState::default();
+        let mut content: Option<Content> = None;
+
+        let id = 999;
+        let sig = 12345;
+        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+        let tmp_file = tempfile::NamedTempFile::new().unwrap();
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .open(tmp_file.path())
+            .unwrap();
+        state.files.insert(id, LocalFile { id, sig, file });
+
+        do_write_file(&mut state, &DoWriteFileArgs { id, sig, data }, |c| {
+            content = Some(c);
+            Ok(())
+        })
+        .unwrap();
+
+        match content.unwrap() {
+            Content::FileError(FileErrorArgs { os_code, .. }) => {
+                // Should be an OS-related error
+                assert!(os_code.is_some());
             }
             x => panic!("Bad content: {:?}", x),
         }
