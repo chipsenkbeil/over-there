@@ -38,19 +38,21 @@ where
         err_callback,
     )?;
 
-    let handle = thread::spawn(move || {
-        loop {
-            if let Ok((msg, responder)) = rx.try_recv() {
-                let s: &mut ClientState = &mut *state.lock().unwrap();
-                // TODO: Handle action errors?
-                trace!("Processing {:?} using {:?}", msg, responder);
+    let handle = thread::Builder::new()
+        .name(String::from("client-action"))
+        .spawn(move || {
+            loop {
+                if let Ok((msg, responder)) = rx.try_recv() {
+                    let s: &mut ClientState = &mut *state.lock().unwrap();
+                    // TODO: Handle action errors?
+                    trace!("Processing {:?} using {:?}", msg, responder);
 
-                if let Some(header) = msg.parent_header.as_ref() {
-                    s.callback_manager.invoke_callback(header.id, &msg)
+                    if let Some(header) = msg.parent_header.as_ref() {
+                        s.callback_manager.invoke_callback(header.id, &msg)
+                    }
                 }
             }
-        }
-    });
+        })?;
 
     Ok((thread, handle))
 }

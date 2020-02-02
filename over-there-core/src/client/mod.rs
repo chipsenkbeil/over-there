@@ -16,19 +16,20 @@ use over_there_derive::Error;
 use over_there_transport::{
     net, TcpStreamTransceiverError, TransceiverThread, UdpStreamTransceiverError,
 };
+use over_there_utils::Delay;
 use std::io;
 use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum TellError {
     EncodingFailed,
     SendFailed,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum AskError {
     Failure { msg: String },
     InvalidResponse { content: Content },
@@ -156,7 +157,8 @@ impl Client {
 
     /// Generic ask of the server that is expecting a response
     pub async fn ask(&self, msg: Msg) -> Result<Msg, AskError> {
-        let state = Arc::new(Mutex::new(AskFutureState::new(self.timeout)));
+        let timeout = self.timeout;
+        let state = Arc::new(Mutex::new(AskFutureState::new(timeout)));
 
         let callback_state = Arc::clone(&state);
         self.state
@@ -178,8 +180,6 @@ impl Client {
                 }
             });
 
-        let f = AskFuture { state };
-
         // Convert the tell errors to ask equivalents
         match self.tell(msg).await {
             Err(TellError::EncodingFailed) => return Err(AskError::EncodingFailed),
@@ -187,8 +187,23 @@ impl Client {
             Ok(_) => (),
         }
 
-        let msg = f.await?;
-        Ok(msg)
+        // TODO: Is there a better way to provide timing functionality for
+        //       expirations than using a new thread to check?
+        let delay_state = Arc::clone(&state);
+        let delay = Delay::spawn(timeout, move || {
+            let mut s = delay_state.lock().unwrap();
+
+            if let Some(waker) = s.waker.take() {
+                waker.wake();
+            }
+        });
+
+        let result = AskFuture { state }.await;
+
+        // Cancel the delayed timeout if it hasn't already been processed
+        delay.cancel();
+
+        result
     }
 
     /// Sends a msg to the server, not expecting a response

@@ -27,3 +27,15 @@ fn test_udp_client_file_manipulation() {
     let test_bench = setup::setup(TestMode::Udp);
     executor::block_on(scenarios::file::async_test(test_bench.client));
 }
+
+#[test]
+fn test_tcp_client_ask_timeout() {
+    let test_bench = setup::setup(TestMode::Tcp);
+    executor::block_on(scenarios::ask_timeout::async_test(test_bench.client));
+}
+
+#[test]
+fn test_udp_client_ask_timeout() {
+    let test_bench = setup::setup(TestMode::Udp);
+    executor::block_on(scenarios::ask_timeout::async_test(test_bench.client));
+}

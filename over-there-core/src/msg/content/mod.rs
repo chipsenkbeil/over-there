@@ -1,4 +1,5 @@
 pub mod capabilities;
+pub mod custom;
 pub mod error;
 pub mod exec;
 pub mod file;
@@ -24,16 +25,6 @@ pub enum Content {
     // can differ based on enabled features at compile time
     DoGetCapabilities,
     Capabilities(capabilities::CapabilitiesArgs),
-
-    // ------------------------------------------------------------------------
-    // Miscellaneous, adhoc messages
-    /// This will be returned upon a generic error being encountered on the
-    /// server (like an HTTP 500 error)
-    Error(error::ErrorArgs),
-
-    /// This will be sent to either the client or server and the msg will be
-    /// passed along to the associated address (if possible)
-    Forward(forward::ForwardArgs),
 
     // ------------------------------------------------------------------------
     // File-based operations such as reading and writing
@@ -77,4 +68,18 @@ pub enum Content {
     ExecStreamRequest(exec::ExecStreamRequestArgs),
     ExecExit(exec::ExecExitArgs),
     ExecStreamResponse(exec::ExecStreamResponseArgs),
+
+    // ------------------------------------------------------------------------
+    // Miscellaneous, adhoc messages
+    /// This will be returned upon a generic error being encountered on the
+    /// server (like an HTTP 500 error)
+    Error(error::ErrorArgs),
+
+    /// This will be sent to either the client or server and the msg will be
+    /// passed along to the associated address (if possible)
+    Forward(forward::ForwardArgs),
+
+    /// This will be sent in either direction to provide a custom content
+    /// that would be evaluated through user-implemented handlers
+    Custom(custom::CustomArgs),
 }

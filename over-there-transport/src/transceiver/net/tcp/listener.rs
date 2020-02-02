@@ -93,17 +93,20 @@ where
 
     let (tx, rx) = mpsc::channel::<DataAndAddr>();
 
-    let handle = thread::spawn(move || {
-        let mut connections = HashMap::new();
-        loop {
-            if let Err(e) = process(&listener, &mut connections, &mut ctx, &rx, &callback) {
-                if !err_callback(e) {
-                    break;
+    let handle = thread::Builder::new()
+        .name(String::from("tcp-transceiver-listener"))
+        .spawn(move || {
+            let mut connections = HashMap::new();
+            loop {
+                if let Err(e) = process(&listener, &mut connections, &mut ctx, &rx, &callback) {
+                    if !err_callback(e) {
+                        break;
+                    }
                 }
+                thread::sleep(sleep_duration);
             }
-            thread::sleep(sleep_duration);
-        }
-    });
+        })
+        .expect("failed to spawn tcp transceiver listener thread");
 
     Ok(TransceiverThread { handle, tx })
 }

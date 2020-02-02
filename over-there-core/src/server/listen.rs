@@ -1,6 +1,10 @@
 use crate::{
     msg::Msg,
-    server::{action, state::ServerState, Server},
+    server::{
+        action::{self, ActionError},
+        state::ServerState,
+        Server,
+    },
 };
 use log::trace;
 use over_there_auth::{Signer, Verifier};
@@ -44,16 +48,23 @@ where
         err_callback,
     )?;
 
-    let handle = thread::spawn(move || {
-        loop {
-            if let Ok((msg, responder)) = rx.try_recv() {
-                let s: &mut ServerState = &mut *state.lock().unwrap();
-                // TODO: Handle action errors?
-                trace!("Processing {:?} using {:?}", msg, responder);
-                action::execute(s, &msg, &responder).unwrap();
+    let handle = thread::Builder::new()
+        .name(String::from("server-action"))
+        .spawn(move || {
+            loop {
+                if let Ok((msg, responder)) = rx.try_recv() {
+                    let s: &mut ServerState = &mut *state.lock().unwrap();
+                    trace!("Processing {:?} using {:?}", msg, responder);
+                    match action::execute(s, &msg, &responder) {
+                        // If unknown, ignore it; if succeed, keep going
+                        Ok(_) | Err(ActionError::Unknown) => (),
+
+                        // TODO: Handle action errors?
+                        Err(_) => (),
+                    }
+                }
             }
-        }
-    });
+        })?;
 
     Ok((thread, handle))
 }

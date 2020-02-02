@@ -107,14 +107,17 @@ where
 {
     let (tx, rx) = mpsc::channel::<DataAndAddr>();
     let thread_tx = tx.clone();
-    let handle = thread::spawn(move || loop {
-        if let Err(e) = process(&socket, &mut ctx, &rx, &thread_tx, &callback) {
-            if !err_callback(e) {
-                break;
+    let handle = thread::Builder::new()
+        .name(String::from("udp-transceiver"))
+        .spawn(move || loop {
+            if let Err(e) = process(&socket, &mut ctx, &rx, &thread_tx, &callback) {
+                if !err_callback(e) {
+                    break;
+                }
             }
-        }
-        thread::sleep(sleep_duration);
-    });
+            thread::sleep(sleep_duration);
+        })
+        .expect("failed to spawn udp transceiver thread");
     TransceiverThread { handle, tx }
 }
 

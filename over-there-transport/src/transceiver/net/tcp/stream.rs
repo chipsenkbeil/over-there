@@ -104,18 +104,21 @@ where
     let (tx, rx) = mpsc::channel::<Data>();
     let thread_tx = tx.clone();
 
-    let handle = thread::spawn(move || {
-        let tns = NetResponder { tx: thread_tx };
-        loop {
-            if let Err(e) = stream_process(&mut stream, &mut ctx, &rx, &tns, &callback) {
-                if !err_callback(e) {
-                    break;
+    let handle = thread::Builder::new()
+        .name(String::from("tcp-transceiver-stream"))
+        .spawn(move || {
+            let tns = NetResponder { tx: thread_tx };
+            loop {
+                if let Err(e) = stream_process(&mut stream, &mut ctx, &rx, &tns, &callback) {
+                    if !err_callback(e) {
+                        break;
+                    }
                 }
-            }
 
-            thread::sleep(sleep_duration);
-        }
-    });
+                thread::sleep(sleep_duration);
+            }
+        })
+        .expect("failed to spawn tcp transceiver stream thread");
 
     Ok(TransceiverThread { handle, tx })
 }

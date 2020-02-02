@@ -84,14 +84,17 @@ where
 {
     let (tx, rx) = mpsc::channel::<Data>();
     let ns = NetResponder { tx: tx.clone() };
-    let handle = thread::spawn(move || loop {
-        if let Err(e) = process(&socket, &mut ctx, &rx, &ns, &callback) {
-            if !err_callback(e) {
-                break;
+    let handle = thread::Builder::new()
+        .name(String::from("udp-transceiver-stream"))
+        .spawn(move || loop {
+            if let Err(e) = process(&socket, &mut ctx, &rx, &ns, &callback) {
+                if !err_callback(e) {
+                    break;
+                }
             }
-        }
-        thread::sleep(sleep_duration);
-    });
+            thread::sleep(sleep_duration);
+        })
+        .expect("failed to spawn udp transceiver stream thread");
     TransceiverThread { handle, tx }
 }
 
