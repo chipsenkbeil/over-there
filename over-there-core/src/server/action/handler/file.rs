@@ -1,5 +1,8 @@
 use crate::{
-    msg::content::{file::*, Content},
+    msg::content::{
+        io::{file::*, IoErrorArgs},
+        Content,
+    },
     server::{action::ActionError, file::LocalFile, state::ServerState},
 };
 use log::debug;
@@ -30,7 +33,7 @@ pub fn do_open_file(
 
             respond(Content::FileOpened(FileOpenedArgs { id, sig }))
         }
-        Err(x) => respond(Content::FileError(From::from(x))),
+        Err(x) => respond(Content::IoError(From::from(x))),
     }
 }
 
@@ -46,7 +49,7 @@ pub fn do_read_file(
             if local_file.sig == args.sig {
                 match do_read_file_impl(&mut local_file.file) {
                     Ok(data) => respond(Content::FileContents(FileContentsArgs { data })),
-                    Err(x) => respond(Content::FileError(x)),
+                    Err(x) => respond(Content::IoError(x)),
                 }
             } else {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
@@ -54,19 +57,19 @@ pub fn do_read_file(
                 }))
             }
         }
-        None => respond(Content::FileError(FileErrorArgs::invalid_file_id(args.id))),
+        None => respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))),
     }
 }
 
-fn do_read_file_impl(file: &mut fs::File) -> Result<Vec<u8>, FileErrorArgs> {
+fn do_read_file_impl(file: &mut fs::File) -> Result<Vec<u8>, IoErrorArgs> {
     use std::io::{Read, Seek, SeekFrom};
     let mut buf = Vec::new();
 
     file.seek(SeekFrom::Start(0))
-        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
+        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
 
     file.read_to_end(&mut buf)
-        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "ReadToEnd: "))?;
+        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "ReadToEnd: "))?;
 
     Ok(buf)
 }
@@ -88,7 +91,7 @@ pub fn do_write_file(
 
                         respond(Content::FileWritten(FileWrittenArgs { sig: new_sig }))
                     }
-                    Err(x) => respond(Content::FileError(x)),
+                    Err(x) => respond(Content::IoError(x)),
                 }
             } else {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
@@ -96,21 +99,21 @@ pub fn do_write_file(
                 }))
             }
         }
-        None => respond(Content::FileError(FileErrorArgs::invalid_file_id(args.id))),
+        None => respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))),
     }
 }
 
-fn do_write_file_impl(file: &mut fs::File, buf: &[u8]) -> Result<(), FileErrorArgs> {
+fn do_write_file_impl(file: &mut fs::File, buf: &[u8]) -> Result<(), IoErrorArgs> {
     use std::io::{Seek, SeekFrom, Write};
 
     file.seek(SeekFrom::Start(0))
-        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
+        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
 
     file.set_len(0)
-        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "SetLen(0): "))?;
+        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "SetLen(0): "))?;
 
     file.write_all(buf)
-        .map_err(|e| FileErrorArgs::from_error_with_prefix(e, "WriteAll: "))
+        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "WriteAll: "))
 }
 
 pub fn do_list_dir_contents(
@@ -142,7 +145,7 @@ pub fn do_list_dir_contents(
 
     match lookup_entries(&args.path) {
         Ok(entries) => respond(Content::DirContentsList(From::from(entries))),
-        Err(x) => respond(Content::FileError(From::from(x))),
+        Err(x) => respond(Content::IoError(From::from(x))),
     }
 }
 
@@ -244,7 +247,7 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileError(FileErrorArgs { error_kind, .. }) => {
+            Content::IoError(IoErrorArgs { error_kind, .. }) => {
                 assert_eq!(error_kind, io::ErrorKind::NotFound)
             }
             x => panic!("Bad content: {:?}", x),
@@ -296,7 +299,7 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileError(FileErrorArgs { error_kind, .. }) => {
+            Content::IoError(IoErrorArgs { error_kind, .. }) => {
                 assert_eq!(error_kind, io::ErrorKind::InvalidInput);
             }
             x => panic!("Bad content: {:?}", x),
@@ -331,7 +334,7 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileError(FileErrorArgs { os_code, .. }) => {
+            Content::IoError(IoErrorArgs { os_code, .. }) => {
                 // Should be an OS-related error
                 assert!(os_code.is_some());
             }
@@ -444,7 +447,7 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileError(FileErrorArgs { os_code, .. }) => {
+            Content::IoError(IoErrorArgs { os_code, .. }) => {
                 // Should be an OS-related error
                 assert!(os_code.is_some());
             }
@@ -555,7 +558,7 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileError(FileErrorArgs { error_kind, .. }) => {
+            Content::IoError(IoErrorArgs { error_kind, .. }) => {
                 assert_eq!(error_kind, io::ErrorKind::NotFound)
             }
             x => panic!("Bad content: {:?}", x),

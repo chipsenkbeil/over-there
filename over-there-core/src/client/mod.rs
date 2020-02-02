@@ -1,10 +1,15 @@
 mod connect;
 pub mod file;
 pub mod future;
+pub mod proc;
 pub mod state;
 
 use crate::msg::{
-    content::{capabilities::Capability, file::*, Content},
+    content::{
+        capabilities::Capability,
+        io::{exec::*, file::*},
+        Content,
+    },
     Msg,
 };
 use file::RemoteFile;
@@ -17,6 +22,7 @@ use over_there_transport::{
     net, TcpStreamTransceiverError, TransceiverThread, UdpStreamTransceiverError,
 };
 use over_there_utils::Delay;
+use proc::RemoteProc;
 use std::io;
 use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::sync::{Arc, Mutex};
@@ -29,6 +35,16 @@ pub enum TellError {
     SendFailed,
 }
 
+impl From<AskError> for Option<TellError> {
+    fn from(error: AskError) -> Self {
+        match error {
+            AskError::EncodingFailed => Some(TellError::EncodingFailed),
+            AskError::SendFailed => Some(TellError::SendFailed),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum AskError {
     Failure { msg: String },
@@ -38,11 +54,50 @@ pub enum AskError {
     SendFailed,
 }
 
+impl From<TellError> for AskError {
+    fn from(error: TellError) -> Self {
+        match error {
+            TellError::EncodingFailed => Self::EncodingFailed,
+            TellError::SendFailed => Self::SendFailed,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum FileAskError {
     GeneralAskFailed(AskError),
     IoError(io::Error),
     FileSignatureChanged { id: u32 },
+}
+
+impl From<AskError> for FileAskError {
+    fn from(error: AskError) -> Self {
+        Self::GeneralAskFailed(error)
+    }
+}
+
+impl From<io::Error> for FileAskError {
+    fn from(error: io::Error) -> Self {
+        Self::IoError(error)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ExecAskError {
+    GeneralAskFailed(AskError),
+    IoError(io::Error),
+}
+
+impl From<AskError> for ExecAskError {
+    fn from(error: AskError) -> Self {
+        Self::GeneralAskFailed(error)
+    }
+}
+
+impl From<io::Error> for ExecAskError {
+    fn from(error: io::Error) -> Self {
+        Self::IoError(error)
+    }
 }
 
 pub struct Client {
@@ -180,12 +235,8 @@ impl Client {
                 }
             });
 
-        // Convert the tell errors to ask equivalents
-        match self.tell(msg).await {
-            Err(TellError::EncodingFailed) => return Err(AskError::EncodingFailed),
-            Err(TellError::SendFailed) => return Err(AskError::SendFailed),
-            Ok(_) => (),
-        }
+        // Send the msg and report back an error if it occurs
+        self.tell(msg).await.map_err(AskError::from)?;
 
         // TODO: Is there a better way to provide timing functionality for
         //       expirations than using a new thread to check?
@@ -251,7 +302,7 @@ impl Client {
             .await;
 
         if let Err(x) = result {
-            return Err(FileAskError::GeneralAskFailed(x));
+            return Err(From::from(x));
         }
 
         match result.unwrap().content {
@@ -285,7 +336,7 @@ impl Client {
             .await;
 
         if let Err(x) = result {
-            return Err(FileAskError::GeneralAskFailed(x));
+            return Err(From::from(x));
         }
 
         match result.unwrap().content {
@@ -308,7 +359,7 @@ impl Client {
             .await;
 
         if let Err(x) = result {
-            return Err(FileAskError::GeneralAskFailed(x));
+            return Err(From::from(x));
         }
 
         match result.unwrap().content {
@@ -332,7 +383,7 @@ impl Client {
             .await;
 
         if let Err(x) = result {
-            return Err(FileAskError::GeneralAskFailed(x));
+            return Err(From::from(x));
         }
 
         match result.unwrap().content {
@@ -343,12 +394,131 @@ impl Client {
             x => Err(make_file_ask_error(x)),
         }
     }
+
+    /// Requests to execute a process on the server, providing support to
+    /// send lines of text via stdin and reading back lines of text via
+    /// stdout and stderr
+    pub async fn ask_exec(
+        &self,
+        command: String,
+        args: Vec<String>,
+    ) -> Result<RemoteProc, ExecAskError> {
+        self.ask_exec_with_streams(command, args, true, true, true)
+            .await
+    }
+
+    /// Requests to execute a process on the server, indicating whether to
+    /// ignore or use stdin, stdout, and stderr
+    pub async fn ask_exec_with_streams(
+        &self,
+        command: String,
+        args: Vec<String>,
+        stdin: bool,
+        stdout: bool,
+        stderr: bool,
+    ) -> Result<RemoteProc, ExecAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoExec(DoExecArgs {
+                command,
+                args,
+                stdin,
+                stdout,
+                stderr,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::ExecStarted(args) => Ok(RemoteProc { id: args.id }),
+            x => Err(make_exec_ask_error(x)),
+        }
+    }
+
+    /// Requests to send lines of text to stdin of a remote process on the server
+    pub async fn tell_exec_stdin(
+        &self,
+        proc: &mut RemoteProc,
+        input: Vec<u8>,
+    ) -> Result<(), ExecAskError> {
+        self.tell(Msg::from(Content::DoExecStdin(DoExecStdinArgs {
+            id: proc.id,
+            input,
+        })))
+        .await
+        .map_err(|e| From::from(AskError::from(e)))
+    }
+
+    /// Requests to get all stdout from a remote process on the server since
+    /// the last ask was made
+    pub async fn ask_exec_stdout(&self, proc: &RemoteProc) -> Result<Vec<u8>, ExecAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoGetExecStdout(DoGetExecStdoutArgs {
+                id: proc.id,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::ExecStdoutContents(args) => Ok(args.output),
+            x => Err(make_exec_ask_error(x)),
+        }
+    }
+
+    /// Requests to get all stderr from a remote process on the server since
+    /// the last ask was made
+    pub async fn ask_exec_stderr(&self, proc: &RemoteProc) -> Result<Vec<u8>, ExecAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoGetExecStderr(DoGetExecStderrArgs {
+                id: proc.id,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::ExecStderrContents(args) => Ok(args.output),
+            x => Err(make_exec_ask_error(x)),
+        }
+    }
+
+    /// Requests to kill a remote process on the server
+    pub async fn ask_exec_kill(&self, proc: &RemoteProc) -> Result<u32, ExecAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoExecKill(DoExecKillArgs {
+                id: proc.id,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::ExecExit(args) => Ok(args.exit_code),
+            x => Err(make_exec_ask_error(x)),
+        }
+    }
 }
 
 fn make_file_ask_error(x: Content) -> FileAskError {
     match x {
-        Content::FileError(args) => FileAskError::IoError(args.into()),
-        x => FileAskError::GeneralAskFailed(make_ask_error(x)),
+        Content::IoError(args) => FileAskError::IoError(args.into()),
+        x => From::from(make_ask_error(x)),
+    }
+}
+
+fn make_exec_ask_error(x: Content) -> ExecAskError {
+    match x {
+        Content::IoError(args) => ExecAskError::IoError(args.into()),
+        x => From::from(make_ask_error(x)),
     }
 }
 
