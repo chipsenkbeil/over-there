@@ -6,7 +6,6 @@ use crate::{
     server::{action::ActionError, proc::LocalProc, state::ServerState},
 };
 use log::debug;
-use std::io;
 use std::process::{Command, Stdio};
 
 pub fn do_exec_proc(
@@ -15,8 +14,37 @@ pub fn do_exec_proc(
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
     debug!("do_exec_proc: {:?}", args);
+    let DoExecProcArgs {
+        command,
+        args,
+        stdin,
+        stdout,
+        stderr,
+    } = args;
 
-    unimplemented!();
+    match Command::new(command)
+        .args(args)
+        .stdin(make_piped(*stdin))
+        .stdout(make_piped(*stdout))
+        .stderr(make_piped(*stderr))
+        .spawn()
+    {
+        Ok(child) => {
+            let id = child.id();
+            state.procs.insert(id, LocalProc::from(child));
+            respond(Content::ProcStarted(ProcStartedArgs { id }))
+        }
+        Err(x) => respond(Content::IoError(From::from(x))),
+    }
+}
+
+#[inline]
+fn make_piped(yes: bool) -> Stdio {
+    if yes {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    }
 }
 
 pub fn do_write_stdin(
@@ -26,7 +54,19 @@ pub fn do_write_stdin(
 ) -> Result<(), ActionError> {
     debug!("do_write_stdin: {:?}", args);
 
-    unimplemented!();
+    match state.procs.get_mut(&args.id) {
+        Some(local_proc) => match &mut local_proc.child.stdin {
+            Some(child_stdin) => {
+                use std::io::Write;
+                match child_stdin.write_all(&args.input) {
+                    Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)),
+                    Err(x) => respond(Content::IoError(From::from(x))),
+                }
+            }
+            None => respond(Content::IoError(IoErrorArgs::pipe_unavailable())),
+        },
+        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
+    }
 }
 
 pub fn do_get_stdout(
@@ -36,7 +76,20 @@ pub fn do_get_stdout(
 ) -> Result<(), ActionError> {
     debug!("do_get_stdout: {:?}", args);
 
-    unimplemented!();
+    match state.procs.get_mut(&args.id) {
+        Some(local_proc) => match &mut local_proc.child.stdout {
+            Some(child_stdout) => {
+                use std::io::Read;
+                let mut output = Vec::new();
+                match child_stdout.read(&mut output) {
+                    Ok(_) => respond(Content::StdoutContents(StdoutContentsArgs { output })),
+                    Err(x) => respond(Content::IoError(From::from(x))),
+                }
+            }
+            None => respond(Content::IoError(IoErrorArgs::pipe_unavailable())),
+        },
+        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
+    }
 }
 
 pub fn do_get_stderr(
@@ -46,7 +99,20 @@ pub fn do_get_stderr(
 ) -> Result<(), ActionError> {
     debug!("do_get_stderr: {:?}", args);
 
-    unimplemented!();
+    match state.procs.get_mut(&args.id) {
+        Some(local_proc) => match &mut local_proc.child.stderr {
+            Some(child_stderr) => {
+                use std::io::Read;
+                let mut output = Vec::new();
+                match child_stderr.read(&mut output) {
+                    Ok(_) => respond(Content::StderrContents(StderrContentsArgs { output })),
+                    Err(x) => respond(Content::IoError(From::from(x))),
+                }
+            }
+            None => respond(Content::IoError(IoErrorArgs::pipe_unavailable())),
+        },
+        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
+    }
 }
 
 pub fn do_kill_proc(
@@ -56,12 +122,30 @@ pub fn do_kill_proc(
 ) -> Result<(), ActionError> {
     debug!("do_kill_proc: {:?}", args);
 
-    unimplemented!();
+    match state.procs.remove(&args.id) {
+        // NOTE: We are killing and then WAITING for the process to die, which
+        //       would block, but seems to be required in order to properly
+        //       have the process clean up -- try_wait doesn't seem to work
+        Some(mut local_proc) => match local_proc
+            .child
+            .kill()
+            .and_then(|_| local_proc.child.wait())
+        {
+            Ok(_) => respond(Content::ProcStatus(ProcStatusArgs {
+                id: args.id,
+                is_alive: false,
+                exit_code: None,
+            })),
+            Err(x) => respond(Content::IoError(From::from(x))),
+        },
+        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
     use std::thread;
     use std::time::Duration;
 
@@ -73,8 +157,8 @@ mod tests {
         do_exec_proc(
             &mut state,
             &DoExecProcArgs {
-                command: String::from("sleep"),
-                args: vec![String::from("1")],
+                command: String::from("rev"),
+                args: vec![String::from("test")],
                 stdin: false,
                 stdout: false,
                 stderr: false,
@@ -135,7 +219,12 @@ mod tests {
 
         let id = 999;
         let input = b"test\n".to_vec();
-        let child = Command::new("read").stdin(Stdio::piped()).spawn().unwrap();
+        let child = Command::new("rev")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
         state.procs.insert(id, LocalProc { id, child });
 
         // Give process some time to start
@@ -147,12 +236,25 @@ mod tests {
         })
         .unwrap();
 
+        let output = {
+            use std::io::Read;
+            let local_proc = state.procs.get_mut(&id).unwrap();
+            let mut output = Vec::new();
+            local_proc
+                .child
+                .stdout
+                .as_mut()
+                .unwrap()
+                .read(&mut output)
+                .unwrap();
+            output
+        };
+        assert_eq!(output, b"test");
+
         match content.unwrap() {
             Content::StdinWritten(_) => (),
             x => panic!("Bad content: {:?}", x),
         }
-
-        assert_eq!(std::env::var("REPLY").unwrap(), "test");
     }
 
     #[test]
@@ -162,7 +264,12 @@ mod tests {
 
         let id = 999;
         let input = b"test\n".to_vec();
-        let child = Command::new("sleep").stdin(Stdio::piped()).spawn().unwrap();
+        let child = Command::new("echo")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
         state.procs.insert(id, LocalProc { id, child });
 
         // Give process some time to run and complete
@@ -216,7 +323,9 @@ mod tests {
         let id = 999;
         let child = Command::new("echo")
             .arg("test")
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
+            .stderr(Stdio::null())
             .spawn()
             .unwrap();
         state.procs.insert(id, LocalProc { id, child });
@@ -232,7 +341,7 @@ mod tests {
 
         match content.unwrap() {
             Content::StdoutContents(StdoutContentsArgs { output }) => {
-                assert_eq!(output, b"test");
+                assert_eq!(output, b"test\n");
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -244,9 +353,10 @@ mod tests {
         let mut content: Option<Content> = None;
 
         let id = 999;
-        let child = Command::new("sleep")
-            .arg("1")
+        let child = Command::new("rev")
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
+            .stderr(Stdio::null())
             .spawn()
             .unwrap();
         state.procs.insert(id, LocalProc { id, child });
@@ -293,9 +403,10 @@ mod tests {
         let mut content: Option<Content> = None;
 
         let id = 999;
-        let child = Command::new("echo")
-            .arg("test")
-            .arg("1>&2")
+        let child = Command::new("rev")
+            .arg("--aaa")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
@@ -312,7 +423,7 @@ mod tests {
 
         match content.unwrap() {
             Content::StderrContents(StderrContentsArgs { output }) => {
-                assert_eq!(output, b"test");
+                assert!(output.len() > 0);
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -324,33 +435,12 @@ mod tests {
         let mut content: Option<Content> = None;
 
         let id = 999;
-        let child = Command::new("sleep")
-            .arg("1")
+        let child = Command::new("rev")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc { id, child });
-
-        // Give process some time to start
-        thread::sleep(Duration::from_millis(10));
-
-        do_get_stderr(&mut state, &DoGetStderrArgs { id }, |c| {
-            content = Some(c);
-            Ok(())
-        })
-        .unwrap();
-
-        match content.unwrap() {
-            Content::StderrContents(StderrContentsArgs { output }) => {
-                assert!(output.is_empty());
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
-        let mut state = ServerState::default();
-        let mut content: Option<Content> = None;
-
-        let id = 999;
-        let child = Command::new("sleep").arg("1").spawn().unwrap();
         state.procs.insert(id, LocalProc { id, child });
 
         // Give process some time to start
@@ -395,7 +485,13 @@ mod tests {
         let mut content: Option<Content> = None;
 
         let id = 999;
-        let child = Command::new("sleep").arg("10").spawn().unwrap();
+        let child = Command::new("sleep")
+            .arg("10")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
         state.procs.insert(id, LocalProc { id, child });
 
         // Give process some time to start
@@ -426,7 +522,12 @@ mod tests {
         let mut content: Option<Content> = None;
 
         let id = 999;
-        let child = Command::new("echo").spawn().unwrap();
+        let child = Command::new("echo")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
         state.procs.insert(id, LocalProc { id, child });
 
         // Give process some time to run and complete

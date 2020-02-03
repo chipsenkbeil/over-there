@@ -33,6 +33,14 @@ impl IoErrorArgs {
         }
     }
 
+    pub fn pipe_unavailable() -> Self {
+        Self {
+            description: String::from("Resource unavailable"),
+            error_kind: io::ErrorKind::BrokenPipe,
+            os_code: None,
+        }
+    }
+
     pub fn from_error_with_prefix(error: io::Error, prefix: &str) -> Self {
         let mut args = Self::from(error);
 
