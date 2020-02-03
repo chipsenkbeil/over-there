@@ -1,5 +1,5 @@
-pub mod exec;
 pub mod file;
+pub mod proc;
 
 use over_there_utils::serializers;
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,14 @@ impl IoErrorArgs {
     pub fn invalid_file_id(id: u32) -> Self {
         Self {
             description: format!("No file open with id {}", id),
+            error_kind: io::ErrorKind::InvalidInput,
+            os_code: None,
+        }
+    }
+
+    pub fn invalid_proc_id(id: u32) -> Self {
+        Self {
+            description: format!("No process executed with id {}", id),
             error_kind: io::ErrorKind::InvalidInput,
             os_code: None,
         }

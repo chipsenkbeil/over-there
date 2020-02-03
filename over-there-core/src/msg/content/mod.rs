@@ -61,37 +61,45 @@ pub enum Content {
     // ------------------------------------------------------------------------
     // Program execution operations such as running and streaming
     /// This will be sent to execute a remote proccess on the server
-    DoExec(io::exec::DoExecArgs),
+    DoExecProc(io::proc::DoExecProcArgs),
 
     /// This will be returned upon starting a process on the server, indicating
     /// success and providing an id for sending stdin and receiving stdout/stderr
-    ExecStarted(io::exec::ExecStartedArgs),
+    ProcStarted(io::proc::ProcStartedArgs),
 
     /// This will be sent to feed input to a remote process on the server, if
     /// enabled when first executing
-    DoExecStdin(io::exec::DoExecStdinArgs),
+    DoWriteStdin(io::proc::DoWriteStdinArgs),
+
+    /// This will be returned upon successfully writing to stdin
+    StdinWritten(io::proc::StdinWrittenArgs),
 
     /// This will be sent to request all stdout for a remote process on
     /// the server since the last request was made
-    DoGetExecStdout(io::exec::DoGetExecStdoutArgs),
+    DoGetStdout(io::proc::DoGetStdoutArgs),
 
     /// This will be returned upon receiving stdout from a remote process on
     /// the server, if enabled when first executing
-    ExecStdoutContents(io::exec::ExecStdoutContentsArgs),
+    StdoutContents(io::proc::StdoutContentsArgs),
 
     /// This will be sent to request all stderr for a remote process on
     /// the server since the last request was made
-    DoGetExecStderr(io::exec::DoGetExecStderrArgs),
+    DoGetStderr(io::proc::DoGetStderrArgs),
 
     /// This will be returned upon receiving stderr from a remote process on
     /// the server, if enabled when first executing
-    ExecStderrContents(io::exec::ExecStderrContentsArgs),
+    StderrContents(io::proc::StderrContentsArgs),
 
     /// This will be sent to kill a remote process on the server
-    DoExecKill(io::exec::DoExecKillArgs),
+    DoProcKill(io::proc::DoProcKillArgs),
 
-    /// This will be returned upon a remote process exiting on the server
-    ExecExit(io::exec::ExecExitArgs),
+    /// This will be sent to request the status of a running process on
+    /// the server
+    DoGetProcStatus(io::proc::DoGetProcStatus),
+
+    /// This will be returned reporting the status of the process, indicating
+    /// if still running or if has completed (and the exit code)
+    ProcStatus(io::proc::ProcStatusArgs),
 
     // ------------------------------------------------------------------------
     // Miscellaneous, adhoc messages

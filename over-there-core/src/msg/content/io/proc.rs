@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoExecArgs {
+pub struct DoExecProcArgs {
     pub command: String,
     pub args: Vec<String>,
     pub stdin: bool,
@@ -10,45 +10,52 @@ pub struct DoExecArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ExecStartedArgs {
+pub struct ProcStartedArgs {
     pub id: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoExecStdinArgs {
+pub struct DoWriteStdinArgs {
     pub id: u32,
     pub input: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoGetExecStdoutArgs {
+pub struct StdinWrittenArgs;
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DoGetStdoutArgs {
     pub id: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ExecStdoutContentsArgs {
-    pub id: u32,
+pub struct StdoutContentsArgs {
     pub output: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoGetExecStderrArgs {
+pub struct DoGetStderrArgs {
     pub id: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ExecStderrContentsArgs {
-    pub id: u32,
+pub struct StderrContentsArgs {
     pub output: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoExecKillArgs {
+pub struct DoProcKillArgs {
     pub id: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ExecExitArgs {
+pub struct DoGetProcStatus {
     pub id: u32,
-    pub exit_code: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ProcStatusArgs {
+    pub id: u32,
+    pub is_alive: bool,
+    pub exit_code: Option<u32>,
 }

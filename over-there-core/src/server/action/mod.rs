@@ -36,15 +36,11 @@ pub fn execute<R: Responder>(
         Content::DoListDirContents(args) => {
             handler::file::do_list_dir_contents(state, args, do_respond)
         }
-        Content::DoExec(args) => handler::exec::do_exec(state, args, do_respond),
-        Content::DoExecStdin(args) => handler::exec::do_exec_stdin(state, args, do_respond),
-        Content::DoGetExecStdout(args) => {
-            handler::exec::do_get_exec_stdout(state, args, do_respond)
-        }
-        Content::DoGetExecStderr(args) => {
-            handler::exec::do_get_exec_stderr(state, args, do_respond)
-        }
-        Content::DoExecKill(args) => handler::exec::do_exec_kill(state, args, do_respond),
+        Content::DoExecProc(args) => handler::proc::do_exec_proc(state, args, do_respond),
+        Content::DoWriteStdin(args) => handler::proc::do_write_stdin(state, args, do_respond),
+        Content::DoGetStdout(args) => handler::proc::do_get_stdout(state, args, do_respond),
+        Content::DoGetStderr(args) => handler::proc::do_get_stderr(state, args, do_respond),
+        Content::DoProcKill(args) => handler::proc::do_proc_kill(state, args, do_respond),
         _ => Err(ActionError::Unknown),
     }
 }

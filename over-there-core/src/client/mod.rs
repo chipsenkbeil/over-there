@@ -7,7 +7,7 @@ pub mod state;
 use crate::msg::{
     content::{
         capabilities::Capability,
-        io::{exec::*, file::*},
+        io::{file::*, proc::*},
         Content,
     },
     Msg,
@@ -86,6 +86,7 @@ impl From<io::Error> for FileAskError {
 pub enum ExecAskError {
     GeneralAskFailed(AskError),
     IoError(io::Error),
+    FailedToKill,
 }
 
 impl From<AskError> for ExecAskError {
@@ -398,18 +399,18 @@ impl Client {
     /// Requests to execute a process on the server, providing support to
     /// send lines of text via stdin and reading back lines of text via
     /// stdout and stderr
-    pub async fn ask_exec(
+    pub async fn ask_exec_proc(
         &self,
         command: String,
         args: Vec<String>,
     ) -> Result<RemoteProc, ExecAskError> {
-        self.ask_exec_with_streams(command, args, true, true, true)
+        self.ask_exec_proc_with_streams(command, args, true, true, true)
             .await
     }
 
     /// Requests to execute a process on the server, indicating whether to
     /// ignore or use stdin, stdout, and stderr
-    pub async fn ask_exec_with_streams(
+    pub async fn ask_exec_proc_with_streams(
         &self,
         command: String,
         args: Vec<String>,
@@ -418,7 +419,7 @@ impl Client {
         stderr: bool,
     ) -> Result<RemoteProc, ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoExec(DoExecArgs {
+            .ask(Msg::from(Content::DoExecProc(DoExecProcArgs {
                 command,
                 args,
                 stdin,
@@ -432,30 +433,39 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::ExecStarted(args) => Ok(RemoteProc { id: args.id }),
+            Content::ProcStarted(args) => Ok(RemoteProc { id: args.id }),
             x => Err(make_exec_ask_error(x)),
         }
     }
 
     /// Requests to send lines of text to stdin of a remote process on the server
-    pub async fn tell_exec_stdin(
+    pub async fn ask_write_stdin(
         &self,
         proc: &mut RemoteProc,
         input: Vec<u8>,
     ) -> Result<(), ExecAskError> {
-        self.tell(Msg::from(Content::DoExecStdin(DoExecStdinArgs {
-            id: proc.id,
-            input,
-        })))
-        .await
-        .map_err(|e| From::from(AskError::from(e)))
+        let result = self
+            .ask(Msg::from(Content::DoWriteStdin(DoWriteStdinArgs {
+                id: proc.id,
+                input,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::StdinWritten(_) => Ok(()),
+            x => Err(make_exec_ask_error(x)),
+        }
     }
 
     /// Requests to get all stdout from a remote process on the server since
     /// the last ask was made
-    pub async fn ask_exec_stdout(&self, proc: &RemoteProc) -> Result<Vec<u8>, ExecAskError> {
+    pub async fn ask_get_stdout(&self, proc: &RemoteProc) -> Result<Vec<u8>, ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoGetExecStdout(DoGetExecStdoutArgs {
+            .ask(Msg::from(Content::DoGetStdout(DoGetStdoutArgs {
                 id: proc.id,
             })))
             .await;
@@ -465,16 +475,16 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::ExecStdoutContents(args) => Ok(args.output),
+            Content::StdoutContents(args) => Ok(args.output),
             x => Err(make_exec_ask_error(x)),
         }
     }
 
     /// Requests to get all stderr from a remote process on the server since
     /// the last ask was made
-    pub async fn ask_exec_stderr(&self, proc: &RemoteProc) -> Result<Vec<u8>, ExecAskError> {
+    pub async fn ask_get_stderr(&self, proc: &RemoteProc) -> Result<Vec<u8>, ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoGetExecStderr(DoGetExecStderrArgs {
+            .ask(Msg::from(Content::DoGetStderr(DoGetStderrArgs {
                 id: proc.id,
             })))
             .await;
@@ -484,15 +494,15 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::ExecStderrContents(args) => Ok(args.output),
+            Content::StderrContents(args) => Ok(args.output),
             x => Err(make_exec_ask_error(x)),
         }
     }
 
     /// Requests to kill a remote process on the server
-    pub async fn ask_exec_kill(&self, proc: &RemoteProc) -> Result<u32, ExecAskError> {
+    pub async fn ask_proc_kill(&self, proc: &RemoteProc) -> Result<(), ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoExecKill(DoExecKillArgs {
+            .ask(Msg::from(Content::DoProcKill(DoProcKillArgs {
                 id: proc.id,
             })))
             .await;
@@ -502,7 +512,8 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::ExecExit(args) => Ok(args.exit_code),
+            Content::ProcStatus(args) if args.is_alive => Err(ExecAskError::FailedToKill),
+            Content::ProcStatus(_) => Ok(()),
             x => Err(make_exec_ask_error(x)),
         }
     }
