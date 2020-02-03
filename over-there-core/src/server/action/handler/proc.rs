@@ -58,7 +58,7 @@ pub fn do_write_stdin(
         Some(local_proc) => match &mut local_proc.stdin {
             Some(stdin) => {
                 use std::io::Write;
-                match stdin.write_all(&args.input) {
+                match stdin.write_all(&args.input).and_then(|_| stdin.flush()) {
                     Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)),
                     Err(x) => respond(Content::IoError(From::from(x))),
                 }
