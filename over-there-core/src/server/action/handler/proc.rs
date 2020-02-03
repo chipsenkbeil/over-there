@@ -55,10 +55,10 @@ pub fn do_write_stdin(
     debug!("do_write_stdin: {:?}", args);
 
     match state.procs.get_mut(&args.id) {
-        Some(local_proc) => match &mut local_proc.child.stdin {
-            Some(child_stdin) => {
+        Some(local_proc) => match &mut local_proc.stdin {
+            Some(stdin) => {
                 use std::io::Write;
-                match child_stdin.write_all(&args.input) {
+                match stdin.write_all(&args.input) {
                     Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)),
                     Err(x) => respond(Content::IoError(From::from(x))),
                 }
@@ -77,11 +77,11 @@ pub fn do_get_stdout(
     debug!("do_get_stdout: {:?}", args);
 
     match state.procs.get_mut(&args.id) {
-        Some(local_proc) => match &mut local_proc.child.stdout {
-            Some(child_stdout) => {
+        Some(local_proc) => match &mut local_proc.stdout {
+            Some(stdout) => {
                 use std::io::Read;
                 let mut output = Vec::new();
-                match child_stdout.read(&mut output) {
+                match stdout.read(&mut output) {
                     Ok(_) => respond(Content::StdoutContents(StdoutContentsArgs { output })),
                     Err(x) => respond(Content::IoError(From::from(x))),
                 }
@@ -100,11 +100,11 @@ pub fn do_get_stderr(
     debug!("do_get_stderr: {:?}", args);
 
     match state.procs.get_mut(&args.id) {
-        Some(local_proc) => match &mut local_proc.child.stderr {
-            Some(child_stderr) => {
+        Some(local_proc) => match &mut local_proc.stderr {
+            Some(stderr) => {
                 use std::io::Read;
                 let mut output = Vec::new();
-                match child_stderr.read(&mut output) {
+                match stderr.read(&mut output) {
                     Ok(_) => respond(Content::StderrContents(StderrContentsArgs { output })),
                     Err(x) => respond(Content::IoError(From::from(x))),
                 }
@@ -126,11 +126,7 @@ pub fn do_kill_proc(
         // NOTE: We are killing and then WAITING for the process to die, which
         //       would block, but seems to be required in order to properly
         //       have the process clean up -- try_wait doesn't seem to work
-        Some(mut local_proc) => match local_proc
-            .child
-            .kill()
-            .and_then(|_| local_proc.child.wait())
-        {
+        Some(mut local_proc) => match local_proc.kill() {
             Ok(_) => respond(Content::ProcStatus(ProcStatusArgs {
                 id: args.id,
                 is_alive: false,
@@ -174,7 +170,6 @@ mod tests {
             Content::ProcStarted(args) => {
                 let proc = state.procs.get(&args.id).unwrap();
                 assert_eq!(proc.id, args.id);
-                assert_eq!(proc.child.id(), args.id);
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -225,7 +220,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc { id, child });
+        state.procs.insert(id, From::from(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -241,7 +236,6 @@ mod tests {
             let local_proc = state.procs.get_mut(&id).unwrap();
             let mut output = Vec::new();
             local_proc
-                .child
                 .stdout
                 .as_mut()
                 .unwrap()
@@ -270,7 +264,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc { id, child });
+        state.procs.insert(id, From::from(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -328,7 +322,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc { id, child });
+        state.procs.insert(id, From::from(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -359,7 +353,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc { id, child });
+        state.procs.insert(id, From::from(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -410,7 +404,7 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc { id, child });
+        state.procs.insert(id, From::from(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -441,7 +435,7 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc { id, child });
+        state.procs.insert(id, From::from(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -492,7 +486,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc { id, child });
+        state.procs.insert(id, From::from(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -528,7 +522,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc { id, child });
+        state.procs.insert(id, From::from(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
