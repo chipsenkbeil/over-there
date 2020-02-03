@@ -502,7 +502,7 @@ impl Client {
     /// Requests to kill a remote process on the server
     pub async fn ask_proc_kill(&self, proc: &RemoteProc) -> Result<(), ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoProcKill(DoProcKillArgs {
+            .ask(Msg::from(Content::DoKillProc(DoKillProcArgs {
                 id: proc.id,
             })))
             .await;

@@ -44,7 +44,7 @@ pub struct StderrContentsArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoProcKillArgs {
+pub struct DoKillProcArgs {
     pub id: u32,
 }
 

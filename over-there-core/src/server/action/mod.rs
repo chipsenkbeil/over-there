@@ -40,7 +40,7 @@ pub fn execute<R: Responder>(
         Content::DoWriteStdin(args) => handler::proc::do_write_stdin(state, args, do_respond),
         Content::DoGetStdout(args) => handler::proc::do_get_stdout(state, args, do_respond),
         Content::DoGetStderr(args) => handler::proc::do_get_stderr(state, args, do_respond),
-        Content::DoProcKill(args) => handler::proc::do_proc_kill(state, args, do_respond),
+        Content::DoKillProc(args) => handler::proc::do_kill_proc(state, args, do_respond),
         _ => Err(ActionError::Unknown),
     }
 }

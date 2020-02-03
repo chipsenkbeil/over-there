@@ -49,12 +49,12 @@ pub fn do_get_stderr(
     unimplemented!();
 }
 
-pub fn do_proc_kill(
+pub fn do_kill_proc(
     state: &mut ServerState,
-    args: &DoProcKillArgs,
+    args: &DoKillProcArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
-    debug!("do_proc_kill: {:?}", args);
+    debug!("do_kill_proc: {:?}", args);
 
     unimplemented!();
 }
@@ -401,7 +401,7 @@ mod tests {
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
 
-        do_proc_kill(&mut state, &DoProcKillArgs { id }, |c| {
+        do_kill_proc(&mut state, &DoKillProcArgs { id }, |c| {
             content = Some(c);
             Ok(())
         })
@@ -432,7 +432,7 @@ mod tests {
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
 
-        do_proc_kill(&mut state, &DoProcKillArgs { id }, |c| {
+        do_kill_proc(&mut state, &DoKillProcArgs { id }, |c| {
             content = Some(c);
             Ok(())
         })

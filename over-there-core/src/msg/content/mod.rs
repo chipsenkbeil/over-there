@@ -91,7 +91,7 @@ pub enum Content {
     StderrContents(io::proc::StderrContentsArgs),
 
     /// This will be sent to kill a remote process on the server
-    DoProcKill(io::proc::DoProcKillArgs),
+    DoKillProc(io::proc::DoKillProcArgs),
 
     /// This will be sent to request the status of a running process on
     /// the server
