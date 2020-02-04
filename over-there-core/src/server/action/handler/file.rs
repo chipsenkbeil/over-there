@@ -7,10 +7,10 @@ use crate::{
 };
 use log::debug;
 use rand::RngCore;
-use std::fs::{self, OpenOptions};
 use std::io;
+use tokio::fs::{self, OpenOptions};
 
-pub fn do_open_file(
+pub async fn do_open_file(
     state: &mut ServerState,
     args: &DoOpenFileArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
@@ -22,6 +22,7 @@ pub fn do_open_file(
         .write(args.write_access)
         .read(true)
         .open(&args.path)
+        .await
     {
         Ok(file) => {
             let mut r = rand::thread_rng();
@@ -37,7 +38,7 @@ pub fn do_open_file(
     }
 }
 
-pub fn do_read_file(
+pub async fn do_read_file(
     state: &mut ServerState,
     args: &DoReadFileArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
@@ -47,7 +48,7 @@ pub fn do_read_file(
     match state.files.get_mut(&args.id) {
         Some(local_file) => {
             if local_file.sig == args.sig {
-                match do_read_file_impl(&mut local_file.file) {
+                match do_read_file_impl(&mut local_file.file).await {
                     Ok(data) => respond(Content::FileContents(FileContentsArgs { data })),
                     Err(x) => respond(Content::IoError(x)),
                 }
@@ -61,20 +62,23 @@ pub fn do_read_file(
     }
 }
 
-fn do_read_file_impl(file: &mut fs::File) -> Result<Vec<u8>, IoErrorArgs> {
-    use std::io::{Read, Seek, SeekFrom};
+async fn do_read_file_impl(file: &mut fs::File) -> Result<Vec<u8>, IoErrorArgs> {
+    use std::io::SeekFrom;
+    use tokio::io::AsyncReadExt;
     let mut buf = Vec::new();
 
     file.seek(SeekFrom::Start(0))
+        .await
         .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
 
     file.read_to_end(&mut buf)
+        .await
         .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "ReadToEnd: "))?;
 
     Ok(buf)
 }
 
-pub fn do_write_file(
+pub async fn do_write_file(
     state: &mut ServerState,
     args: &DoWriteFileArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
@@ -84,7 +88,7 @@ pub fn do_write_file(
     match state.files.get_mut(&args.id) {
         Some(local_file) => {
             if local_file.sig == args.sig {
-                match do_write_file_impl(&mut local_file.file, &args.data) {
+                match do_write_file_impl(&mut local_file.file, &args.data).await {
                     Ok(_) => {
                         let new_sig = rand::thread_rng().next_u32();
                         local_file.sig = new_sig;
@@ -103,58 +107,62 @@ pub fn do_write_file(
     }
 }
 
-fn do_write_file_impl(file: &mut fs::File, buf: &[u8]) -> Result<(), IoErrorArgs> {
-    use std::io::{Seek, SeekFrom, Write};
+async fn do_write_file_impl(file: &mut fs::File, buf: &[u8]) -> Result<(), IoErrorArgs> {
+    use std::io::SeekFrom;
+    use tokio::io::AsyncWriteExt;
 
     file.seek(SeekFrom::Start(0))
+        .await
         .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
 
     file.set_len(0)
+        .await
         .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "SetLen(0): "))?;
 
     file.write_all(buf)
+        .await
         .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "WriteAll: "))
 }
 
-pub fn do_list_dir_contents(
+pub async fn do_list_dir_contents(
     _state: &mut ServerState,
     args: &DoListDirContentsArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
     debug!("do_list_dir_contents: {:?}", args);
 
-    let lookup_entries = |path| -> Result<Vec<DirEntry>, io::Error> {
-        let mut entries = Vec::new();
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            entries.push(DirEntry {
-                path: entry.path().into_os_string().into_string().map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "OS String does not contain valid unicode",
-                    )
-                })?,
-                is_file: file_type.is_file(),
-                is_dir: file_type.is_dir(),
-                is_symlink: file_type.is_symlink(),
-            });
-        }
-        Ok(entries)
-    };
-
-    match lookup_entries(&args.path) {
+    match lookup_entries(&args.path).await {
         Ok(entries) => respond(Content::DirContentsList(From::from(entries))),
         Err(x) => respond(Content::IoError(From::from(x))),
     }
+}
+
+async fn lookup_entries(path: &str) -> Result<Vec<DirEntry>, io::Error> {
+    let mut entries = Vec::new();
+    let mut dir_stream = fs::read_dir(path).await?;
+    while let Some(entry) = dir_stream.next_entry().await? {
+        let file_type = entry.file_type().await?;
+        entries.push(DirEntry {
+            path: entry.path().into_os_string().into_string().map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "OS String does not contain valid unicode",
+                )
+            })?,
+            is_file: file_type.is_file(),
+            is_dir: file_type.is_dir(),
+            is_symlink: file_type.is_symlink(),
+        });
+    }
+    Ok(entries)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn do_open_file_should_send_success_if_create_flag_set_and_opening_new_file() {
+    #[tokio::test]
+    async fn do_open_file_should_send_success_if_create_flag_set_and_opening_new_file() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -177,6 +185,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -188,8 +197,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_open_file_should_send_success_opening_existing_file() {
+    #[tokio::test]
+    async fn do_open_file_should_send_success_opening_existing_file() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -209,6 +218,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -220,8 +230,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_open_file_should_send_error_if_file_missing_and_create_flag_not_set() {
+    #[tokio::test]
+    async fn do_open_file_should_send_error_if_file_missing_and_create_flag_not_set() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -244,6 +254,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -254,8 +265,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_read_file_should_send_contents_if_read_successful() {
+    #[tokio::test]
+    async fn do_read_file_should_send_contents_if_read_successful() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
         let file_data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -268,12 +279,20 @@ mod tests {
         file.write_all(&file_data).unwrap();
         file.flush().unwrap();
 
-        state.files.insert(id, LocalFile { id, sig, file });
+        state.files.insert(
+            id,
+            LocalFile {
+                id,
+                sig,
+                file: tokio::fs::File::from_std(file),
+            },
+        );
 
         do_read_file(&mut state, &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -284,8 +303,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_read_file_should_send_error_if_file_not_open() {
+    #[tokio::test]
+    async fn do_read_file_should_send_error_if_file_not_open() {
         let mut content: Option<Content> = None;
 
         do_read_file(
@@ -296,6 +315,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -306,8 +326,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_read_file_should_send_error_if_not_readable() {
+    #[tokio::test]
+    async fn do_read_file_should_send_error_if_not_readable() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -316,7 +336,7 @@ mod tests {
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
 
         use std::io::Write;
-        let mut file = fs::OpenOptions::new()
+        let mut file = std::fs::OpenOptions::new()
             .read(false)
             .write(true)
             .create(true)
@@ -325,12 +345,20 @@ mod tests {
         file.write_all(&vec![1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
         file.flush().unwrap();
 
-        state.files.insert(id, LocalFile { id, sig, file });
+        state.files.insert(
+            id,
+            LocalFile {
+                id,
+                sig,
+                file: tokio::fs::File::from_std(file),
+            },
+        );
 
         do_read_file(&mut state, &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -342,8 +370,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_read_file_should_send_error_if_file_sig_has_changed() {
+    #[tokio::test]
+    async fn do_read_file_should_send_error_if_file_sig_has_changed() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -355,7 +383,7 @@ mod tests {
             LocalFile {
                 id,
                 sig: cur_sig,
-                file,
+                file: tokio::fs::File::from_std(file),
             },
         );
 
@@ -363,6 +391,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -373,8 +402,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_write_file_should_send_success_if_write_successful() {
+    #[tokio::test]
+    async fn do_write_file_should_send_success_if_write_successful() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -387,7 +416,7 @@ mod tests {
             LocalFile {
                 id,
                 sig,
-                file: file.try_clone().unwrap(),
+                file: tokio::fs::File::from_std(file.try_clone().unwrap()),
             },
         );
 
@@ -403,6 +432,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -422,8 +452,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_write_file_should_send_error_if_not_writeable() {
+    #[tokio::test]
+    async fn do_write_file_should_send_error_if_not_writeable() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -432,18 +462,26 @@ mod tests {
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
-        let file = fs::OpenOptions::new()
+        let file = std::fs::OpenOptions::new()
             .read(true)
             .write(false)
             .create(false)
             .open(tmp_file.path())
             .unwrap();
-        state.files.insert(id, LocalFile { id, sig, file });
+        state.files.insert(
+            id,
+            LocalFile {
+                id,
+                sig,
+                file: tokio::fs::File::from_std(file),
+            },
+        );
 
         do_write_file(&mut state, &DoWriteFileArgs { id, sig, data }, |c| {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -455,8 +493,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_write_file_should_send_error_if_file_sig_has_changed() {
+    #[tokio::test]
+    async fn do_write_file_should_send_error_if_file_sig_has_changed() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -469,7 +507,7 @@ mod tests {
             LocalFile {
                 id,
                 sig: cur_sig,
-                file,
+                file: tokio::fs::File::from_std(file),
             },
         );
 
@@ -485,6 +523,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -495,8 +534,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_list_dir_contents_should_send_entries_if_successful() {
+    #[tokio::test]
+    async fn do_list_dir_contents_should_send_entries_if_successful() {
         let mut content: Option<Content> = None;
 
         let dir = tempfile::tempdir().unwrap();
@@ -515,9 +554,10 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
-        fs::remove_dir_all(dir_path).unwrap();
+        std::fs::remove_dir_all(dir_path).unwrap();
 
         match content.unwrap() {
             Content::DirContentsList(args) => {
@@ -541,8 +581,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_list_dir_contents_should_send_error_if_path_invalid() {
+    #[tokio::test]
+    async fn do_list_dir_contents_should_send_error_if_path_invalid() {
         let mut content: Option<Content> = None;
 
         do_list_dir_contents(
@@ -555,6 +595,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {

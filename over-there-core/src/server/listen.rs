@@ -51,11 +51,15 @@ where
     let handle = thread::Builder::new()
         .name(String::from("server-action"))
         .spawn(move || {
+            let mut rt = tokio::runtime::Runtime::new().unwrap();
+
             loop {
                 if let Ok((msg, responder)) = rx.try_recv() {
                     let s: &mut ServerState = &mut *state.lock().unwrap();
                     trace!("Processing {:?} using {:?}", msg, responder);
-                    match action::execute(s, &msg, &responder) {
+
+                    // TODO: Move this logic entirely to an event loop
+                    match rt.block_on(action::execute(s, &msg, &responder)) {
                         // If unknown, ignore it; if succeed, keep going
                         Ok(_) | Err(ActionError::Unknown) => (),
 

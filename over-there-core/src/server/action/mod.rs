@@ -16,7 +16,7 @@ pub enum ActionError {
 }
 
 /// Evaluate a message's content and potentially respond using the provided responder
-pub fn execute<R: Responder>(
+pub async fn execute<R: Responder>(
     state: &mut ServerState,
     msg: &Msg,
     responder: &R,
@@ -27,20 +27,20 @@ pub fn execute<R: Responder>(
     let do_respond = |content: Content| respond(responder, content, header);
 
     match &msg.content {
-        Content::Heartbeat => handler::heartbeat::heartbeat(do_respond),
-        Content::DoGetVersion => handler::version::do_get_version(do_respond),
-        Content::DoGetCapabilities => handler::capabilities::do_get_capabilities(do_respond),
-        Content::DoOpenFile(args) => handler::file::do_open_file(state, args, do_respond),
-        Content::DoReadFile(args) => handler::file::do_read_file(state, args, do_respond),
-        Content::DoWriteFile(args) => handler::file::do_write_file(state, args, do_respond),
+        Content::Heartbeat => handler::heartbeat::heartbeat(do_respond).await,
+        Content::DoGetVersion => handler::version::do_get_version(do_respond).await,
+        Content::DoGetCapabilities => handler::capabilities::do_get_capabilities(do_respond).await,
+        Content::DoOpenFile(args) => handler::file::do_open_file(state, args, do_respond).await,
+        Content::DoReadFile(args) => handler::file::do_read_file(state, args, do_respond).await,
+        Content::DoWriteFile(args) => handler::file::do_write_file(state, args, do_respond).await,
         Content::DoListDirContents(args) => {
-            handler::file::do_list_dir_contents(state, args, do_respond)
+            handler::file::do_list_dir_contents(state, args, do_respond).await
         }
-        Content::DoExecProc(args) => handler::proc::do_exec_proc(state, args, do_respond),
-        Content::DoWriteStdin(args) => handler::proc::do_write_stdin(state, args, do_respond),
-        Content::DoGetStdout(args) => handler::proc::do_get_stdout(state, args, do_respond),
-        Content::DoGetStderr(args) => handler::proc::do_get_stderr(state, args, do_respond),
-        Content::DoKillProc(args) => handler::proc::do_kill_proc(state, args, do_respond),
+        Content::DoExecProc(args) => handler::proc::do_exec_proc(state, args, do_respond).await,
+        Content::DoWriteStdin(args) => handler::proc::do_write_stdin(state, args, do_respond).await,
+        Content::DoGetStdout(args) => handler::proc::do_get_stdout(state, args, do_respond).await,
+        Content::DoGetStderr(args) => handler::proc::do_get_stderr(state, args, do_respond).await,
+        Content::DoKillProc(args) => handler::proc::do_kill_proc(state, args, do_respond).await,
         _ => Err(ActionError::Unknown),
     }
 }
@@ -53,5 +53,6 @@ fn respond<R: Responder>(
 ) -> Result<(), ActionError> {
     let new_msg = Msg::from((content, parent_header));
     let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
+
     responder.send(&data).map_err(ActionError::ResponderError)
 }

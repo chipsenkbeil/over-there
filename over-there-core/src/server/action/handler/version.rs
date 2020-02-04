@@ -4,7 +4,7 @@ use crate::{
 };
 use log::debug;
 
-pub fn do_get_version(
+pub async fn do_get_version(
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
     debug!("version_request");
@@ -17,14 +17,15 @@ pub fn do_get_version(
 mod tests {
     use super::*;
 
-    #[test]
-    fn do_get_version_should_send_version() {
+    #[tokio::test]
+    async fn do_get_version_should_send_version() {
         let mut content: Option<Content> = None;
 
         do_get_version(|c| {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         assert_eq!(

@@ -7,7 +7,7 @@ use crate::{
 };
 use log::debug;
 
-pub fn do_get_capabilities(
+pub async fn do_get_capabilities(
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
 ) -> Result<(), ActionError> {
     debug!("do_get_capabilities");
@@ -28,14 +28,15 @@ pub fn do_get_capabilities(
 mod tests {
     use super::*;
 
-    #[test]
-    fn do_get_capabilities_should_send_capabilities() {
+    #[tokio::test]
+    async fn do_get_capabilities_should_send_capabilities() {
         let mut content: Option<Content> = None;
 
         do_get_capabilities(|c| {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         assert_eq!(

@@ -6,9 +6,10 @@ use crate::{
     server::{action::ActionError, proc::LocalProc, state::ServerState},
 };
 use log::debug;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use tokio::process::Command;
 
-pub fn do_exec_proc(
+pub async fn do_exec_proc(
     state: &mut ServerState,
     args: &DoExecProcArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
@@ -47,7 +48,7 @@ fn make_piped(yes: bool) -> Stdio {
     }
 }
 
-pub fn do_write_stdin(
+pub async fn do_write_stdin(
     state: &mut ServerState,
     args: &DoWriteStdinArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
@@ -57,8 +58,14 @@ pub fn do_write_stdin(
     match state.procs.get_mut(&args.id) {
         Some(local_proc) => match &mut local_proc.stdin {
             Some(stdin) => {
-                use std::io::Write;
-                match stdin.write_all(&args.input).and_then(|_| stdin.flush()) {
+                use tokio::io::AsyncWriteExt;
+
+                let mut result = stdin.write_all(&args.input).await;
+                if result.is_ok() {
+                    result = stdin.flush().await;
+                }
+
+                match result {
                     Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)),
                     Err(x) => respond(Content::IoError(From::from(x))),
                 }
@@ -69,7 +76,7 @@ pub fn do_write_stdin(
     }
 }
 
-pub fn do_get_stdout(
+pub async fn do_get_stdout(
     state: &mut ServerState,
     args: &DoGetStdoutArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
@@ -79,9 +86,9 @@ pub fn do_get_stdout(
     match state.procs.get_mut(&args.id) {
         Some(local_proc) => match &mut local_proc.stdout {
             Some(stdout) => {
-                use std::io::Read;
+                use tokio::io::AsyncReadExt;
                 let mut output = Vec::new();
-                match stdout.read(&mut output) {
+                match stdout.read(&mut output).await {
                     Ok(_) => respond(Content::StdoutContents(StdoutContentsArgs { output })),
                     Err(x) => respond(Content::IoError(From::from(x))),
                 }
@@ -92,7 +99,7 @@ pub fn do_get_stdout(
     }
 }
 
-pub fn do_get_stderr(
+pub async fn do_get_stderr(
     state: &mut ServerState,
     args: &DoGetStderrArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
@@ -102,9 +109,9 @@ pub fn do_get_stderr(
     match state.procs.get_mut(&args.id) {
         Some(local_proc) => match &mut local_proc.stderr {
             Some(stderr) => {
-                use std::io::Read;
+                use tokio::io::AsyncReadExt;
                 let mut output = Vec::new();
-                match stderr.read(&mut output) {
+                match stderr.read(&mut output).await {
                     Ok(_) => respond(Content::StderrContents(StderrContentsArgs { output })),
                     Err(x) => respond(Content::IoError(From::from(x))),
                 }
@@ -115,7 +122,7 @@ pub fn do_get_stderr(
     }
 }
 
-pub fn do_kill_proc(
+pub async fn do_kill_proc(
     state: &mut ServerState,
     args: &DoKillProcArgs,
     respond: impl FnOnce(Content) -> Result<(), ActionError>,
@@ -126,7 +133,7 @@ pub fn do_kill_proc(
         // NOTE: We are killing and then WAITING for the process to die, which
         //       would block, but seems to be required in order to properly
         //       have the process clean up -- try_wait doesn't seem to work
-        Some(mut local_proc) => match local_proc.kill() {
+        Some(local_proc) => match local_proc.kill().await {
             Ok(_) => respond(Content::ProcStatus(ProcStatusArgs {
                 id: args.id,
                 is_alive: false,
@@ -145,8 +152,8 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    #[test]
-    fn do_exec_proc_should_send_success_if_can_execute_process() {
+    #[tokio::test]
+    async fn do_exec_proc_should_send_success_if_can_execute_process() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -164,6 +171,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -175,8 +183,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_exec_proc_should_send_error_if_process_does_not_exist() {
+    #[tokio::test]
+    async fn do_exec_proc_should_send_error_if_process_does_not_exist() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -194,6 +202,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -202,13 +211,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_exec_proc_should_send_error_if_do_not_have_permission_to_execute_process() {
+    #[tokio::test]
+    async fn do_exec_proc_should_send_error_if_do_not_have_permission_to_execute_process() {
         unimplemented!();
     }
 
-    #[test]
-    fn do_write_stdin_should_send_data_to_running_process() {
+    #[tokio::test]
+    async fn do_write_stdin_should_send_data_to_running_process() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -229,17 +238,20 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         let output = {
-            use std::io::Read;
+            use tokio::io::AsyncReadExt;
             let local_proc = state.procs.get_mut(&id).unwrap();
             let mut output = Vec::new();
+
             local_proc
                 .stdout
                 .as_mut()
                 .unwrap()
                 .read(&mut output)
+                .await
                 .unwrap();
             output
         };
@@ -251,8 +263,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_write_stdin_should_send_error_if_process_exited() {
+    #[tokio::test]
+    async fn do_write_stdin_should_send_error_if_process_exited() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -273,6 +285,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -283,8 +296,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_write_stdin_should_send_error_if_process_id_not_registered() {
+    #[tokio::test]
+    async fn do_write_stdin_should_send_error_if_process_id_not_registered() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -299,6 +312,7 @@ mod tests {
                 Ok(())
             },
         )
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -309,8 +323,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_get_stdout_should_send_contents_if_process_sent_stdout() {
+    #[tokio::test]
+    async fn do_get_stdout_should_send_contents_if_process_sent_stdout() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -331,6 +345,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -341,8 +356,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_get_stdout_should_send_empty_contents_if_process_has_no_stdout() {
+    #[tokio::test]
+    async fn do_get_stdout_should_send_empty_contents_if_process_has_no_stdout() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -362,6 +377,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -372,8 +388,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_get_stdout_should_send_error_if_process_id_not_registered() {
+    #[tokio::test]
+    async fn do_get_stdout_should_send_error_if_process_id_not_registered() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -381,6 +397,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -391,8 +408,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_get_stderr_should_send_contents_if_process_sent_stderr() {
+    #[tokio::test]
+    async fn do_get_stderr_should_send_contents_if_process_sent_stderr() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -413,6 +430,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -423,8 +441,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_get_stderr_should_send_empty_contents_if_process_has_no_stderr() {
+    #[tokio::test]
+    async fn do_get_stderr_should_send_empty_contents_if_process_has_no_stderr() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -444,6 +462,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -454,8 +473,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_get_stderr_should_send_error_if_process_id_not_registered() {
+    #[tokio::test]
+    async fn do_get_stderr_should_send_error_if_process_id_not_registered() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -463,6 +482,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -473,8 +493,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_proc_kill_should_send_exit_status_after_killing_process() {
+    #[tokio::test]
+    async fn do_proc_kill_should_send_exit_status_after_killing_process() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -495,6 +515,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
@@ -510,8 +531,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn do_proc_kill_should_send_error_if_process_already_exited() {
+    #[tokio::test]
+    async fn do_proc_kill_should_send_error_if_process_already_exited() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -531,6 +552,7 @@ mod tests {
             content = Some(c);
             Ok(())
         })
+        .await
         .unwrap();
 
         match content.unwrap() {
