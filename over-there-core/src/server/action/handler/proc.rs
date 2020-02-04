@@ -246,6 +246,9 @@ mod tests {
             let local_proc = state.procs.get_mut(&id).unwrap();
             let mut output = Vec::new();
 
+            println!("ABOUT TO READ");
+
+            // TODO: THIS IS GETTING STUCK! WHY?
             local_proc
                 .stdout
                 .as_mut()
@@ -253,6 +256,8 @@ mod tests {
                 .read(&mut output)
                 .await
                 .unwrap();
+
+            println!("READ DONE");
             output
         };
         assert_eq!(output, b"test");
