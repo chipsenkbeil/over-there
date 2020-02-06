@@ -6,8 +6,7 @@ use crate::{
     server::{action::ActionError, proc::LocalProc, state::ServerState},
 };
 use log::debug;
-use std::process::Stdio;
-use tokio::process::Command;
+use std::process::{Command, Stdio};
 
 pub async fn do_exec_proc(
     state: &mut ServerState,
@@ -32,7 +31,8 @@ pub async fn do_exec_proc(
     {
         Ok(child) => {
             let id = child.id();
-            state.procs.insert(id, LocalProc::from(child));
+            let local_proc = LocalProc::from(child);
+            state.procs.insert(id, local_proc);
             respond(Content::ProcStarted(ProcStartedArgs { id }))
         }
         Err(x) => respond(Content::IoError(From::from(x))),
@@ -56,22 +56,19 @@ pub async fn do_write_stdin(
     debug!("do_write_stdin: {:?}", args);
 
     match state.procs.get_mut(&args.id) {
-        Some(local_proc) => match &mut local_proc.stdin {
-            Some(stdin) => {
-                use tokio::io::AsyncWriteExt;
+        Some(local_proc) => {
+            use std::io::Write;
 
-                let mut result = stdin.write_all(&args.input).await;
-                if result.is_ok() {
-                    result = stdin.flush().await;
-                }
-
-                match result {
-                    Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)),
-                    Err(x) => respond(Content::IoError(From::from(x))),
-                }
+            let mut result = local_proc.write_all(&args.input);
+            if result.is_ok() {
+                result = local_proc.flush();
             }
-            None => respond(Content::IoError(IoErrorArgs::pipe_unavailable())),
-        },
+
+            match result {
+                Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)),
+                Err(x) => respond(Content::IoError(From::from(x))),
+            }
+        }
         None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
     }
 }
@@ -84,17 +81,15 @@ pub async fn do_get_stdout(
     debug!("do_get_stdout: {:?}", args);
 
     match state.procs.get_mut(&args.id) {
-        Some(local_proc) => match &mut local_proc.stdout {
-            Some(stdout) => {
-                use tokio::io::AsyncReadExt;
-                let mut output = Vec::new();
-                match stdout.read(&mut output).await {
-                    Ok(_) => respond(Content::StdoutContents(StdoutContentsArgs { output })),
-                    Err(x) => respond(Content::IoError(From::from(x))),
-                }
+        Some(local_proc) => {
+            let mut buf = [0; 1024];
+            match local_proc.read_stdout(&mut buf) {
+                Ok(size) => respond(Content::StdoutContents(StdoutContentsArgs {
+                    output: buf[..size].to_vec(),
+                })),
+                Err(x) => respond(Content::IoError(From::from(x))),
             }
-            None => respond(Content::IoError(IoErrorArgs::pipe_unavailable())),
-        },
+        }
         None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
     }
 }
@@ -107,17 +102,15 @@ pub async fn do_get_stderr(
     debug!("do_get_stderr: {:?}", args);
 
     match state.procs.get_mut(&args.id) {
-        Some(local_proc) => match &mut local_proc.stderr {
-            Some(stderr) => {
-                use tokio::io::AsyncReadExt;
-                let mut output = Vec::new();
-                match stderr.read(&mut output).await {
-                    Ok(_) => respond(Content::StderrContents(StderrContentsArgs { output })),
-                    Err(x) => respond(Content::IoError(From::from(x))),
-                }
+        Some(local_proc) => {
+            let mut buf = [0; 1024];
+            match local_proc.read_stderr(&mut buf) {
+                Ok(size) => respond(Content::StderrContents(StderrContentsArgs {
+                    output: buf[..size].to_vec(),
+                })),
+                Err(x) => respond(Content::IoError(From::from(x))),
             }
-            None => respond(Content::IoError(IoErrorArgs::pipe_unavailable())),
-        },
+        }
         None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
     }
 }
@@ -133,7 +126,7 @@ pub async fn do_kill_proc(
         // NOTE: We are killing and then WAITING for the process to die, which
         //       would block, but seems to be required in order to properly
         //       have the process clean up -- try_wait doesn't seem to work
-        Some(local_proc) => match local_proc.kill().await {
+        Some(local_proc) => match local_proc.kill() {
             Ok(_) => respond(Content::ProcStatus(ProcStatusArgs {
                 id: args.id,
                 is_alive: false,
@@ -177,7 +170,7 @@ mod tests {
         match content.unwrap() {
             Content::ProcStarted(args) => {
                 let proc = state.procs.get(&args.id).unwrap();
-                assert_eq!(proc.id, args.id);
+                assert_eq!(proc.id(), args.id);
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -229,7 +222,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, From::from(child));
+        state.procs.insert(id, LocalProc::from(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -242,23 +235,12 @@ mod tests {
         .unwrap();
 
         let output = {
-            use tokio::io::AsyncReadExt;
             let local_proc = state.procs.get_mut(&id).unwrap();
-            let mut output = Vec::new();
 
-            println!("ABOUT TO READ");
+            let mut buf = [0; 1024];
+            let size = local_proc.read_stdout(&mut buf).unwrap();
 
-            // TODO: THIS IS GETTING STUCK! WHY?
-            local_proc
-                .stdout
-                .as_mut()
-                .unwrap()
-                .read(&mut output)
-                .await
-                .unwrap();
-
-            println!("READ DONE");
-            output
+            buf[..size].to_vec()
         };
         assert_eq!(output, b"test");
 
@@ -281,7 +263,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, From::from(child));
+        state.procs.insert(id, LocalProc::from(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -341,7 +323,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, From::from(child));
+        state.procs.insert(id, LocalProc::from(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -373,7 +355,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, From::from(child));
+        state.procs.insert(id, LocalProc::from(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -426,7 +408,7 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.insert(id, From::from(child));
+        state.procs.insert(id, LocalProc::from(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -458,7 +440,7 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.insert(id, From::from(child));
+        state.procs.insert(id, LocalProc::from(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -511,7 +493,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, From::from(child));
+        state.procs.insert(id, LocalProc::from(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -548,7 +530,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, From::from(child));
+        state.procs.insert(id, LocalProc::from(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
