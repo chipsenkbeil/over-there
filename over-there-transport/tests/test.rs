@@ -52,9 +52,9 @@ fn test_udp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> 
                 x if x == b"test message" => server.send(addr, b"test reply")?,
                 x => panic!("Unexpected content {:?}", x),
             }
-            return Ok(true);
+            return Ok(Some(()));
         }
-        Ok(false)
+        Ok(None)
     })?;
 
     // Now wait for client to receive response
@@ -65,9 +65,9 @@ fn test_udp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> 
                 x if x == b"test reply" => (),
                 x => panic!("Unexpected content {:?}", x),
             }
-            return Ok(true);
+            return Ok(Some(()));
         }
-        Ok(false)
+        Ok(None)
     })?;
 
     Ok(())
@@ -157,7 +157,11 @@ fn test_udp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         thread::sleep(Duration::from_millis(50));
         let tmc = *mc_2.lock().unwrap() == N;
         let trc = *rc_2.lock().unwrap() == N;
-        Ok(tmc && trc)
+        if tmc && trc {
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
     })
     .map_err(|_| {
         io::Error::new(
@@ -214,9 +218,9 @@ fn test_tcp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> 
                 x if x == b"test message" => server.send(b"test reply")?,
                 x => panic!("Unexpected content {:?}", x),
             }
-            return Ok(true);
+            return Ok(Some(()));
         }
-        Ok(false)
+        Ok(None)
     })?;
 
     // Now wait for client to receive response
@@ -227,9 +231,9 @@ fn test_tcp_send_recv_single_thread() -> Result<(), Box<dyn std::error::Error>> 
                 x if x == b"test reply" => (),
                 x => panic!("Unexpected content {:?}", x),
             }
-            return Ok(true);
+            return Ok(Some(()));
         }
-        Ok(false)
+        Ok(None)
     })?;
 
     Ok(())
@@ -316,7 +320,11 @@ fn test_tcp_send_recv_multi_thread() -> Result<(), Box<dyn std::error::Error>> {
         thread::sleep(Duration::from_millis(50));
         let mc = *mc_2.lock().unwrap();
         let rc = *rc_2.lock().unwrap();
-        Ok(mc == N && rc == N)
+        if mc == N && rc == N {
+            Ok(Some(()))
+        } else {
+            Ok(None)
+        }
     })
     .map_err(|_| {
         io::Error::new(

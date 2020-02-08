@@ -6,6 +6,7 @@ use crate::{
     server::{action::ActionError, proc::LocalProc, state::ServerState},
 };
 use log::debug;
+use std::convert::TryFrom;
 use std::process::{Command, Stdio};
 
 pub async fn do_exec_proc(
@@ -22,29 +23,22 @@ pub async fn do_exec_proc(
         stderr,
     } = args;
 
-    match Command::new(command)
-        .args(args)
-        .stdin(make_piped(*stdin))
-        .stdout(make_piped(*stdout))
-        .stderr(make_piped(*stderr))
-        .spawn()
-    {
-        Ok(child) => {
-            let id = child.id();
-            let local_proc = LocalProc::from(child);
+    let make_pipe = |yes| if yes { Stdio::piped() } else { Stdio::null() };
+
+    match LocalProc::try_from(
+        Command::new(command)
+            .args(args)
+            .stdin(make_pipe(*stdin))
+            .stdout(make_pipe(*stdout))
+            .stderr(make_pipe(*stderr))
+            .spawn(),
+    ) {
+        Ok(local_proc) => {
+            let id = local_proc.id();
             state.procs.insert(id, local_proc);
             respond(Content::ProcStarted(ProcStartedArgs { id }))
         }
         Err(x) => respond(Content::IoError(From::from(x))),
-    }
-}
-
-#[inline]
-fn make_piped(yes: bool) -> Stdio {
-    if yes {
-        Stdio::piped()
-    } else {
-        Stdio::null()
     }
 }
 
@@ -126,11 +120,11 @@ pub async fn do_kill_proc(
         // NOTE: We are killing and then WAITING for the process to die, which
         //       would block, but seems to be required in order to properly
         //       have the process clean up -- try_wait doesn't seem to work
-        Some(local_proc) => match local_proc.kill() {
-            Ok(_) => respond(Content::ProcStatus(ProcStatusArgs {
+        Some(local_proc) => match local_proc.kill_and_wait() {
+            Ok(exit_status) => respond(Content::ProcStatus(ProcStatusArgs {
                 id: args.id,
                 is_alive: false,
-                exit_code: None,
+                exit_code: exit_status.code(),
             })),
             Err(x) => respond(Content::IoError(From::from(x))),
         },
@@ -141,7 +135,10 @@ pub async fn do_kill_proc(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use over_there_utils::exec;
+    use std::convert::TryFrom;
     use std::io;
+    use std::process::Stdio;
     use std::thread;
     use std::time::Duration;
 
@@ -205,24 +202,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_exec_proc_should_send_error_if_do_not_have_permission_to_execute_process() {
-        unimplemented!();
-    }
-
-    #[tokio::test]
     async fn do_write_stdin_should_send_data_to_running_process() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
         let id = 999;
         let input = b"test\n".to_vec();
-        let child = Command::new("rev")
+        let child = Command::new("cat")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::from(child));
+        state.procs.insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -238,11 +230,16 @@ mod tests {
             let local_proc = state.procs.get_mut(&id).unwrap();
 
             let mut buf = [0; 1024];
-            let size = local_proc.read_stdout(&mut buf).unwrap();
-
-            buf[..size].to_vec()
+            exec::loop_timeout_panic(Duration::from_millis(500), move || {
+                let result = local_proc.read_stdout(&mut buf);
+                match result {
+                    Err(x) if x.kind() == io::ErrorKind::WouldBlock => None,
+                    Err(x) => panic!("Unexpected error {}", x),
+                    Ok(size) => Some(buf[..size].to_vec()),
+                }
+            })
         };
-        assert_eq!(output, b"test");
+        assert_eq!(output, b"test\n");
 
         match content.unwrap() {
             Content::StdinWritten(_) => (),
@@ -263,7 +260,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::from(child));
+        state.procs.insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -323,7 +320,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::from(child));
+        state.procs.insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -355,7 +352,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::from(child));
+        state.procs.insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -408,7 +405,7 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::from(child));
+        state.procs.insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -440,7 +437,7 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::from(child));
+        state.procs.insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -493,7 +490,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::from(child));
+        state.procs.insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -519,7 +516,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_proc_kill_should_send_error_if_process_already_exited() {
+    async fn do_proc_kill_should_send_exit_status_if_process_already_exited() {
         let mut state = ServerState::default();
         let mut content: Option<Content> = None;
 
@@ -530,7 +527,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::from(child));
+        state.procs.insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -543,9 +540,7 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::InvalidInput)
-            }
+            Content::ProcStatus(ProcStatusArgs { exit_code, .. }) => assert_eq!(exit_code, Some(0)),
             x => panic!("Bad content: {:?}", x),
         }
     }

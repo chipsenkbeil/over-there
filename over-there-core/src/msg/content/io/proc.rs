@@ -57,5 +57,5 @@ pub struct DoGetProcStatus {
 pub struct ProcStatusArgs {
     pub id: u32,
     pub is_alive: bool,
-    pub exit_code: Option<u32>,
+    pub exit_code: Option<i32>,
 }
