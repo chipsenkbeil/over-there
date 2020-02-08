@@ -401,8 +401,8 @@ impl Client {
     /// stdout and stderr
     pub async fn ask_exec_proc(
         &self,
-        command: String,
-        args: Vec<String>,
+        command: &str,
+        args: Vec<&str>,
     ) -> Result<RemoteProc, ExecAskError> {
         self.ask_exec_proc_with_streams(command, args, true, true, true)
             .await
@@ -412,16 +412,16 @@ impl Client {
     /// ignore or use stdin, stdout, and stderr
     pub async fn ask_exec_proc_with_streams(
         &self,
-        command: String,
-        args: Vec<String>,
+        command: &str,
+        args: Vec<&str>,
         stdin: bool,
         stdout: bool,
         stderr: bool,
     ) -> Result<RemoteProc, ExecAskError> {
         let result = self
             .ask(Msg::from(Content::DoExecProc(DoExecProcArgs {
-                command,
-                args,
+                command: String::from(command),
+                args: args.iter().map(|s| String::from(*s)).collect(),
                 stdin,
                 stdout,
                 stderr,
@@ -441,13 +441,13 @@ impl Client {
     /// Requests to send lines of text to stdin of a remote process on the server
     pub async fn ask_write_stdin(
         &self,
-        proc: &mut RemoteProc,
-        input: Vec<u8>,
+        proc: &RemoteProc,
+        input: &[u8],
     ) -> Result<(), ExecAskError> {
         let result = self
             .ask(Msg::from(Content::DoWriteStdin(DoWriteStdinArgs {
                 id: proc.id,
-                input,
+                input: input.to_vec(),
             })))
             .await;
 

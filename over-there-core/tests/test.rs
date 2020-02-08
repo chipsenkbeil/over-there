@@ -28,6 +28,18 @@ async fn test_udp_client_file_manipulation() {
 }
 
 #[tokio::test]
+async fn test_tcp_client_remote_process() {
+    let test_bench = setup::setup(TestMode::Tcp);
+    scenarios::proc::async_test(test_bench.client).await;
+}
+
+#[tokio::test]
+async fn test_udp_client_remote_process() {
+    let test_bench = setup::setup(TestMode::Udp);
+    scenarios::proc::async_test(test_bench.client).await;
+}
+
+#[tokio::test]
 async fn test_tcp_client_ask_timeout() {
     let test_bench = setup::setup(TestMode::Tcp);
     scenarios::ask_timeout::async_test(test_bench.client).await;
