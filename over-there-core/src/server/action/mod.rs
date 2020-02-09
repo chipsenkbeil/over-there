@@ -12,7 +12,6 @@ use over_there_transport::{Responder, ResponderError};
 pub enum ActionError {
     MsgError(MsgError),
     ResponderError(ResponderError),
-    IoError(std::io::Error),
     Unknown,
 }
 

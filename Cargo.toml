@@ -26,7 +26,8 @@ members = [
 #       Until I reach the point where I'm actively distributing this library,
 #       I'll ignore the problem and bring everything in to the library.
 [dependencies]
-clap = "~2.33.0"
+clap = { version = "3.0.0-beta.1", git = "https://github.com/clap-rs/clap.git"}
+over-there-auth = { path = "./over-there-auth" }
 over-there-crypto = { path = "./over-there-crypto" }
 over-there-core = { path = "./over-there-core" }
 
