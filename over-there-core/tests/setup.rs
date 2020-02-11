@@ -47,7 +47,7 @@ fn start_tcp_client_and_server() -> TestBench {
 
     let server = Server::listen_using_tcp_listener(
         net::tcp::local().unwrap(),
-        Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
+        constants::DEFAULT_TTL,
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
         |_| false,
@@ -56,7 +56,7 @@ fn start_tcp_client_and_server() -> TestBench {
 
     let client = Client::connect_tcp(
         server.addr,
-        Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
+        constants::DEFAULT_TTL,
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
         |_| false,
@@ -72,7 +72,7 @@ fn start_udp_client_and_server() -> TestBench {
 
     let server = Server::listen_using_udp_socket(
         net::udp::local().unwrap(),
-        Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
+        constants::DEFAULT_TTL,
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
         |_| false,
@@ -81,7 +81,7 @@ fn start_udp_client_and_server() -> TestBench {
 
     let client = Client::connect_udp(
         server.addr,
-        Duration::from_secs(constants::DEFAULT_TTL_IN_SECS),
+        constants::DEFAULT_TTL,
         Sha256Authenticator::new(sign_key),
         aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
         |_| false,

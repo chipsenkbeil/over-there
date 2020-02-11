@@ -289,16 +289,14 @@ impl Client {
 
     /// Requests to get a list of the root directory's contents on the server
     pub async fn ask_list_root_dir_contents(&self) -> Result<Vec<DirEntry>, FileAskError> {
-        self.ask_list_dir_contents(".").await
+        self.ask_list_dir_contents(String::from(".")).await
     }
 
     /// Requests to get a list of a directory's contents on the server
-    pub async fn ask_list_dir_contents(&self, path: &str) -> Result<Vec<DirEntry>, FileAskError> {
+    pub async fn ask_list_dir_contents(&self, path: String) -> Result<Vec<DirEntry>, FileAskError> {
         let result = self
             .ask(Msg::from(Content::DoListDirContents(
-                DoListDirContentsArgs {
-                    path: path.to_string(),
-                },
+                DoListDirContentsArgs { path },
             )))
             .await;
 
@@ -314,7 +312,7 @@ impl Client {
 
     /// Requests to open a file for reading/writing on the server,
     /// creating the file if it does not exist
-    pub async fn ask_open_file(&self, path: &str) -> Result<RemoteFile, FileAskError> {
+    pub async fn ask_open_file(&self, path: String) -> Result<RemoteFile, FileAskError> {
         self.ask_open_file_with_options(path, true, true, true)
             .await
     }
@@ -322,14 +320,14 @@ impl Client {
     /// Requests to open a file on the server, opening using the provided options
     pub async fn ask_open_file_with_options(
         &self,
-        path: &str,
+        path: String,
         create: bool,
         write: bool,
         read: bool,
     ) -> Result<RemoteFile, FileAskError> {
         let result = self
             .ask(Msg::from(Content::DoOpenFile(DoOpenFileArgs {
-                path: path.to_string(),
+                path: path.clone(),
                 create_if_missing: create,
                 write_access: write,
                 read_access: read,
@@ -344,7 +342,7 @@ impl Client {
             Content::FileOpened(args) => Ok(RemoteFile {
                 id: args.id,
                 sig: args.sig,
-                path: path.to_string(),
+                path,
             }),
             x => Err(make_file_ask_error(x)),
         }
@@ -401,8 +399,8 @@ impl Client {
     /// stdout and stderr
     pub async fn ask_exec_proc(
         &self,
-        command: &str,
-        args: Vec<&str>,
+        command: String,
+        args: Vec<String>,
     ) -> Result<RemoteProc, ExecAskError> {
         self.ask_exec_proc_with_streams(command, args, true, true, true)
             .await
@@ -412,16 +410,16 @@ impl Client {
     /// ignore or use stdin, stdout, and stderr
     pub async fn ask_exec_proc_with_streams(
         &self,
-        command: &str,
-        args: Vec<&str>,
+        command: String,
+        args: Vec<String>,
         stdin: bool,
         stdout: bool,
         stderr: bool,
     ) -> Result<RemoteProc, ExecAskError> {
         let result = self
             .ask(Msg::from(Content::DoExecProc(DoExecProcArgs {
-                command: String::from(command),
-                args: args.iter().map(|s| String::from(*s)).collect(),
+                command,
+                args,
                 stdin,
                 stdout,
                 stderr,

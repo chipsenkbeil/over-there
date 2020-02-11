@@ -141,7 +141,7 @@ impl Assembler {
 
 impl Default for Assembler {
     fn default() -> Self {
-        Self::new(Duration::from_secs(constants::DEFAULT_TTL_IN_SECS))
+        Self::new(constants::DEFAULT_TTL)
     }
 }
 

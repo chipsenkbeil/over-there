@@ -12,17 +12,20 @@ pub async fn async_test(client: Client) {
         .to_string_lossy()
         .to_string();
 
-    let dir_contents = client.ask_list_dir_contents(&dir_path).await.unwrap();
+    let dir_contents = client
+        .ask_list_dir_contents(dir_path.clone())
+        .await
+        .unwrap();
     assert_eq!(dir_contents.len(), 0);
 
     // Open/create file with read & write access
-    let mut file = client.ask_open_file(&file_path).await.unwrap();
+    let mut file = client.ask_open_file(file_path).await.unwrap();
     client
         .ask_write_file(&mut file, b"Hello!\nThis is a test!\nGoodbye!")
         .await
         .unwrap();
 
-    let dir_contents = client.ask_list_dir_contents(&dir_path).await.unwrap();
+    let dir_contents = client.ask_list_dir_contents(dir_path).await.unwrap();
     assert_eq!(dir_contents.len(), 1);
 
     let result =

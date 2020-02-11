@@ -5,7 +5,10 @@ mod packet;
 mod transceiver;
 
 pub mod constants {
-    pub const DEFAULT_TTL_IN_SECS: u64 = 60 * 5;
+    use std::time::Duration;
+
+    /// 5 minute default TTL
+    pub const DEFAULT_TTL: Duration = Duration::from_secs(60 * 5);
 }
 
 pub use assembler::AssemblerError;

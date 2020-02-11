@@ -1,6 +1,16 @@
 use std::io;
 use std::process::{ChildStderr, ChildStdin, ChildStdout};
 
+pub fn stdin_set_nonblocking(stdin: &io::Stdin) -> io::Result<()> {
+    #[cfg(unix)]
+    unix::set_nonblocking(stdin)?;
+
+    #[cfg(windows)]
+    windows::set_nonblocking(stdin)?;
+
+    Ok(())
+}
+
 pub fn child_stdin_set_nonblocking(child_stdin: &ChildStdin) -> io::Result<()> {
     #[cfg(unix)]
     unix::set_nonblocking(child_stdin)?;

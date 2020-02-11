@@ -7,6 +7,7 @@ use crate::{
 };
 use log::debug;
 use std::convert::TryFrom;
+use std::io;
 use std::process::{Command, Stdio};
 
 pub async fn do_exec_proc(
@@ -81,6 +82,11 @@ pub async fn do_get_stdout(
                 Ok(size) => respond(Content::StdoutContents(StdoutContentsArgs {
                     output: buf[..size].to_vec(),
                 })),
+                Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
+                    respond(Content::StdoutContents(StdoutContentsArgs {
+                        output: vec![],
+                    }))
+                }
                 Err(x) => respond(Content::IoError(From::from(x))),
             }
         }
@@ -102,6 +108,11 @@ pub async fn do_get_stderr(
                 Ok(size) => respond(Content::StderrContents(StderrContentsArgs {
                     output: buf[..size].to_vec(),
                 })),
+                Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
+                    respond(Content::StderrContents(StderrContentsArgs {
+                        output: vec![],
+                    }))
+                }
                 Err(x) => respond(Content::IoError(From::from(x))),
             }
         }
@@ -346,7 +357,7 @@ mod tests {
         let mut content: Option<Content> = None;
 
         let id = 999;
-        let child = Command::new("rev")
+        let child = Command::new("cat")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -431,7 +442,7 @@ mod tests {
         let mut content: Option<Content> = None;
 
         let id = 999;
-        let child = Command::new("rev")
+        let child = Command::new("cat")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
