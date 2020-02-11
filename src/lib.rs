@@ -3,7 +3,6 @@ mod parsers;
 pub mod server;
 
 use clap::Clap;
-use over_there_core::Client;
 
 #[derive(Clap, Debug)]
 pub enum Command {
@@ -19,8 +18,4 @@ pub enum Command {
 pub struct Opts {
     #[clap(subcommand)]
     pub command: Command,
-}
-
-pub fn hello() {
-    println!("HELLO! {:?}", Client::DEFAULT_TIMEOUT);
 }
