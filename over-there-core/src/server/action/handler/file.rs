@@ -446,7 +446,7 @@ mod tests {
                 let mut file_data = Vec::new();
                 file.read_to_end(&mut file_data).unwrap();
 
-                assert_eq!(data, file_data);
+                assert_eq!(data, file_data, "File does not match written content");
             }
             x => panic!("Bad content: {:?}", x),
         }
