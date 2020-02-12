@@ -1,13 +1,17 @@
-use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::future::Future;
+use std::io;
 
 pub const DEFAULT_DELIMITER: &[u8] = b"</>";
 
-pub struct DelimiterReader<T>
-where
-    T: Read,
-{
-    buf_reader: BufReader<T>,
+#[derive(Clone, Copy)]
+struct PreReadResult {
+    buf_len: usize,
+    delimiter_len: usize,
+}
 
+/// Reader that takes closure to perform actual read, supporting sync and async
+/// reads, buffering, and extracting data separated by a delimiter
+pub struct DelimiterReader {
     /// Holds onto data that overflows past a delimiter
     buf: Box<[u8]>,
 
@@ -21,15 +25,9 @@ where
     pub delimiter: Vec<u8>,
 }
 
-impl<T> DelimiterReader<T>
-where
-    T: Read,
-{
-    pub fn new_with_delimiter(read: T, max_data_size: usize, delimiter: &[u8]) -> Self {
-        let buf_reader = BufReader::new(read);
-
+impl DelimiterReader {
+    pub fn new_with_delimiter(max_data_size: usize, delimiter: &[u8]) -> Self {
         Self {
-            buf_reader,
             buf: vec![0; max_data_size + delimiter.len()].into_boxed_slice(),
             buf_pos: 0,
             buf_filled: 0,
@@ -37,8 +35,8 @@ where
         }
     }
 
-    pub fn new(read: T, max_data_size: usize) -> Self {
-        Self::new_with_delimiter(read, max_data_size, DEFAULT_DELIMITER)
+    pub fn new(max_data_size: usize) -> Self {
+        Self::new_with_delimiter(max_data_size, DEFAULT_DELIMITER)
     }
 
     /// Looks for a delimiter in the internal buffer that is not complete by
@@ -48,11 +46,11 @@ where
     /// (start position, size)
     fn find_partial_delimiter(&self) -> (usize, usize) {
         let b_len = self.buf.len();
-        let d_len = self.delimiter.len();
+        let delimiter_len = self.delimiter.len();
         let mut size = 0;
         let mut pos = 0;
 
-        for i in (b_len - d_len)..b_len {
+        for i in (b_len - delimiter_len)..b_len {
             let l = b_len - i;
             if self.buf[i..] == self.delimiter[..l] {
                 size = l;
@@ -63,55 +61,62 @@ where
 
         (pos, size)
     }
-}
 
-impl<T> Read for DelimiterReader<T>
-where
-    T: Read,
-{
-    fn read(&mut self, data: &mut [u8]) -> io::Result<usize> {
+    /// Performs movement of internal buffer data based on maximum capacity
+    /// of buffer being reached
+    fn pre_read(&mut self) -> PreReadResult {
         let buf_len = self.buf.len();
-        let d_len = self.delimiter.len();
+        let delimiter_len = self.delimiter.len();
 
         // If for some reason the buffer is completely full and we haven't
         // found our delimiter, we will shift by up to (not including) the
         // delimiter size and try again; this creates a sliding window where
         // we keep the max data size specified at all times
-        if self.buf_pos > (buf_len - d_len) {
-            let (pd_pos, pd_len) = self.find_partial_delimiter();
-            let shift_len = d_len - pd_len;
+        if self.buf_pos > (buf_len - delimiter_len) {
+            let (pd_pos, pdelimiter_len) = self.find_partial_delimiter();
+            let shift_len = delimiter_len - pdelimiter_len;
             self.buf.rotate_left(shift_len);
             self.buf_filled -= shift_len;
             self.buf_pos = pd_pos - shift_len;
         };
 
-        // Attempt to fill up as much of buffer as possible without spilling over
-        //
-        // NOTE: This causes problems because we could have bytes still remaining
-        //       in our buffer, but we will never get them because we exit
-        //       immediately due to being unavailable; so, we wait to fully
-        //       evaluate and return the error until the end in case we can
-        //       process our buffer from existing data instead
-        let read_result = self.buf_reader.read(&mut self.buf[self.buf_filled..]);
+        PreReadResult {
+            buf_len,
+            delimiter_len,
+        }
+    }
+
+    /// Performs update to buffer based on read bytes, copying data to external
+    /// buffer if we have found a delimiter and making room for new data
+    fn post_read(
+        &mut self,
+        data: &mut [u8],
+        bytes_read: Option<&usize>,
+        preread_result: PreReadResult,
+    ) -> usize {
+        let PreReadResult {
+            buf_len,
+            delimiter_len,
+        } = preread_result;
 
         // Mark where we will start reading and then update the filled count
-        if let Ok(bytes_read) = read_result {
+        if let Some(bytes_read) = bytes_read {
             self.buf_filled += bytes_read;
         }
 
         // Scan for the delimiter starting from the last place searched
         let mut size = 0;
         if self.buf_filled > 0 {
-            for i in self.buf_pos..=(buf_len - d_len) {
+            for i in self.buf_pos..=(buf_len - delimiter_len) {
                 // If we have a match, we want to copy the contents (minus the delimiter) to the
                 // provided buffer, shift over any remaining data, and reset our buf filled count
-                if self.buf[i..i + d_len] == self.delimiter[..] {
+                if self.buf[i..i + delimiter_len] == self.delimiter[..] {
                     data[..i].copy_from_slice(&self.buf[..i]);
-                    for j in &mut self.buf[..i + d_len] {
+                    for j in &mut self.buf[..i + delimiter_len] {
                         *j = 0;
                     }
-                    self.buf.rotate_left(i + d_len);
-                    self.buf_filled -= i + d_len;
+                    self.buf.rotate_left(i + delimiter_len);
+                    self.buf_filled -= i + delimiter_len;
                     self.buf_pos = 0;
                     size = i;
                     break;
@@ -121,6 +126,55 @@ where
                 self.buf_pos = i + 1;
             }
         }
+
+        size
+    }
+
+    /// Performs an synchronous read using the given synchronous closure
+    pub fn read<F>(&mut self, data: &mut [u8], f: F) -> io::Result<usize>
+    where
+        F: FnOnce(&mut [u8]) -> io::Result<usize>,
+    {
+        let preread_result = self.pre_read();
+
+        // Attempt to fill up as much of buffer as possible without spilling over
+        //
+        // NOTE: This causes problems because we could have bytes still remaining
+        //       in our buffer, but we will never get them because we exit
+        //       immediately due to being unavailable; so, we wait to fully
+        //       evaluate and return the error until the end in case we can
+        //       process our buffer from existing data instead
+        let read_result = f(&mut self.buf[self.buf_filled..]);
+
+        let size = self.post_read(data, read_result.as_ref().ok(), preread_result);
+
+        // If we didn't find anything new in our internal buffer and the read
+        // result failed, we want to return the failure
+        if size == 0 && read_result.is_err() {
+            read_result
+        } else {
+            Ok(size)
+        }
+    }
+
+    /// Performs an asynchronous read using the given asynchronous closure
+    pub async fn async_read<R, F>(&mut self, data: &mut [u8], r: R) -> io::Result<usize>
+    where
+        R: FnOnce(&mut [u8]) -> F,
+        F: Future<Output = io::Result<usize>>,
+    {
+        let preread_result = self.pre_read();
+
+        // Attempt to fill up as much of buffer as possible without spilling over
+        //
+        // NOTE: This causes problems because we could have bytes still remaining
+        //       in our buffer, but we will never get them because we exit
+        //       immediately due to being unavailable; so, we wait to fully
+        //       evaluate and return the error until the end in case we can
+        //       process our buffer from existing data instead
+        let read_result = r(&mut self.buf[self.buf_filled..]).await;
+
+        let size = self.post_read(data, read_result.as_ref().ok(), preread_result);
 
         // If we didn't find anything new in our internal buffer and the read
         // result failed, we want to return the failure
@@ -132,51 +186,40 @@ where
     }
 }
 
-pub struct DelimiterWriter<T>
-where
-    T: Write,
-{
-    buf_writer: BufWriter<T>,
+/// Writer that takes closure to perform actual write, supporting sync and async
+/// writes, tacking on a delimiter with each full write
+pub struct DelimiterWriter {
     pub delimiter: Vec<u8>,
 }
 
-impl<T> DelimiterWriter<T>
-where
-    T: Write,
-{
-    pub fn new_with_delimiter(write: T, delimiter: &[u8]) -> Self {
-        let buf_writer = BufWriter::new(write);
-
+impl DelimiterWriter {
+    pub fn new_with_delimiter(delimiter: &[u8]) -> Self {
         Self {
-            buf_writer,
             delimiter: delimiter.to_vec(),
         }
     }
 
-    pub fn new(write: T) -> Self {
-        Self::new_with_delimiter(write, DEFAULT_DELIMITER)
+    pub fn new() -> Self {
+        Self::new_with_delimiter(DEFAULT_DELIMITER)
     }
-}
 
-impl<T> Write for DelimiterWriter<T>
-where
-    T: Write,
-{
-    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+    pub fn write<F>(&mut self, data: &[u8], mut f: F) -> io::Result<usize>
+    where
+        F: FnMut(&[u8]) -> io::Result<usize>,
+    {
         // Send all of the requested data first
-        self.buf_writer.write_all(data)?;
+        f(data)?;
 
         // Then send our delimiter
-        self.buf_writer.write_all(&self.delimiter)?;
-
-        // Then enforce sending all queued data
-        self.buf_writer.flush()?;
+        f(&self.delimiter)?;
 
         Ok(data.len())
     }
+}
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.buf_writer.flush()
+impl Default for DelimiterWriter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -185,12 +228,20 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    /// Test reader that will always indicate nothing else available
-    pub struct EmptyNonblockingReader;
-    impl Read for EmptyNonblockingReader {
-        fn read(&mut self, _data: &mut [u8]) -> io::Result<usize> {
-            Err(io::Error::from(io::ErrorKind::WouldBlock))
-        }
+    fn empty_nonblocking_read() -> impl FnOnce(&mut [u8]) -> io::Result<usize> {
+        |_| Err(io::Error::from(io::ErrorKind::WouldBlock))
+    }
+
+    fn read_from_cursor<'a>(
+        c: &'a mut Cursor<Vec<u8>>,
+    ) -> impl FnOnce(&mut [u8]) -> io::Result<usize> + 'a {
+        use std::io::Read;
+        move |data| c.read(data)
+    }
+
+    fn write_from_vec<'a>(v: &'a mut Vec<u8>) -> impl FnMut(&[u8]) -> io::Result<usize> + 'a {
+        use std::io::Write;
+        move |data| v.write(data)
     }
 
     #[test]
@@ -202,25 +253,25 @@ mod tests {
 
         // First check that we properly return 0 for size if the buffer does
         // not contain the delimiter at all
-        let mut r = DelimiterReader::new_with_delimiter(Cursor::new(b""), max_data_size, delimiter);
+        let mut r = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         r.buf.copy_from_slice(b"000000");
         assert_eq!(r.find_partial_delimiter(), (0, 0));
 
         // Second check that we properly return 0 for size if the buffer does
         // not partially end with the delimiter; we don't check the beginning
-        let mut r = DelimiterReader::new_with_delimiter(Cursor::new(b""), max_data_size, delimiter);
+        let mut r = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         r.buf.copy_from_slice(b"-+!000");
         assert_eq!(r.find_partial_delimiter(), (0, 0));
 
         // Third check that we properly return 0 for size if the buffer does
         // not partially end with the delimiter; we don't get tripped up by
         // part of a delimiter mid-way
-        let mut r = DelimiterReader::new_with_delimiter(Cursor::new(b""), max_data_size, delimiter);
+        let mut r = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         r.buf.copy_from_slice(b"000-+0");
         assert_eq!(r.find_partial_delimiter(), (0, 0));
 
         // Fourth, check that we properly match a single byte of the delimiter
-        let mut r = DelimiterReader::new_with_delimiter(Cursor::new(b""), max_data_size, delimiter);
+        let mut r = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         r.buf.copy_from_slice(b"00000-");
         assert_eq!(
             r.find_partial_delimiter(),
@@ -229,7 +280,7 @@ mod tests {
         );
 
         // Fifth, check that we properly match multiple bytes of the delimiter
-        let mut r = DelimiterReader::new_with_delimiter(Cursor::new(b""), max_data_size, delimiter);
+        let mut r = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         r.buf.copy_from_slice(b"0000-+");
         assert_eq!(
             r.find_partial_delimiter(),
@@ -238,7 +289,7 @@ mod tests {
         );
 
         // Sixth, check that we properly match the delimiter at the end
-        let mut r = DelimiterReader::new_with_delimiter(Cursor::new(b""), max_data_size, delimiter);
+        let mut r = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         r.buf.copy_from_slice(b"000-+!");
         assert_eq!(
             r.find_partial_delimiter(),
@@ -247,7 +298,7 @@ mod tests {
         );
 
         // Sixth, check that we properly match the final delimiter, not one earlier
-        let mut r = DelimiterReader::new_with_delimiter(Cursor::new(b""), max_data_size, delimiter);
+        let mut r = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         r.buf.copy_from_slice(b"-+!-+!");
         assert_eq!(
             r.find_partial_delimiter(),
@@ -256,7 +307,7 @@ mod tests {
         );
 
         // Seventh, check that we properly match the final partial delimiter, not one earlier
-        let mut r = DelimiterReader::new_with_delimiter(Cursor::new(b""), max_data_size, delimiter);
+        let mut r = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         r.buf.copy_from_slice(b"0-+!-+");
         assert_eq!(
             r.find_partial_delimiter(),
@@ -269,7 +320,7 @@ mod tests {
     fn delimiter_reader_should_fill_provided_buffer_if_found_delimiter() {
         let delimiter = b"</test>";
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let reader: Cursor<Vec<u8>> = {
+        let mut cursor = {
             let mut reader = Vec::new();
             reader.extend_from_slice(&data);
             reader.extend_from_slice(delimiter);
@@ -278,12 +329,16 @@ mod tests {
 
         // Create our reader that supports the entire size of our data,
         // not including the delimiter
-        let mut delimiter_reader =
-            DelimiterReader::new_with_delimiter(reader, data.len(), delimiter);
+        let mut delimiter_reader = DelimiterReader::new_with_delimiter(data.len(), delimiter);
 
         // Perform the read, gathering all of the data at once
         let mut buf = vec![0; data.len()];
-        assert_eq!(delimiter_reader.read(&mut buf).unwrap(), data.len());
+        assert_eq!(
+            delimiter_reader
+                .read(&mut buf, read_from_cursor(&mut cursor))
+                .unwrap(),
+            data.len()
+        );
         assert_eq!(buf, data);
     }
 
@@ -291,7 +346,7 @@ mod tests {
     fn delimiter_reader_should_support_data_less_than_max_size() {
         let delimiter = b"</test>";
         let max_data_size = 10;
-        let reader: Cursor<Vec<u8>> = {
+        let mut cursor = {
             let mut reader = Vec::new();
             reader.extend(vec![1]);
             reader.extend_from_slice(delimiter);
@@ -300,12 +355,13 @@ mod tests {
 
         // Create our reader that supports the entire size of our data,
         // not including the delimiter
-        let mut delimiter_reader =
-            DelimiterReader::new_with_delimiter(reader, max_data_size, delimiter);
+        let mut delimiter_reader = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
 
         // Read first data with delimiter
         let mut buf = vec![0; max_data_size];
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, read_from_cursor(&mut cursor))
+            .unwrap();
         assert_eq!(buf[..size], vec![1][..]);
         assert_eq!(buf[size..], vec![0; max_data_size - size][..]);
     }
@@ -314,7 +370,7 @@ mod tests {
     fn delimiter_reader_should_support_data_more_than_max_size_by_truncating_earlier_data() {
         let delimiter = b"</test>";
         let max_data_size = 3;
-        let reader: Cursor<Vec<u8>> = {
+        let mut cursor = {
             let mut reader = Vec::new();
             reader.extend(vec![1, 2, 3, 4, 5]);
             reader.extend_from_slice(delimiter);
@@ -323,18 +379,21 @@ mod tests {
 
         // Create our reader that supports the entire size of our data,
         // not including the delimiter
-        let mut delimiter_reader =
-            DelimiterReader::new_with_delimiter(reader, max_data_size, delimiter);
+        let mut delimiter_reader = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         let mut buf = vec![0; max_data_size];
 
         // First read cannot fit all data and thereby doesn't find the delimiter,
         // so will yield 0 bytes
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, read_from_cursor(&mut cursor))
+            .unwrap();
         assert_eq!(size, 0);
 
         // Second read should acquire the remainder of the data, find the delimiter,
         // and yield the read data size
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, read_from_cursor(&mut cursor))
+            .unwrap();
         assert_eq!(buf[..size], vec![3, 4, 5][..]);
     }
 
@@ -342,7 +401,7 @@ mod tests {
     fn delimiter_reader_should_support_multiple_delimiters_being_encountered() {
         let delimiter = b"</test>";
         let max_data_size = 3;
-        let reader: Cursor<Vec<u8>> = {
+        let mut cursor = {
             let mut reader = Vec::new();
             reader.extend(vec![1]);
             reader.extend_from_slice(delimiter);
@@ -355,22 +414,27 @@ mod tests {
 
         // Create our reader that supports the entire size of our data,
         // not including the delimiter
-        let mut delimiter_reader =
-            DelimiterReader::new_with_delimiter(reader, max_data_size, delimiter);
+        let mut delimiter_reader = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
 
         // Read first data with delimiter
         let mut buf = vec![0; max_data_size];
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, read_from_cursor(&mut cursor))
+            .unwrap();
         assert_eq!(buf[..size], vec![1][..]);
 
         // Read second data with delimiter
         let mut buf = vec![0; max_data_size];
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, read_from_cursor(&mut cursor))
+            .unwrap();
         assert_eq!(buf[..size], vec![4, 5, 6][..]);
 
         // Read third data with delimiter
         let mut buf = vec![0; max_data_size];
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, read_from_cursor(&mut cursor))
+            .unwrap();
         assert_eq!(buf[..size], vec![2, 3][..]);
     }
 
@@ -380,7 +444,7 @@ mod tests {
 
         // Make the max size (of our internal buffer) much bigger than all data
         let max_data_size = 100;
-        let reader: Cursor<Vec<u8>> = {
+        let mut cursor = {
             let mut reader = Vec::new();
             reader.extend(vec![1]);
             reader.extend_from_slice(delimiter);
@@ -393,22 +457,27 @@ mod tests {
 
         // Create our reader that supports the entire size of our data,
         // not including the delimiter
-        let mut delimiter_reader =
-            DelimiterReader::new_with_delimiter(reader, max_data_size, delimiter);
+        let mut delimiter_reader = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
 
         // Read first data with delimiter
         let mut buf = vec![0; max_data_size];
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, read_from_cursor(&mut cursor))
+            .unwrap();
         assert_eq!(buf[..size], vec![1][..]);
 
         // Read second data with delimiter
         let mut buf = vec![0; max_data_size];
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, read_from_cursor(&mut cursor))
+            .unwrap();
         assert_eq!(buf[..size], vec![4, 5, 6][..]);
 
         // Read third data with delimiter
         let mut buf = vec![0; max_data_size];
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, read_from_cursor(&mut cursor))
+            .unwrap();
         assert_eq!(buf[..size], vec![2, 3][..]);
     }
 
@@ -420,36 +489,44 @@ mod tests {
 
         // Prep our reader to have a certain state where data is still available
         // internally but the underlying reader will always yield an error
-        let mut delimiter_reader =
-            DelimiterReader::new_with_delimiter(EmptyNonblockingReader, max_data_size, delimiter);
+        let mut delimiter_reader = DelimiterReader::new_with_delimiter(max_data_size, delimiter);
         delimiter_reader.buf.copy_from_slice(b"0</test>1</test>");
         delimiter_reader.buf_pos = 0;
         delimiter_reader.buf_filled = delimiter_reader.buf.len();
 
         let mut buf = vec![0; max_data_size];
 
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, empty_nonblocking_read())
+            .unwrap();
         assert_eq!(&buf[..size], b"0");
 
-        let size = delimiter_reader.read(&mut buf).unwrap();
+        let size = delimiter_reader
+            .read(&mut buf, empty_nonblocking_read())
+            .unwrap();
         assert_eq!(&buf[..size], b"1");
 
-        let result = delimiter_reader.read(&mut buf);
+        let result = delimiter_reader.read(&mut buf, empty_nonblocking_read());
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::WouldBlock);
     }
 
     #[test]
     fn delimiter_writer_should_send_all_bytes_and_append_the_delimiter() {
         let delimiter = b"</test>";
-        let writer: Vec<u8> = Vec::new();
-        let mut delimiter_writer = DelimiterWriter::new_with_delimiter(writer, delimiter);
+        let mut writer: Vec<u8> = Vec::new();
+        let mut delimiter_writer = DelimiterWriter::new_with_delimiter(delimiter);
         let mut data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
         // Size should be the data sent not including the delimiter
-        assert_eq!(delimiter_writer.write(&data).unwrap(), data.len());
+        assert_eq!(
+            delimiter_writer
+                .write(&data, write_from_vec(&mut writer))
+                .unwrap(),
+            data.len()
+        );
 
         // Result should be the data and a delimiter appended
         data.extend_from_slice(delimiter);
-        assert_eq!(delimiter_writer.buf_writer.get_ref(), &data);
+        assert_eq!(&writer, &data);
     }
 }
