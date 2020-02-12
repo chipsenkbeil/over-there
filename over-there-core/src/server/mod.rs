@@ -16,6 +16,10 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 pub struct Server {
+    /// Internal state of the server
+    /// NOTE: Currently not used directly off of server, but is instead
+    ///       passed to an event loop on its own
+    #[allow(dead_code)]
     state: Arc<Mutex<state::ServerState>>,
 
     /// Represents the address the server is bound to
