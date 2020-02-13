@@ -1,5 +1,5 @@
 [package]
-name = "over-there-transport"
+name = "over-there-wire"
 version = "0.1.0"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 edition = "2018"

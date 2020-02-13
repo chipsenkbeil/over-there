@@ -1,5 +1,5 @@
 use over_there_auth::Digest;
-use over_there_crypto::Nonce;
+use over_there_crypto::{AssociatedData, Nonce};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -15,6 +15,15 @@ impl PacketEncryption {
         match self {
             Self::EncryptedWithNonce { nonce } => Some(nonce),
             _ => None,
+        }
+    }
+}
+
+impl From<AssociatedData> for PacketEncryption {
+    fn from(associated_data: AssociatedData) -> Self {
+        match associated_data {
+            AssociatedData::None => Self::Encrypted,
+            AssociatedData::Nonce(nonce) => Self::from(nonce),
         }
     }
 }

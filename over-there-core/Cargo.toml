@@ -30,8 +30,8 @@ rand = "0.7.2"
 over-there-auth = { path = "../over-there-auth" }
 over-there-crypto = { path = "../over-there-crypto" }
 over-there-derive = { path = "../over-there-derive" }
-over-there-transport = { path = "../over-there-transport" }
 over-there-utils = { path = "../over-there-utils" }
+over-there-wire = { path = "../over-there-wire" }
 
 [dev-dependencies]
 tokio = { version = "0.2.11", features = ["macros", "test-util"] }

@@ -1,4 +1,4 @@
-use crate::packet::{Metadata, Packet, PacketEncryption, PacketType};
+use crate::wire::packet::{Metadata, Packet, PacketEncryption, PacketType};
 use over_there_auth::Signer;
 use over_there_derive::Error;
 use std::collections::HashMap;

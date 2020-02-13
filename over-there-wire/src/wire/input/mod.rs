@@ -1,129 +1,104 @@
-use crate::{
-    assembler::{self, Assembler},
-    packet::Packet,
-    transceiver::TransceiverContext,
-};
-use over_there_auth::{Signer, Verifier};
-use over_there_crypto::{AssociatedData, CryptError, Decrypter, Encrypter, Nonce};
+pub mod assembler;
+
+use super::packet::Packet;
+use assembler::Assembler;
+use over_there_auth::Verifier;
+use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
 use over_there_derive::Error;
-use std::io;
+use std::time::Duration;
 
 #[derive(Debug, Error)]
-pub enum ReceiverError {
+pub enum InputProcessorError {
     DecodePacket(rmp_serde::decode::Error),
     UnableToVerifySignature,
     InvalidPacketSignature,
     AssembleData(assembler::AssemblerError),
     DecryptData(CryptError),
-    RecvBytes(io::Error),
 }
 
-pub(crate) struct ReceiverContext<'a, V, D>
+pub struct InputProcessor<V, D>
 where
     V: Verifier,
     D: Decrypter,
 {
-    /// Buffer to contain bytes for temporary storage
-    buffer: &'a mut [u8],
-
-    /// Assembler used to gather packets together
-    assembler: &'a mut Assembler,
-
-    /// Performs verification on data
-    verifier: &'a V,
-
-    /// Performs encryption/decryption on data
-    decrypter: &'a D,
+    assembler: Assembler,
+    verifier: V,
+    decrypter: D,
 }
 
-impl<'a, A, B> From<&'a mut TransceiverContext<A, B>> for ReceiverContext<'a, A, B>
+impl<V, D> InputProcessor<V, D>
 where
-    A: Signer + Verifier,
-    B: Encrypter + Decrypter,
+    V: Verifier,
+    D: Decrypter,
 {
-    fn from(ctx: &'a mut TransceiverContext<A, B>) -> Self {
+    pub fn new(packet_ttl: Duration, verifier: V, decrypter: D) -> Self {
+        let assembler = Assembler::new(packet_ttl);
         Self {
-            buffer: &mut ctx.buffer,
-            assembler: &mut ctx.assembler,
-            verifier: &ctx.authenticator,
-            decrypter: &ctx.bicrypter,
+            assembler,
+            verifier,
+            decrypter,
+        }
+    }
+
+    pub fn process(&mut self, data: &[u8]) -> Result<Option<Vec<u8>>, InputProcessorError> {
+        if data.is_empty() {
+            return Ok(None);
+        }
+
+        // Process the data as a packet
+        let p = Packet::from_slice(data).map_err(InputProcessorError::DecodePacket)?;
+
+        // Verify the packet's signature, skipping any form of assembly if
+        // it is not a legit packet
+        if !verify_packet(&self.verifier, &p)? {
+            return Err(InputProcessorError::InvalidPacketSignature);
+        }
+
+        let group_id = p.id();
+        let nonce = p.nonce().cloned();
+
+        // Ensure that packet groups are still valid
+        self.assembler.remove_expired();
+
+        // Add the packet, see if we are ready to assemble the data, and do so
+        let do_assemble = add_packet_and_verify(&mut self.assembler, p)?;
+        if do_assemble {
+            // Gather the complete data
+            let data = assemble_and_decrypt(group_id, &self.assembler, &self.decrypter, nonce)?;
+
+            // Remove the underlying group as we no longer need to keep it
+            self.assembler.remove_group(group_id);
+
+            Ok(Some(data))
+        } else {
+            Ok(None)
         }
     }
 }
 
-pub(crate) fn do_receive<V, D, T, R>(
-    ctx: ReceiverContext<'_, V, D>,
-    read: R,
-) -> Result<Option<(Vec<u8>, T)>, ReceiverError>
-where
-    V: Verifier,
-    D: Decrypter,
-    R: FnOnce(&mut [u8]) -> Result<(usize, T), io::Error>,
-{
-    // When retrieving bytes, check if we received an error indicating this
-    // is async and that we should consider it as nothing
-    let (size, other_data) = match read(ctx.buffer) {
-        // Cases where we get zero bytes or a blocking error, we skip
-        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(None),
-        Ok((size, _)) if size == 0 => return Ok(None),
-
-        // Otherwise, if we get a real error, we bubble it up
-        Err(e) => return Err(ReceiverError::RecvBytes(e)),
-
-        // Finally, if we get data, we continue
-        Ok(x) => x,
-    };
-
-    // Process the received packet
-    let p = Packet::from_slice(&ctx.buffer[..size]).map_err(ReceiverError::DecodePacket)?;
-
-    // Verify the packet's signature, skipping any form of assembly if
-    // it is not a legit packet
-    if !verify_packet(ctx.verifier, &p)? {
-        return Err(ReceiverError::InvalidPacketSignature);
-    }
-
-    let group_id = p.id();
-    let nonce = p.nonce().cloned();
-
-    // Ensure that packet groups are still valid
-    ctx.assembler.remove_expired();
-
-    // Add the packet, see if we are ready to assemble the data, and do so
-    let do_assemble = add_packet_and_verify(ctx.assembler, p)?;
-    if do_assemble {
-        // Gather the complete data
-        let data = assemble_and_decrypt(group_id, ctx.assembler, ctx.decrypter, nonce)?;
-
-        // Remove the underlying group as we no longer need to keep it
-        ctx.assembler.remove_group(group_id);
-
-        Ok(Some((data, other_data)))
-    } else {
-        Ok(None)
-    }
-}
-
-fn verify_packet<V>(verifier: &V, packet: &Packet) -> Result<bool, ReceiverError>
+fn verify_packet<V>(verifier: &V, packet: &Packet) -> Result<bool, InputProcessorError>
 where
     V: Verifier,
 {
     let signature = packet.signature();
     let content = packet
         .content_for_signature()
-        .map_err(|_| ReceiverError::UnableToVerifySignature)?;
+        .map_err(|_| InputProcessorError::UnableToVerifySignature)?;
     Ok(verifier.verify(&content, signature))
 }
 
 /// Adds the packet to our internal cache and checks to see if we
 /// are ready to assemble the packet
-fn add_packet_and_verify(assembler: &mut Assembler, packet: Packet) -> Result<bool, ReceiverError> {
+fn add_packet_and_verify(
+    assembler: &mut Assembler,
+    packet: Packet,
+) -> Result<bool, InputProcessorError> {
     let id = packet.id();
 
     // Bubble up the error; we don't care about the success
     assembler
         .add_packet(packet)
-        .map_err(ReceiverError::AssembleData)?;
+        .map_err(InputProcessorError::AssembleData)?;
 
     Ok(assembler.verify(id))
 }
@@ -135,19 +110,19 @@ fn assemble_and_decrypt<D>(
     assembler: &Assembler,
     decrypter: &D,
     nonce: Option<Nonce>,
-) -> Result<Vec<u8>, ReceiverError>
+) -> Result<Vec<u8>, InputProcessorError>
 where
     D: Decrypter,
 {
     // Assemble our data, which could be encrypted
     let data = assembler
         .assemble(group_id)
-        .map_err(ReceiverError::AssembleData)?;
+        .map_err(InputProcessorError::AssembleData)?;
 
     // Decrypt our collective data
     let data = decrypter
         .decrypt(&data, &AssociatedData::from(nonce))
-        .map_err(ReceiverError::DecryptData)?;
+        .map_err(InputProcessorError::DecryptData)?;
 
     Ok(data)
 }
@@ -155,67 +130,32 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::disassembler::{DisassembleInfo, Disassembler};
-    use crate::packet::{PacketEncryption, PacketType};
-    use crate::transceiver::TransceiverContext;
+    use crate::wire::{
+        output::disassembler::{DisassembleInfo, Disassembler},
+        packet::{PacketEncryption, PacketType},
+    };
     use over_there_auth::NoopAuthenticator;
     use over_there_crypto::NoopBicrypter;
-    use std::io::ErrorKind as IoErrorKind;
     use std::time::Duration;
 
-    fn new_context(buffer_size: usize) -> TransceiverContext<NoopAuthenticator, NoopBicrypter> {
-        TransceiverContext::new(
-            buffer_size,
-            Duration::from_secs(1),
-            NoopAuthenticator,
-            NoopBicrypter,
-        )
+    fn new_processor() -> InputProcessor<NoopAuthenticator, NoopBicrypter> {
+        InputProcessor::new(Duration::from_secs(1), NoopAuthenticator, NoopBicrypter)
     }
 
     #[test]
-    fn do_receive_should_fail_if_socket_fails_to_get_bytes() {
-        let mut ctx = new_context(100);
-        let rctx = From::from(&mut ctx);
+    fn input_processor_process_should_fail_if_unable_to_convert_bytes_to_packet() {
+        let mut processor = new_processor();
 
-        // NOTE: Having to produce this ugly failure function to get
-        //       write function parameter to be created
-        let f = |_: &mut [u8]| {
-            if false {
-                Ok((0, ()))
-            } else {
-                Err(io::Error::from(IoErrorKind::Other))
-            }
-        };
-
-        match do_receive(rctx, f) {
-            Err(ReceiverError::RecvBytes(_)) => (),
+        match processor.process(&[0; 5]) {
+            Err(InputProcessorError::DecodePacket(_)) => (),
             Err(x) => panic!("Unexpected error: {:?}", x),
             Ok(x) => panic!("Unexpected result: {:?}", x),
         }
     }
 
     #[test]
-    fn do_receive_should_fail_if_unable_to_convert_bytes_to_packet() {
-        let mut ctx = new_context(100);
-        let rctx = From::from(&mut ctx);
-
-        // Force buffer to have a couple of early zeros, which is not
-        // valid data when decoding
-        match do_receive(rctx, |buf| {
-            buf[0] = 0;
-            buf[1] = 0;
-            buf[2] = 0;
-            Ok((buf.len(), ()))
-        }) {
-            Err(ReceiverError::DecodePacket(_)) => (),
-            Err(x) => panic!("Unexpected error: {:?}", x),
-            Ok(x) => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[test]
-    fn do_receive_should_fail_if_unable_to_add_packet_to_assembler() {
-        let mut ctx = new_context(100);
+    fn input_processor_process_should_fail_if_unable_to_add_packet_to_assembler() {
+        let mut processor = new_processor();
         let id = 0;
         let encryption = PacketEncryption::None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
@@ -244,35 +184,25 @@ mod tests {
             .unwrap()[0];
         let data = p.to_vec().unwrap();
         assert_eq!(
-            do_receive(From::from(&mut ctx), |buf| {
-                let l = data.len();
-                buf[..l].clone_from_slice(&data);
-                Ok((l, ()))
-            })
-            .is_ok(),
+            processor.process(&data).is_ok(),
             true,
             "Failed to receive first packet!"
         );
 
         // Add the same packet more than once, which should
         // trigger the assembler to fail
-        match do_receive(From::from(&mut ctx), |buf| {
-            let l = data.len();
-            buf[..l].clone_from_slice(&data);
-            Ok((l, ()))
-        }) {
-            Err(ReceiverError::AssembleData(_)) => (),
+        match processor.process(&data) {
+            Err(InputProcessorError::AssembleData(_)) => (),
             Err(x) => panic!("Unexpected error: {:?}", x),
             Ok(x) => panic!("Unexpected result: {:?}", x),
         }
     }
 
     #[test]
-    fn do_receive_should_return_none_if_zero_bytes_received() {
-        let mut ctx = new_context(100);
-        let rctx = From::from(&mut ctx);
+    fn input_processor_process_should_return_none_if_zero_bytes_received() {
+        let mut processor = new_processor();
 
-        match do_receive(rctx, |_| Ok((0, ()))) {
+        match processor.process(&[0; 0]) {
             Ok(None) => (),
             Ok(Some(x)) => panic!("Unexpected result: {:?}", x),
             Err(x) => panic!("Unexpected error: {:?}", x),
@@ -280,9 +210,8 @@ mod tests {
     }
 
     #[test]
-    fn do_receive_should_return_none_if_received_packet_does_not_complete_data() {
-        let mut ctx = new_context(100);
-        let rctx = From::from(&mut ctx);
+    fn input_processor_process_should_return_none_if_received_packet_does_not_complete_data() {
+        let mut processor = new_processor();
 
         let id = 0;
         let encryption = PacketEncryption::None;
@@ -310,11 +239,7 @@ mod tests {
             })
             .unwrap()[0];
         let data = p.to_vec().unwrap();
-        match do_receive(rctx, |buf| {
-            let l = data.len();
-            buf[..l].clone_from_slice(&data);
-            Ok((l, ()))
-        }) {
+        match processor.process(&data) {
             Ok(None) => (),
             Ok(Some(x)) => panic!("Unexpected result: {:?}", x),
             Err(x) => panic!("Unexpected error: {:?}", x),
@@ -322,9 +247,8 @@ mod tests {
     }
 
     #[test]
-    fn do_receive_should_return_some_data_if_received_packet_does_complete_data() {
-        let mut ctx = new_context(100);
-        let rctx = From::from(&mut ctx);
+    fn input_processor_process_should_return_some_data_if_received_packet_does_complete_data() {
+        let mut processor = new_processor();
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
@@ -338,16 +262,12 @@ mod tests {
             })
             .unwrap()[0];
         let pdata = p.to_vec().unwrap();
-        match do_receive(rctx, |buf| {
-            let l = pdata.len();
-            buf[..l].clone_from_slice(&pdata);
-            Ok((l, ()))
-        }) {
-            Ok(Some((do_receive_data, _))) => {
+        match processor.process(&pdata) {
+            Ok(Some(input_processor_process_data)) => {
                 assert_eq!(
-                    do_receive_data, data,
+                    input_processor_process_data, data,
                     "Received unexpected data: {:?}",
-                    do_receive_data
+                    input_processor_process_data
                 );
             }
             Ok(None) => panic!("Unexpectedly received no data"),
@@ -356,11 +276,11 @@ mod tests {
     }
 
     #[test]
-    fn do_receive_should_remove_expired_packet_groups() {
+    fn input_processor_process_should_remove_expired_packet_groups() {
         // Create a custom context whose packet groups within its assembler
         // will expire immediately
-        let mut ctx =
-            TransceiverContext::new(100, Duration::new(0, 0), NoopAuthenticator, NoopBicrypter);
+        let mut processor =
+            InputProcessor::new(Duration::new(0, 0), NoopAuthenticator, NoopBicrypter);
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make many small packets
@@ -381,26 +301,18 @@ mod tests {
             .unwrap();
         assert!(packets.len() > 1, "Did not produce many small packets");
 
-        while !packets.is_empty() {
-            let rctx = From::from(&mut ctx);
+        for p in packets.iter() {
+            let pdata = p.to_vec().unwrap();
             assert!(
-                do_receive(rctx, |buf| {
-                    let pdata = packets.remove(0).to_vec().unwrap();
-                    let l = pdata.len();
-                    buf[..l].clone_from_slice(&pdata);
-                    Ok((l, ()))
-                })
-                .unwrap()
-                .is_none(),
-                "Unexpectedly got result from receive with ttl of zero"
+                processor.process(&pdata).unwrap().is_none(),
+                "Unexpectedly got result from process with ttl of zero"
             );
         }
     }
 
     #[test]
-    fn do_receive_should_remove_the_assembler_packet_group_if_does_complete_data() {
-        let mut ctx = new_context(100);
-        let rctx = From::from(&mut ctx);
+    fn input_processor_process_should_remove_the_assembler_packet_group_if_does_complete_data() {
+        let mut processor = new_processor();
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
@@ -414,14 +326,9 @@ mod tests {
             })
             .unwrap()[0];
         let pdata = p.to_vec().unwrap();
-        do_receive(rctx, |buf| {
-            let l = pdata.len();
-            buf[..l].clone_from_slice(&pdata);
-            Ok((l, ()))
-        })
-        .unwrap();
+        processor.process(&pdata).unwrap();
 
-        assert_eq!(ctx.assembler.len(), 0);
+        assert_eq!(processor.assembler.len(), 0);
     }
 
     #[cfg(test)]
@@ -445,18 +352,13 @@ mod tests {
             }
         }
 
-        fn new_context(buffer_size: usize) -> TransceiverContext<NoopAuthenticator, BadDecrypter> {
-            TransceiverContext::new(
-                buffer_size,
-                Duration::from_secs(1),
-                NoopAuthenticator,
-                BadDecrypter,
-            )
+        fn new_processor() -> InputProcessor<NoopAuthenticator, BadDecrypter> {
+            InputProcessor::new(Duration::from_secs(1), NoopAuthenticator, BadDecrypter)
         }
 
         #[test]
-        fn do_receive_should_fail_if_unable_to_decrypt_data() {
-            let mut ctx = new_context(100);
+        fn input_processor_process_should_fail_if_unable_to_decrypt_data() {
+            let mut processor = new_processor();
 
             let id = 0;
             let encryption = PacketEncryption::None;
@@ -487,12 +389,7 @@ mod tests {
             for p in packets[..packets.len() - 1].iter() {
                 let pdata = p.to_vec().unwrap();
                 assert_eq!(
-                    do_receive(From::from(&mut ctx), |buf| {
-                        let l = pdata.len();
-                        buf[..l].clone_from_slice(&pdata);
-                        Ok((l, ()))
-                    })
-                    .is_ok(),
+                    processor.process(&pdata).is_ok(),
                     true,
                     "Unexpectedly failed to receive packet"
                 );
@@ -501,12 +398,8 @@ mod tests {
             // Final packet should trigger decrypting and it should fail
             let final_packet = packets.last().unwrap();
             let pdata = final_packet.to_vec().unwrap();
-            match do_receive(From::from(&mut ctx), |buf| {
-                let l = pdata.len();
-                buf[..l].clone_from_slice(&pdata);
-                Ok((l, ()))
-            }) {
-                Err(super::ReceiverError::DecryptData(_)) => (),
+            match processor.process(&pdata) {
+                Err(super::InputProcessorError::DecryptData(_)) => (),
                 Err(x) => panic!("Unexpected error: {:?}", x),
                 Ok(x) => panic!("Unexpected result: {:?}", x),
             }

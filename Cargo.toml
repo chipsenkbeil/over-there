@@ -8,11 +8,11 @@ edition = "2018"
 [workspace]
 members = [
     "over-there-auth",
-    "over-there-crypto",
     "over-there-core",
-    "over-there-transport",
-    "over-there-utils",
+    "over-there-crypto",
     "over-there-derive",
+    "over-there-utils",
+    "over-there-wire",
 ]
 
 # TODO: Currently, there is not a way to mark a dependency as binary-only
@@ -31,8 +31,8 @@ tokio = { version = "0.2.11", features = ["rt-threaded"] }
 over-there-auth = { path = "./over-there-auth" }
 over-there-crypto = { path = "./over-there-crypto" }
 over-there-core = { path = "./over-there-core" }
-over-there-transport = { path = "./over-there-transport" }
 over-there-utils = { path = "./over-there-utils" }
+over-there-wire = { path = "./over-there-wire" }
 
 [dev-dependencies]
 env_logger = "0.7.1"

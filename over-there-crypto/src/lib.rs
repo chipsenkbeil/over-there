@@ -10,6 +10,9 @@ pub use key::{Key128Bits, Key256Bits, Key512Bits, KeySize};
 mod noop;
 pub use noop::NoopBicrypter;
 
+mod closure;
+pub use closure::{ClosureDecrypter, ClosureEncrypter};
+
 use over_there_derive::Error;
 use serde::{Deserialize, Serialize};
 
