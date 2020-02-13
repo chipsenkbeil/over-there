@@ -1,214 +1,227 @@
-mod connect;
+pub mod error;
 pub mod file;
 pub mod future;
 pub mod proc;
 pub mod state;
 
-use crate::msg::{
-    content::{
-        capabilities::Capability,
-        io::{file::*, proc::*},
-        Content,
+use crate::{
+    msg::{
+        content::{
+            capabilities::Capability,
+            io::{file::*, proc::*},
+            Content,
+        },
+        Msg,
     },
-    Msg,
+    Communicator, Transport,
 };
+use error::{AskError, ExecAskError, FileAskError, TellError};
 use file::RemoteFile;
 use future::{AskFuture, AskFutureState};
-use log::trace;
+use log::{error, trace, warn};
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
-use over_there_derive::Error;
-use over_there_transport::{
-    net, TcpStreamTransceiverError, TransceiverThread, UdpStreamTransceiverError,
-};
 use over_there_utils::Delay;
+use over_there_wire::{self as wire, InboundWire, InboundWireError, NetTransmission, OutboundWire};
 use proc::RemoteProc;
-use std::io;
-use std::net::{SocketAddr, TcpStream, UdpSocket};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
 use std::time::Duration;
+use tokio::{
+    io,
+    net::{TcpStream, UdpSocket},
+    runtime::Runtime,
+    task,
+};
 
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum TellError {
-    EncodingFailed,
-    SendFailed,
-}
+impl<S, V, E, D> Communicator<S, V, E, D>
+where
+    S: Signer,
+    V: Verifier,
+    E: Encrypter,
+    D: Decrypter,
+{
+    /// Starts actively listening for msgs via the specified transport medium
+    pub async fn connect(self, transport: Transport) -> io::Result<Client> {
+        let runtime = Runtime::new()?;
+        let handle = runtime.handle();
+        let mut state = state::ClientState::default();
 
-impl From<AskError> for Option<TellError> {
-    fn from(error: AskError) -> Self {
-        match error {
-            AskError::EncodingFailed => Some(TellError::EncodingFailed),
-            AskError::SendFailed => Some(TellError::SendFailed),
-            _ => None,
+        match transport {
+            Transport::Tcp(addrs) => {
+                // NOTE: Tokio does not support &[SocketAddr] -> ToSocketAddrs,
+                //       so we have to loop through manually
+                // See https://github.com/tokio-rs/tokio/pull/1760#discussion_r379120864
+                let stream = {
+                    let mut stream = None;
+                    for addr in addrs.iter() {
+                        let result = TcpStream::connect(addr).await;
+                        if result.is_ok() {
+                            stream = result.ok();
+                            break;
+                        }
+                    }
+                    stream.ok_or(io::Error::from(io::ErrorKind::ConnectionRefused))?
+                };
+                let remote_addr = stream.peer_addr()?;
+                let inbound_wire = InboundWire::new(
+                    NetTransmission::TcpEthernet.into(),
+                    self.packet_ttl,
+                    self.verifier,
+                    self.decrypter,
+                );
+                let outbound_wire = OutboundWire::new(
+                    NetTransmission::TcpEthernet.into(),
+                    self.signer,
+                    self.encrypter,
+                );
+                let event_handle = handle.spawn(async {
+                    loop {
+                        let result = inbound_wire
+                            .async_recv(|buf| {
+                                use futures::future::FutureExt;
+                                use io::AsyncReadExt;
+                                stream
+                                    .read(buf)
+                                    .map(|res| res.map(|size| (size, remote_addr)))
+                            })
+                            .await;
+                        if !process_recv(&mut state, result).await {
+                            break;
+                        }
+                    }
+                });
+
+                Ok(Client {
+                    state,
+                    runtime,
+                    event_handle,
+                    remote_addr,
+                    timeout: Client::DEFAULT_TIMEOUT,
+                })
+            }
+            Transport::Udp(addrs) => {
+                // NOTE: Tokio does not support &[SocketAddr] -> ToSocketAddrs,
+                //       so we have to loop through manually
+                // See https://github.com/tokio-rs/tokio/pull/1760#discussion_r379120864
+                let (socket, remote_addr) = {
+                    let mut socketAndAddr = None;
+                    for addr in addrs.iter() {
+                        let result = wire::net::udp::connect(*addr);
+                        if result.is_ok() {
+                            socketAndAddr = result.ok().map(|s| (s, *addr));
+                            break;
+                        }
+                    }
+
+                    // NOTE: Must use Handle::enter to provide proper runtime when
+                    //       using UdpSocket::from_std
+                    handle.enter(|| {
+                        socketAndAddr
+                            .ok_or(io::Error::from(io::ErrorKind::ConnectionRefused))
+                            .and_then(|(s, addr)| UdpSocket::from_std(s).map(|s| (s, addr)))
+                    })?
+                };
+
+                let addr = socket.local_addr()?;
+                let transmission = NetTransmission::udp_from_addr(addr);
+
+                let inbound_wire = InboundWire::new(
+                    transmission.into(),
+                    self.packet_ttl,
+                    self.verifier,
+                    self.decrypter,
+                );
+                let outbound_wire =
+                    OutboundWire::new(transmission.into(), self.signer, self.encrypter);
+                let event_handle = handle.spawn(async {
+                    loop {
+                        let result = inbound_wire.async_recv(|buf| socket.recv_from(buf)).await;
+                        if !process_recv(&mut state, result).await {
+                            break;
+                        }
+                    }
+                });
+
+                Ok(Client {
+                    state,
+                    runtime,
+                    event_handle,
+                    remote_addr,
+                    timeout: Client::DEFAULT_TIMEOUT,
+                })
+            }
         }
     }
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum AskError {
-    Failure { msg: String },
-    InvalidResponse { content: Content },
-    Timeout,
-    EncodingFailed,
-    SendFailed,
-}
-
-impl From<TellError> for AskError {
-    fn from(error: TellError) -> Self {
-        match error {
-            TellError::EncodingFailed => Self::EncodingFailed,
-            TellError::SendFailed => Self::SendFailed,
+/// Process result of receiving data, indicating whether should continue
+/// processing additional data
+async fn process_recv(
+    state: &mut state::ClientState,
+    result: Result<Option<(Vec<u8>, SocketAddr)>, InboundWireError>,
+) -> bool {
+    match result {
+        Ok(None) => true,
+        Ok(Some((data, addr))) => {
+            trace!("Incoming data of size {}", data.len());
+            if let Ok(msg) = Msg::from_slice(&data) {
+                trace!("Forwarding {:?} using {:?}", msg, addr);
+                // TODO: Invoke callback
+                true
+            } else {
+                warn!("Discarding data of size {} as not valid msg", data.len());
+                true
+            }
         }
+        Err(x) => match x {
+            InboundWireError::IO(x) => {
+                error!("Fatal IO on socket: {}", x);
+                false
+            }
+            InboundWireError::InputProcessor(x) => {
+                error!("Process error on socket: {}", x);
+                true
+            }
+        },
     }
 }
 
-#[derive(Debug, Error)]
-pub enum FileAskError {
-    GeneralAskFailed(AskError),
-    IoError(io::Error),
-    FileSignatureChanged { id: u32 },
-}
-
-impl From<AskError> for FileAskError {
-    fn from(error: AskError) -> Self {
-        Self::GeneralAskFailed(error)
-    }
-}
-
-impl From<io::Error> for FileAskError {
-    fn from(error: io::Error) -> Self {
-        Self::IoError(error)
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum ExecAskError {
-    GeneralAskFailed(AskError),
-    IoError(io::Error),
-    FailedToKill,
-}
-
-impl From<AskError> for ExecAskError {
-    fn from(error: AskError) -> Self {
-        Self::GeneralAskFailed(error)
-    }
-}
-
-impl From<io::Error> for ExecAskError {
-    fn from(error: io::Error) -> Self {
-        Self::IoError(error)
-    }
-}
-
+/// Represents a client after connecting to an endpoint
 pub struct Client {
-    state: Arc<Mutex<state::ClientState>>,
+    state: state::ClientState,
+
+    /// Used to spawn jobs when communicating with the server
+    runtime: Runtime,
+
+    /// Primary event handle processing incoming msgs
+    event_handle: task::JoinHandle<()>,
 
     /// Represents the address the client is connected to
-    pub remote_addr: SocketAddr,
+    remote_addr: SocketAddr,
 
     /// Represents maximum to wait on responses before timing out
-    pub timeout: Duration,
-
-    /// Performs sending/receiving over network
-    transceiver_thread: TransceiverThread<Vec<u8>, ()>,
-
-    /// Processes incoming msg structs
-    msg_thread: JoinHandle<()>,
+    timeout: Duration,
 }
 
 impl Client {
     /// Default timeout applied to a new client for any ask made
     pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
-    pub fn connect_tcp<A, B, C>(
-        remote_addr: SocketAddr,
-        packet_ttl: Duration,
-        authenticator: A,
-        bicrypter: B,
-        err_callback: C,
-    ) -> Result<Self, io::Error>
-    where
-        A: Signer + Verifier + Send + Sync + 'static,
-        B: Encrypter + Decrypter + Send + Sync + 'static,
-        C: Fn(TcpStreamTransceiverError) -> bool + Send + 'static,
-    {
-        Self::connect_using_tcp_stream(
-            TcpStream::connect(remote_addr)?,
-            packet_ttl,
-            authenticator,
-            bicrypter,
-            err_callback,
-        )
+    pub fn event_handle(&self) -> &task::JoinHandle<()> {
+        &self.event_handle
     }
 
-    pub fn connect_using_tcp_stream<A, B, C>(
-        stream: TcpStream,
-        packet_ttl: Duration,
-        authenticator: A,
-        bicrypter: B,
-        err_callback: C,
-    ) -> Result<Self, io::Error>
-    where
-        A: Signer + Verifier + Send + Sync + 'static,
-        B: Encrypter + Decrypter + Send + Sync + 'static,
-        C: Fn(TcpStreamTransceiverError) -> bool + Send + 'static,
-    {
-        connect::tcp_connect(stream, packet_ttl, authenticator, bicrypter, err_callback)
+    pub fn runtime(&self) -> &Runtime {
+        &self.runtime
     }
 
-    pub fn connect_udp<A, B, C>(
-        remote_addr: SocketAddr,
-        packet_ttl: Duration,
-        authenticator: A,
-        bicrypter: B,
-        err_callback: C,
-    ) -> Result<Self, io::Error>
-    where
-        A: Signer + Verifier + Send + Sync + 'static,
-        B: Encrypter + Decrypter + Send + Sync + 'static,
-        C: Fn(UdpStreamTransceiverError) -> bool + Send + 'static,
-    {
-        Self::connect_using_udp_socket(
-            net::udp::connect(remote_addr)?,
-            remote_addr,
-            packet_ttl,
-            authenticator,
-            bicrypter,
-            err_callback,
-        )
+    pub fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
     }
 
-    pub fn connect_using_udp_socket<A, B, C>(
-        socket: UdpSocket,
-        remote_addr: SocketAddr,
-        packet_ttl: Duration,
-        authenticator: A,
-        bicrypter: B,
-        err_callback: C,
-    ) -> Result<Self, io::Error>
-    where
-        A: Signer + Verifier + Send + Sync + 'static,
-        B: Encrypter + Decrypter + Send + Sync + 'static,
-        C: Fn(UdpStreamTransceiverError) -> bool + Send + 'static,
-    {
-        connect::udp_connect(
-            socket,
-            remote_addr,
-            packet_ttl,
-            authenticator,
-            bicrypter,
-            err_callback,
-        )
-    }
-
-    pub fn join(self) -> Result<(), Box<dyn std::error::Error>> {
-        self.transceiver_thread.join()?;
-        self.msg_thread
-            .join()
-            .map_err(|_| "Msg Process Thread Join Error")?;
-
-        Ok(())
+    pub fn timeout(&self) -> Duration {
+        self.timeout
     }
 
     /// Generic ask of the server that is expecting a response

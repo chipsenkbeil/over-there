@@ -40,6 +40,10 @@ where
         }
     }
 
+    pub fn transmission_size(&self) -> usize {
+        self.transmission_size
+    }
+
     pub fn process(&mut self, data: &[u8]) -> Result<Vec<Vec<u8>>, OutputProcessorError> {
         // Encrypt entire dataset before splitting as it will grow in size
         // and it's difficult to predict if we can stay under our transmission
@@ -92,6 +96,12 @@ mod tests {
 
     fn new_processor(buffer_size: usize) -> OutputProcessor<NoopAuthenticator, NoopBicrypter> {
         OutputProcessor::new(buffer_size, NoopAuthenticator, NoopBicrypter)
+    }
+
+    #[test]
+    fn output_processor_transmission_size_should_return_internal_transmission_size() {
+        let processor = new_processor(999);
+        assert_eq!(999, processor.transmission_size());
     }
 
     #[test]

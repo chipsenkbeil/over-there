@@ -1,11 +1,14 @@
 use crate::{msg::content::Content, server::action::ActionError};
 use log::debug;
+use std::future::Future;
 
-pub async fn heartbeat(
-    respond: impl FnOnce(Content) -> Result<(), ActionError>,
-) -> Result<(), ActionError> {
+pub async fn heartbeat<F, R>(respond: F) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
     debug!("heartbeat_request");
-    respond(Content::Heartbeat)
+    respond(Content::Heartbeat).await
 }
 
 #[cfg(test)]
@@ -18,7 +21,7 @@ mod tests {
 
         heartbeat(|c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();

@@ -7,14 +7,19 @@ use crate::{
 };
 use log::debug;
 use std::convert::TryFrom;
+use std::future::Future;
 use std::io;
 use std::process::{Command, Stdio};
 
-pub async fn do_exec_proc(
+pub async fn do_exec_proc<F, R>(
     state: &mut ServerState,
     args: &DoExecProcArgs,
-    respond: impl FnOnce(Content) -> Result<(), ActionError>,
-) -> Result<(), ActionError> {
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
     debug!("do_exec_proc: {:?}", args);
     let DoExecProcArgs {
         command,
@@ -37,17 +42,21 @@ pub async fn do_exec_proc(
         Ok(local_proc) => {
             let id = local_proc.id();
             state.procs.insert(id, local_proc);
-            respond(Content::ProcStarted(ProcStartedArgs { id }))
+            respond(Content::ProcStarted(ProcStartedArgs { id })).await
         }
-        Err(x) => respond(Content::IoError(From::from(x))),
+        Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
 
-pub async fn do_write_stdin(
+pub async fn do_write_stdin<F, R>(
     state: &mut ServerState,
     args: &DoWriteStdinArgs,
-    respond: impl FnOnce(Content) -> Result<(), ActionError>,
-) -> Result<(), ActionError> {
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
     debug!("do_write_stdin: {:?}", args);
 
     match state.procs.get_mut(&args.id) {
@@ -60,71 +69,91 @@ pub async fn do_write_stdin(
             }
 
             match result {
-                Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)),
-                Err(x) => respond(Content::IoError(From::from(x))),
+                Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)).await,
+                Err(x) => respond(Content::IoError(From::from(x))).await,
             }
         }
-        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
+        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))).await,
     }
 }
 
-pub async fn do_get_stdout(
+pub async fn do_get_stdout<F, R>(
     state: &mut ServerState,
     args: &DoGetStdoutArgs,
-    respond: impl FnOnce(Content) -> Result<(), ActionError>,
-) -> Result<(), ActionError> {
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
     debug!("do_get_stdout: {:?}", args);
 
     match state.procs.get_mut(&args.id) {
         Some(local_proc) => {
             let mut buf = [0; 1024];
             match local_proc.read_stdout(&mut buf) {
-                Ok(size) => respond(Content::StdoutContents(StdoutContentsArgs {
-                    output: buf[..size].to_vec(),
-                })),
+                Ok(size) => {
+                    respond(Content::StdoutContents(StdoutContentsArgs {
+                        output: buf[..size].to_vec(),
+                    }))
+                    .await
+                }
                 Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
                     respond(Content::StdoutContents(StdoutContentsArgs {
                         output: vec![],
                     }))
+                    .await
                 }
-                Err(x) => respond(Content::IoError(From::from(x))),
+                Err(x) => respond(Content::IoError(From::from(x))).await,
             }
         }
-        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
+        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))).await,
     }
 }
 
-pub async fn do_get_stderr(
+pub async fn do_get_stderr<F, R>(
     state: &mut ServerState,
     args: &DoGetStderrArgs,
-    respond: impl FnOnce(Content) -> Result<(), ActionError>,
-) -> Result<(), ActionError> {
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
     debug!("do_get_stderr: {:?}", args);
 
     match state.procs.get_mut(&args.id) {
         Some(local_proc) => {
             let mut buf = [0; 1024];
             match local_proc.read_stderr(&mut buf) {
-                Ok(size) => respond(Content::StderrContents(StderrContentsArgs {
-                    output: buf[..size].to_vec(),
-                })),
+                Ok(size) => {
+                    respond(Content::StderrContents(StderrContentsArgs {
+                        output: buf[..size].to_vec(),
+                    }))
+                    .await
+                }
                 Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
                     respond(Content::StderrContents(StderrContentsArgs {
                         output: vec![],
                     }))
+                    .await
                 }
-                Err(x) => respond(Content::IoError(From::from(x))),
+                Err(x) => respond(Content::IoError(From::from(x))).await,
             }
         }
-        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
+        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))).await,
     }
 }
 
-pub async fn do_kill_proc(
+pub async fn do_kill_proc<F, R>(
     state: &mut ServerState,
     args: &DoKillProcArgs,
-    respond: impl FnOnce(Content) -> Result<(), ActionError>,
-) -> Result<(), ActionError> {
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
     debug!("do_kill_proc: {:?}", args);
 
     match state.procs.remove(&args.id) {
@@ -132,14 +161,17 @@ pub async fn do_kill_proc(
         //       would block, but seems to be required in order to properly
         //       have the process clean up -- try_wait doesn't seem to work
         Some(local_proc) => match local_proc.kill_and_wait() {
-            Ok(exit_status) => respond(Content::ProcStatus(ProcStatusArgs {
-                id: args.id,
-                is_alive: false,
-                exit_code: exit_status.code(),
-            })),
-            Err(x) => respond(Content::IoError(From::from(x))),
+            Ok(exit_status) => {
+                respond(Content::ProcStatus(ProcStatusArgs {
+                    id: args.id,
+                    is_alive: false,
+                    exit_code: exit_status.code(),
+                }))
+                .await
+            }
+            Err(x) => respond(Content::IoError(From::from(x))).await,
         },
-        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))),
+        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))).await,
     }
 }
 
@@ -169,7 +201,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                Ok(())
+                async { Ok(()) }
             },
         )
         .await
@@ -200,7 +232,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                Ok(())
+                async { Ok(()) }
             },
         )
         .await
@@ -232,7 +264,7 @@ mod tests {
 
         do_write_stdin(&mut state, &DoWriteStdinArgs { id, input }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();
@@ -278,7 +310,7 @@ mod tests {
 
         do_write_stdin(&mut state, &DoWriteStdinArgs { id, input }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();
@@ -304,7 +336,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                Ok(())
+                async { Ok(()) }
             },
         )
         .await
@@ -338,7 +370,7 @@ mod tests {
 
         do_get_stdout(&mut state, &DoGetStdoutArgs { id }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();
@@ -370,7 +402,7 @@ mod tests {
 
         do_get_stdout(&mut state, &DoGetStdoutArgs { id }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();
@@ -390,7 +422,7 @@ mod tests {
 
         do_get_stdout(&mut state, &DoGetStdoutArgs { id: 0 }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();
@@ -423,7 +455,7 @@ mod tests {
 
         do_get_stderr(&mut state, &DoGetStderrArgs { id }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();
@@ -455,7 +487,7 @@ mod tests {
 
         do_get_stderr(&mut state, &DoGetStderrArgs { id }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();
@@ -475,7 +507,7 @@ mod tests {
 
         do_get_stderr(&mut state, &DoGetStderrArgs { id: 0 }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();
@@ -508,7 +540,7 @@ mod tests {
 
         do_kill_proc(&mut state, &DoKillProcArgs { id }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();
@@ -545,7 +577,7 @@ mod tests {
 
         do_kill_proc(&mut state, &DoKillProcArgs { id }, |c| {
             content = Some(c);
-            Ok(())
+            async { Ok(()) }
         })
         .await
         .unwrap();

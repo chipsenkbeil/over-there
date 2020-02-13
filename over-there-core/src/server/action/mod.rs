@@ -6,25 +6,26 @@ use crate::{
 };
 use log::trace;
 use over_there_derive::Error;
-use over_there_transport::{Responder, ResponderError};
+use over_there_wire::OutboundWireError;
+use std::future::Future;
 
 #[derive(Debug, Error)]
 pub enum ActionError {
     MsgError(MsgError),
-    ResponderError(ResponderError),
+    OutboundWireError(OutboundWireError),
     Unknown,
 }
 
 /// Evaluate a message's content and potentially respond using the provided responder
-pub async fn execute<R: Responder>(
-    state: &mut ServerState,
-    msg: &Msg,
-    responder: &R,
-) -> Result<(), ActionError> {
+pub async fn execute<F, R>(state: &mut ServerState, msg: &Msg, send: F) -> Result<(), ActionError>
+where
+    F: FnMut(&[u8]) -> R,
+    R: Future<Output = Result<(), OutboundWireError>>,
+{
     trace!("Received msg: {:?}", msg);
 
     let header = msg.header.clone();
-    let do_respond = |content: Content| respond(responder, content, header);
+    let do_respond = move |content: Content| respond(content, header, send);
 
     match &msg.content {
         Content::Heartbeat => handler::heartbeat::heartbeat(do_respond).await,
@@ -46,13 +47,13 @@ pub async fn execute<R: Responder>(
 }
 
 /// Sends a response to the originator of a msg
-fn respond<R: Responder>(
-    responder: &R,
-    content: Content,
-    parent_header: Header,
-) -> Result<(), ActionError> {
+async fn respond<F, R>(content: Content, parent_header: Header, f: F) -> Result<(), ActionError>
+where
+    F: FnMut(&[u8]) -> R,
+    R: Future<Output = Result<(), OutboundWireError>>,
+{
     let new_msg = Msg::from((content, parent_header));
     let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
 
-    responder.send(&data).map_err(ActionError::ResponderError)
+    f(&data).await.map_err(ActionError::OutboundWireError)
 }

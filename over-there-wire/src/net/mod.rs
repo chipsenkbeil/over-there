@@ -25,6 +25,15 @@ pub enum NetTransmission {
 }
 
 impl NetTransmission {
+    /// Produces transmission size for UDP datagrams based on socket address
+    /// being IPv4 or IPv6
+    pub fn udp_from_addr(addr: SocketAddr) -> Self {
+        match addr {
+            SocketAddr::V4(_) => Self::UdpIpv4,
+            SocketAddr::V6(_) => Self::UdpIpv6,
+        }
+    }
+
     pub fn size(&self) -> usize {
         match self {
             Self::TcpEthernet => tcp::MTU_ETHERNET_SIZE,

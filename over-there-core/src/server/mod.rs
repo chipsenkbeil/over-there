@@ -1,118 +1,191 @@
 mod action;
 pub mod file;
-mod listen;
 pub mod proc;
 pub mod state;
 
-use over_there_auth::{Signer, Verifier};
-use over_there_crypto::{Decrypter, Encrypter};
-use over_there_transport::{
-    net, TcpListenerTransceiverError, TransceiverThread, UdpTransceiverError,
+use crate::{Communicator, Msg, Transport};
+use log::{error, trace, warn};
+use over_there_wire::{
+    Decrypter, Encrypter, InboundWire, InboundWireError, NetTransmission, OutboundWire, Signer,
+    Verifier,
 };
-use std::io;
-use std::net::{IpAddr, SocketAddr, TcpListener, UdpSocket};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
-use std::time::Duration;
+use std::net::{SocketAddr, ToSocketAddrs};
+use tokio::{
+    io,
+    net::{TcpListener, UdpSocket},
+    runtime::Runtime,
+    task,
+};
 
+/// Represents a server after listening has begun
 pub struct Server {
-    /// Internal state of the server
-    /// NOTE: Currently not used directly off of server, but is instead
-    ///       passed to an event loop on its own
-    #[allow(dead_code)]
-    state: Arc<Mutex<state::ServerState>>,
+    state: state::ServerState,
 
-    /// Represents the address the server is bound to
-    pub addr: SocketAddr,
+    /// Used to spawn jobs when communicating with clients
+    runtime: Runtime,
 
-    /// Performs sending/receiving over network
-    transceiver_thread: TransceiverThread<(Vec<u8>, SocketAddr), ()>,
-
-    /// Processes incoming msg structs
-    msg_thread: JoinHandle<()>,
+    /// Primary event handle processing incoming msgs
+    event_handle: task::JoinHandle<()>,
 }
 
-impl Server {
-    pub fn listen_tcp<A, B, C>(
-        host: IpAddr,
-        port: Vec<u16>,
-        packet_ttl: Duration,
-        authenticator: A,
-        bicrypter: B,
-        err_callback: C,
-    ) -> Result<Self, io::Error>
-    where
-        A: Signer + Verifier + Send + Sync + 'static,
-        B: Encrypter + Decrypter + Send + Sync + 'static,
-        C: Fn(TcpListenerTransceiverError) -> bool + Send + 'static,
-    {
-        Self::listen_using_tcp_listener(
-            net::tcp::bind(host, port)?,
-            packet_ttl,
-            authenticator,
-            bicrypter,
-            err_callback,
-        )
+impl<S, V, E, D> Communicator<S, V, E, D>
+where
+    S: Signer,
+    V: Verifier,
+    E: Encrypter,
+    D: Decrypter,
+{
+    /// Starts actively listening for msgs via the specified transport medium
+    pub async fn listen(self, transport: Transport) -> io::Result<Server> {
+        let runtime = Runtime::new()?;
+        let handle = runtime.handle();
+        let mut state = state::ServerState::default();
+
+        match transport {
+            Transport::Tcp(addrs) => {
+                // NOTE: Tokio does not support &[SocketAddr] -> ToSocketAddrs,
+                //       so we have to loop through manually
+                // See https://github.com/tokio-rs/tokio/pull/1760#discussion_r379120864
+                let listener = {
+                    let mut listener = None;
+                    for addr in addrs.iter() {
+                        let result = TcpListener::bind(addr).await;
+                        if result.is_ok() {
+                            listener = result.ok();
+                            break;
+                        }
+                    }
+                    listener.ok_or(io::Error::from(io::ErrorKind::AddrNotAvailable))?
+                };
+
+                let inbound_wire = InboundWire::new(
+                    NetTransmission::TcpEthernet.into(),
+                    self.packet_ttl,
+                    self.verifier,
+                    self.decrypter,
+                );
+                let outbound_wire = OutboundWire::new(
+                    NetTransmission::TcpEthernet.into(),
+                    self.signer,
+                    self.encrypter,
+                );
+                let event_handle = handle.spawn(async {
+                    loop {
+                        match listener.accept().await {
+                            Ok((stream, addr)) => {
+                                let _ = handle.spawn(async {
+                                    loop {
+                                        let result = inbound_wire
+                                            .async_recv(|buf| {
+                                                use futures::future::FutureExt;
+                                                use io::AsyncReadExt;
+                                                stream
+                                                    .read(buf)
+                                                    .map(|res| res.map(|size| (size, addr)))
+                                            })
+                                            .await;
+                                        if !process_recv(&mut state, result).await {
+                                            break;
+                                        }
+                                    }
+                                });
+                            }
+                            Err(x) => {
+                                error!("Listening for connections encountered error: {}", x);
+                                break;
+                            }
+                        }
+                    }
+                });
+
+                Ok(Server {
+                    state,
+                    runtime,
+                    event_handle,
+                })
+            }
+            Transport::Udp(addrs) => {
+                // NOTE: Tokio does not support &[SocketAddr] -> ToSocketAddrs,
+                //       so we have to loop through manually
+                // See https://github.com/tokio-rs/tokio/pull/1760#discussion_r379120864
+                let socket = {
+                    let mut socket = None;
+                    for addr in addrs.iter() {
+                        let result = UdpSocket::bind(addr).await;
+                        if result.is_ok() {
+                            socket = result.ok();
+                            break;
+                        }
+                    }
+                    socket.ok_or(io::Error::from(io::ErrorKind::AddrNotAvailable))?
+                };
+                let addr = socket.local_addr()?;
+                let transmission = NetTransmission::udp_from_addr(addr);
+
+                let inbound_wire = InboundWire::new(
+                    transmission.into(),
+                    self.packet_ttl,
+                    self.verifier,
+                    self.decrypter,
+                );
+                let outbound_wire =
+                    OutboundWire::new(transmission.into(), self.signer, self.encrypter);
+                let event_handle = handle.spawn(async {
+                    loop {
+                        let result = inbound_wire.async_recv(|buf| socket.recv_from(buf)).await;
+                        if !process_recv(&mut state, result).await {
+                            break;
+                        }
+                    }
+                });
+
+                Ok(Server {
+                    state,
+                    runtime,
+                    event_handle,
+                })
+            }
+        }
     }
+}
 
-    pub fn listen_using_tcp_listener<A, B, C>(
-        listener: TcpListener,
-        packet_ttl: Duration,
-        authenticator: A,
-        bicrypter: B,
-        err_callback: C,
-    ) -> Result<Self, io::Error>
-    where
-        A: Signer + Verifier + Send + Sync + 'static,
-        B: Encrypter + Decrypter + Send + Sync + 'static,
-        C: Fn(TcpListenerTransceiverError) -> bool + Send + 'static,
-    {
-        listen::tcp_listen(listener, packet_ttl, authenticator, bicrypter, err_callback)
-    }
-
-    pub fn listen_udp<A, B, C>(
-        host: IpAddr,
-        port: Vec<u16>,
-        packet_ttl: Duration,
-        authenticator: A,
-        bicrypter: B,
-        err_callback: C,
-    ) -> Result<Self, io::Error>
-    where
-        A: Signer + Verifier + Send + Sync + 'static,
-        B: Encrypter + Decrypter + Send + Sync + 'static,
-        C: Fn(UdpTransceiverError) -> bool + Send + 'static,
-    {
-        Self::listen_using_udp_socket(
-            net::udp::bind(host, port)?,
-            packet_ttl,
-            authenticator,
-            bicrypter,
-            err_callback,
-        )
-    }
-
-    pub fn listen_using_udp_socket<A, B, C>(
-        socket: UdpSocket,
-        packet_ttl: Duration,
-        authenticator: A,
-        bicrypter: B,
-        err_callback: C,
-    ) -> Result<Self, io::Error>
-    where
-        A: Signer + Verifier + Send + Sync + 'static,
-        B: Encrypter + Decrypter + Send + Sync + 'static,
-        C: Fn(UdpTransceiverError) -> bool + Send + 'static,
-    {
-        listen::udp_listen(socket, packet_ttl, authenticator, bicrypter, err_callback)
-    }
-
-    pub fn join(self) -> Result<(), Box<dyn std::error::Error>> {
-        self.transceiver_thread.join()?;
-        self.msg_thread
-            .join()
-            .map_err(|_| "Msg Process Thread Join Error")?;
-
-        Ok(())
+/// Process result of receiving data, indicating whether should continue
+/// processing additional data
+async fn process_recv(
+    state: &mut state::ServerState,
+    result: Result<Option<(Vec<u8>, SocketAddr)>, InboundWireError>,
+) -> bool {
+    match result {
+        Ok(None) => true,
+        Ok(Some((data, addr))) => {
+            trace!("Incoming data of size {}", data.len());
+            if let Ok(msg) = Msg::from_slice(&data) {
+                trace!("Forwarding {:?} using {:?}", msg, addr);
+                match action::execute(state, &msg, &addr).await {
+                    Ok(_) => true,
+                    Err(action::ActionError::Unknown) => {
+                        warn!("Unknown msg: {:?}", msg);
+                        true
+                    }
+                    Err(x) => {
+                        error!("Encountered error processing msg: {}", x);
+                        true
+                    }
+                }
+            } else {
+                warn!("Discarding data of size {} as not valid msg", data.len());
+                true
+            }
+        }
+        Err(x) => match x {
+            InboundWireError::IO(x) => {
+                error!("Fatal IO on socket: {}", x);
+                false
+            }
+            InboundWireError::InputProcessor(x) => {
+                error!("Process error on socket: {}", x);
+                true
+            }
+        },
     }
 }

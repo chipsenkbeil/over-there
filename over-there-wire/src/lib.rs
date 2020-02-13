@@ -9,11 +9,14 @@ pub mod constants {
 }
 
 // Export errors
-pub use wire::{AssemblerError, DisassemblerError, InputProcessorError, OutputProcessorError};
+pub use wire::{
+    AssemblerError, DisassemblerError, InboundWireError, InputProcessorError, OutboundWireError,
+    OutputProcessorError,
+};
 
 // Export useful constructs
 pub use net::NetTransmission;
-pub use wire::Wire;
+pub use wire::{InboundWire, OutboundWire};
 
 // Re-export the auth and crypto interfaces
 pub use over_there_auth::{Signer, Verifier};
