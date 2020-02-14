@@ -7,18 +7,16 @@ use crate::{
 };
 use log::debug;
 use rand::RngCore;
-use std::future::Future;
 use std::io;
 use tokio::fs::{self, OpenOptions};
 
-pub async fn do_open_file<F, R>(
+pub async fn do_open_file<F>(
     state: &mut ServerState,
     args: &DoOpenFileArgs,
     respond: F,
 ) -> Result<(), ActionError>
 where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
+    F: FnOnce(Content) -> Result<(), ActionError>,
 {
     debug!("do_open_file: {:?}", args);
 
@@ -37,20 +35,19 @@ where
             // Store the opened file so we can operate on it later
             state.files.insert(id, LocalFile { id, sig, file });
 
-            respond(Content::FileOpened(FileOpenedArgs { id, sig })).await
+            respond(Content::FileOpened(FileOpenedArgs { id, sig }))
         }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
+        Err(x) => respond(Content::IoError(From::from(x))),
     }
 }
 
-pub async fn do_read_file<F, R>(
+pub async fn do_read_file<F>(
     state: &mut ServerState,
     args: &DoReadFileArgs,
     respond: F,
 ) -> Result<(), ActionError>
 where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
+    F: FnOnce(Content) -> Result<(), ActionError>,
 {
     debug!("do_read_file: {:?}", args);
 
@@ -58,17 +55,16 @@ where
         Some(local_file) => {
             if local_file.sig == args.sig {
                 match do_read_file_impl(&mut local_file.file).await {
-                    Ok(data) => respond(Content::FileContents(FileContentsArgs { data })).await,
-                    Err(x) => respond(Content::IoError(x)).await,
+                    Ok(data) => respond(Content::FileContents(FileContentsArgs { data })),
+                    Err(x) => respond(Content::IoError(x)),
                 }
             } else {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
                     sig: local_file.sig,
                 }))
-                .await
             }
         }
-        None => respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))).await,
+        None => respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))),
     }
 }
 
@@ -88,14 +84,13 @@ async fn do_read_file_impl(file: &mut fs::File) -> Result<Vec<u8>, IoErrorArgs> 
     Ok(buf)
 }
 
-pub async fn do_write_file<F, R>(
+pub async fn do_write_file<F>(
     state: &mut ServerState,
     args: &DoWriteFileArgs,
     respond: F,
 ) -> Result<(), ActionError>
 where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
+    F: FnOnce(Content) -> Result<(), ActionError>,
 {
     debug!("do_write_file: {:?}", args);
 
@@ -107,18 +102,17 @@ where
                         let new_sig = rand::thread_rng().next_u32();
                         local_file.sig = new_sig;
 
-                        respond(Content::FileWritten(FileWrittenArgs { sig: new_sig })).await
+                        respond(Content::FileWritten(FileWrittenArgs { sig: new_sig }))
                     }
-                    Err(x) => respond(Content::IoError(x)).await,
+                    Err(x) => respond(Content::IoError(x)),
                 }
             } else {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
                     sig: local_file.sig,
                 }))
-                .await
             }
         }
-        None => respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))).await,
+        None => respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))),
     }
 }
 
@@ -139,20 +133,19 @@ async fn do_write_file_impl(file: &mut fs::File, buf: &[u8]) -> Result<(), IoErr
         .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "WriteAll: "))
 }
 
-pub async fn do_list_dir_contents<F, R>(
+pub async fn do_list_dir_contents<F>(
     _state: &mut ServerState,
     args: &DoListDirContentsArgs,
     respond: F,
 ) -> Result<(), ActionError>
 where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
+    F: FnOnce(Content) -> Result<(), ActionError>,
 {
     debug!("do_list_dir_contents: {:?}", args);
 
     match lookup_entries(&args.path).await {
-        Ok(entries) => respond(Content::DirContentsList(From::from(entries))).await,
-        Err(x) => respond(Content::IoError(From::from(x))).await,
+        Ok(entries) => respond(Content::DirContentsList(From::from(entries))),
+        Err(x) => respond(Content::IoError(From::from(x))),
     }
 }
 
@@ -201,7 +194,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                async { Ok(()) }
+                Ok(())
             },
         )
         .await
@@ -234,7 +227,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                async { Ok(()) }
+                Ok(())
             },
         )
         .await
@@ -270,7 +263,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                async { Ok(()) }
+                Ok(())
             },
         )
         .await
@@ -309,7 +302,7 @@ mod tests {
 
         do_read_file(&mut state, &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
-            async { Ok(()) }
+            Ok(())
         })
         .await
         .unwrap();
@@ -331,7 +324,7 @@ mod tests {
             &DoReadFileArgs { id: 0, sig: 0 },
             |c| {
                 content = Some(c);
-                async { Ok(()) }
+                Ok(())
             },
         )
         .await
@@ -375,7 +368,7 @@ mod tests {
 
         do_read_file(&mut state, &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
-            async { Ok(()) }
+            Ok(())
         })
         .await
         .unwrap();
@@ -408,7 +401,7 @@ mod tests {
 
         do_read_file(&mut state, &DoReadFileArgs { id, sig: 99999 }, |c| {
             content = Some(c);
-            async { Ok(()) }
+            Ok(())
         })
         .await
         .unwrap();
@@ -448,7 +441,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                async { Ok(()) }
+                Ok(())
             },
         )
         .await
@@ -498,7 +491,7 @@ mod tests {
 
         do_write_file(&mut state, &DoWriteFileArgs { id, sig, data }, |c| {
             content = Some(c);
-            async { Ok(()) }
+            Ok(())
         })
         .await
         .unwrap();
@@ -539,7 +532,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                async { Ok(()) }
+                Ok(())
             },
         )
         .await
@@ -570,7 +563,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                async { Ok(()) }
+                Ok(())
             },
         )
         .await
@@ -611,7 +604,7 @@ mod tests {
             },
             |c| {
                 content = Some(c);
-                async { Ok(()) }
+                Ok(())
             },
         )
         .await

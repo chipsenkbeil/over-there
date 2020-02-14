@@ -6,14 +6,16 @@ pub mod state;
 use crate::{Communicator, Msg, Transport};
 use log::{error, trace, warn};
 use over_there_wire::{
-    Decrypter, Encrypter, InboundWire, InboundWireError, NetTransmission, OutboundWire, Signer,
-    Verifier,
+    Decrypter, Encrypter, InboundWire, InboundWireError, NetTransmission, OutboundWire,
+    OutboundWireError, Signer, Verifier,
 };
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::collections::HashMap;
+use std::net::SocketAddr;
 use tokio::{
     io,
-    net::{TcpListener, UdpSocket},
+    net::{TcpListener, TcpStream, UdpSocket},
     runtime::Runtime,
+    sync::mpsc,
     task,
 };
 
@@ -26,6 +28,12 @@ pub struct Server {
 
     /// Primary event handle processing incoming msgs
     event_handle: task::JoinHandle<()>,
+
+    /// Primary send handle processing outgoing msgs
+    send_handle: task::JoinHandle<()>,
+
+    /// Means to send new outbound msgs
+    tx: mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>,
 }
 
 impl<S, V, E, D> Communicator<S, V, E, D>
@@ -69,10 +77,25 @@ where
                     self.signer,
                     self.encrypter,
                 );
+                let mut connections: HashMap<SocketAddr, TcpStream> = HashMap::new();
+
+                let (tx, rx) = mpsc::unbounded_channel::<(Vec<u8>, SocketAddr)>();
+                let send_handle = handle.spawn(async {
+                    while let Some((msg, addr)) = rx.recv().await {
+                        if let Some(stream) = connections.get_mut(&addr) {
+                            use tokio::io::AsyncWriteExt;
+                            if let Err(x) = stream.write_all(&msg).await {
+                                error!("Failed to send: {}", x);
+                                connections.remove(&addr);
+                            }
+                        }
+                    }
+                });
                 let event_handle = handle.spawn(async {
                     loop {
                         match listener.accept().await {
                             Ok((stream, addr)) => {
+                                connections.insert(addr, stream);
                                 let _ = handle.spawn(async {
                                     loop {
                                         let result = inbound_wire
@@ -84,10 +107,12 @@ where
                                                     .map(|res| res.map(|size| (size, addr)))
                                             })
                                             .await;
-                                        if !process_recv(&mut state, result).await {
+                                        if !process_recv(&mut state, result, tx).await {
                                             break;
                                         }
                                     }
+
+                                    connections.remove(&addr);
                                 });
                             }
                             Err(x) => {
@@ -102,6 +127,8 @@ where
                     state,
                     runtime,
                     event_handle,
+                    send_handle,
+                    tx,
                 })
             }
             Transport::Udp(addrs) => {
@@ -130,10 +157,19 @@ where
                 );
                 let outbound_wire =
                     OutboundWire::new(transmission.into(), self.signer, self.encrypter);
+
+                let (tx, rx) = mpsc::unbounded_channel::<(Vec<u8>, SocketAddr)>();
+                let send_handle = handle.spawn(async {
+                    while let Some((msg, addr)) = rx.recv().await {
+                        if let Err(x) = socket.send_to(&msg, addr).await {
+                            error!("Failed to send: {}", x);
+                        }
+                    }
+                });
                 let event_handle = handle.spawn(async {
                     loop {
                         let result = inbound_wire.async_recv(|buf| socket.recv_from(buf)).await;
-                        if !process_recv(&mut state, result).await {
+                        if !process_recv(&mut state, result, tx).await {
                             break;
                         }
                     }
@@ -143,6 +179,8 @@ where
                     state,
                     runtime,
                     event_handle,
+                    send_handle,
+                    tx,
                 })
             }
         }
@@ -154,6 +192,7 @@ where
 async fn process_recv(
     state: &mut state::ServerState,
     result: Result<Option<(Vec<u8>, SocketAddr)>, InboundWireError>,
+    tx: mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>,
 ) -> bool {
     match result {
         Ok(None) => true,
@@ -161,7 +200,16 @@ async fn process_recv(
             trace!("Incoming data of size {}", data.len());
             if let Ok(msg) = Msg::from_slice(&data) {
                 trace!("Forwarding {:?} using {:?}", msg, addr);
-                match action::execute(state, &msg, &addr).await {
+                match action::execute(state, &msg, move |data| {
+                    tx.send((data.to_vec(), addr)).map_err(|_| {
+                        OutboundWireError::IO(io::Error::new(
+                            io::ErrorKind::BrokenPipe,
+                            "Outbound communication closed",
+                        ))
+                    })
+                })
+                .await
+                {
                     Ok(_) => true,
                     Err(action::ActionError::Unknown) => {
                         warn!("Unknown msg: {:?}", msg);

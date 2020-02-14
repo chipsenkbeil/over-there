@@ -7,7 +7,6 @@ use crate::{
 use log::trace;
 use over_there_derive::Error;
 use over_there_wire::OutboundWireError;
-use std::future::Future;
 
 #[derive(Debug, Error)]
 pub enum ActionError {
@@ -17,10 +16,9 @@ pub enum ActionError {
 }
 
 /// Evaluate a message's content and potentially respond using the provided responder
-pub async fn execute<F, R>(state: &mut ServerState, msg: &Msg, send: F) -> Result<(), ActionError>
+pub async fn execute<F>(state: &mut ServerState, msg: &Msg, send: F) -> Result<(), ActionError>
 where
-    F: FnMut(&[u8]) -> R,
-    R: Future<Output = Result<(), OutboundWireError>>,
+    F: FnMut(&[u8]) -> Result<(), OutboundWireError>,
 {
     trace!("Received msg: {:?}", msg);
 
@@ -47,13 +45,12 @@ where
 }
 
 /// Sends a response to the originator of a msg
-async fn respond<F, R>(content: Content, parent_header: Header, f: F) -> Result<(), ActionError>
+fn respond<F>(content: Content, parent_header: Header, f: F) -> Result<(), ActionError>
 where
-    F: FnMut(&[u8]) -> R,
-    R: Future<Output = Result<(), OutboundWireError>>,
+    F: FnMut(&[u8]) -> Result<(), OutboundWireError>,
 {
     let new_msg = Msg::from((content, parent_header));
     let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
 
-    f(&data).await.map_err(ActionError::OutboundWireError)
+    f(&data).map_err(ActionError::OutboundWireError)
 }

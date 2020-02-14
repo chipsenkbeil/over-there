@@ -4,6 +4,8 @@ use std::fmt::Debug;
 
 pub type Callback<T> = dyn FnOnce(&T) + Send;
 
+/// Synchronous manager of one-time callback functions
+/// that are allocated on the heap
 pub struct CallbackManager<T> {
     /// Contains callback functions to invoke when a
     /// response is received for a msg with a specific id

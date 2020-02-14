@@ -17,20 +17,18 @@ use crate::{
 };
 use error::{AskError, ExecAskError, FileAskError, TellError};
 use file::RemoteFile;
-use future::{AskFuture, AskFutureState};
 use log::{error, trace, warn};
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
-use over_there_utils::Delay;
 use over_there_wire::{self as wire, InboundWire, InboundWireError, NetTransmission, OutboundWire};
 use proc::RemoteProc;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::{
     io,
     net::{TcpStream, UdpSocket},
     runtime::Runtime,
+    sync::{mpsc, oneshot},
     task,
 };
 
@@ -92,10 +90,23 @@ where
                     }
                 });
 
+                let (tx, rx) = mpsc::unbounded_channel::<(Vec<u8>, SocketAddr)>();
+                let send_handle = handle.spawn(async {
+                    while let Some((msg, _)) = rx.recv().await {
+                        use tokio::io::AsyncWriteExt;
+                        if let Err(x) = stream.write_all(&msg).await {
+                            error!("Failed to send: {}", x);
+                            break;
+                        }
+                    }
+                });
+
                 Ok(Client {
                     state,
                     runtime,
                     event_handle,
+                    send_handle,
+                    tx,
                     remote_addr,
                     timeout: Client::DEFAULT_TIMEOUT,
                 })
@@ -143,10 +154,22 @@ where
                     }
                 });
 
+                let (tx, rx) = mpsc::unbounded_channel::<(Vec<u8>, SocketAddr)>();
+                let send_handle = handle.spawn(async {
+                    while let Some((msg, addr)) = rx.recv().await {
+                        if let Err(x) = socket.send_to(&msg, addr).await {
+                            error!("Failed to send: {}", x);
+                            break;
+                        }
+                    }
+                });
+
                 Ok(Client {
                     state,
                     runtime,
                     event_handle,
+                    send_handle,
+                    tx,
                     remote_addr,
                     timeout: Client::DEFAULT_TIMEOUT,
                 })
@@ -197,11 +220,17 @@ pub struct Client {
     /// Primary event handle processing incoming msgs
     event_handle: task::JoinHandle<()>,
 
+    /// Primary send handle processing outgoing msgs
+    send_handle: task::JoinHandle<()>,
+
+    /// Means to send new outbound msgs
+    tx: mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>,
+
     /// Represents the address the client is connected to
     remote_addr: SocketAddr,
 
     /// Represents maximum to wait on responses before timing out
-    timeout: Duration,
+    pub timeout: Duration,
 }
 
 impl Client {
@@ -220,65 +249,44 @@ impl Client {
         self.remote_addr
     }
 
-    pub fn timeout(&self) -> Duration {
-        self.timeout
-    }
-
     /// Generic ask of the server that is expecting a response
     pub async fn ask(&self, msg: Msg) -> Result<Msg, AskError> {
         let timeout = self.timeout;
-        let state = Arc::new(Mutex::new(AskFutureState::new(timeout)));
+        let (tx, rx) = oneshot::channel::<Result<Msg, AskError>>();
 
-        let callback_state = Arc::clone(&state);
+        // Assign a synchronous callback that uses the oneshot channel to
+        // get back the result
         self.state
-            .lock()
-            .unwrap()
             .callback_manager
-            .add_callback(msg.header.id, move |msg| {
-                let mut s = callback_state.lock().unwrap();
+            .add_callback(msg.header.id, |msg| {
                 if let Content::Error(args) = &msg.content {
-                    s.result = Some(Err(AskError::Failure {
+                    tx.send(Err(AskError::Failure {
                         msg: args.msg.to_string(),
                     }));
                 } else {
-                    s.result = Some(Ok(msg.clone()));
-                }
-
-                if let Some(waker) = s.waker.take() {
-                    waker.wake();
+                    tx.send(Ok(msg.clone()));
                 }
             });
 
         // Send the msg and report back an error if it occurs
-        self.tell(msg).await.map_err(AskError::from)?;
+        self.tell(msg).map_err(AskError::from)?;
 
-        // TODO: Is there a better way to provide timing functionality for
-        //       expirations than using a new thread to check?
-        let delay_state = Arc::clone(&state);
-        let delay = Delay::spawn(timeout, move || {
-            let mut s = delay_state.lock().unwrap();
-
-            if let Some(waker) = s.waker.take() {
-                waker.wake();
-            }
-        });
-
-        let result = AskFuture { state }.await;
-
-        // Cancel the delayed timeout if it hasn't already been processed
-        delay.cancel();
-
-        result
+        tokio::time::timeout(timeout, rx)
+            .await
+            .map_err(|_| AskError::Timeout)?
+            .map_err(|_| AskError::CallbackLost)?
     }
 
     /// Sends a msg to the server, not expecting a response
-    pub async fn tell(&self, msg: Msg) -> Result<(), TellError> {
+    pub fn tell(&self, msg: Msg) -> Result<(), TellError> {
         trace!("Sending to {}: {:?}", self.remote_addr, msg);
 
-        // TODO: Make non-blocking, would involve re-writing transport to use
-        //       async implementation
-        self.transceiver_thread
-            .send(msg.to_vec().map_err(|_| TellError::EncodingFailed)?)
+        // NOTE: This is a non-blocking call
+        self.tx
+            .send((
+                msg.to_vec().map_err(|_| TellError::EncodingFailed)?,
+                self.remote_addr,
+            ))
             .map_err(|_| TellError::SendFailed)
     }
 

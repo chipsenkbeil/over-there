@@ -25,6 +25,7 @@ pub enum AskError {
     Timeout,
     EncodingFailed,
     SendFailed,
+    CallbackLost,
 }
 
 impl From<TellError> for AskError {
