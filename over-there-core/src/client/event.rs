@@ -5,7 +5,6 @@ use log::{error, trace, warn};
 use over_there_auth::Verifier;
 use over_there_crypto::Decrypter;
 use over_there_wire::{InboundWire, InboundWireError};
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::{
     io,
@@ -33,29 +32,24 @@ where
     V: Verifier + Send + 'static,
     D: Decrypter + Send + 'static,
 {
-    let mut connections: HashMap<SocketAddr, TcpStream> = HashMap::new();
+    let (r_h, w_h) = stream.split();
 
     let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>(buffer);
     let send_handle = handle.spawn(async {
-        while let Some((msg, addr)) = rx.recv().await {
-            if let Some(stream) = connections.get_mut(&addr) {
-                use tokio::io::AsyncWriteExt;
-                if let Err(x) = stream.write_all(&msg).await {
-                    error!("Failed to send: {}", x);
-                    connections.remove(&addr);
-                }
+        while let Some((msg, _)) = rx.recv().await {
+            use tokio::io::AsyncWriteExt;
+            if let Err(x) = w_h.write_all(&msg).await {
+                error!("Failed to send: {}", x);
             }
         }
     });
     let event_handle = handle.spawn(async {
         loop {
             let result = inbound_wire
-                .async_recv(|buf| {
+                .async_recv(move |buf| {
                     use futures::future::FutureExt;
                     use io::AsyncReadExt;
-                    stream
-                        .read(buf)
-                        .map(|res| res.map(|size| (size, remote_addr)))
+                    r_h.read(buf).map(|res| res.map(|size| (size, remote_addr)))
                 })
                 .await;
             if !process_recv(&mut state, result).await {
@@ -82,10 +76,11 @@ where
     V: Verifier + Send + 'static,
     D: Decrypter + Send + 'static,
 {
+    let (r_h, s_h) = socket.split();
     let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>(buffer);
     let send_handle = handle.spawn(async {
         while let Some((msg, addr)) = rx.recv().await {
-            if let Err(x) = socket.send_to(&msg, addr).await {
+            if let Err(x) = s_h.send_to(&msg, &addr).await {
                 error!("Failed to send: {}", x);
                 break;
             }
@@ -94,7 +89,7 @@ where
 
     let event_handle = handle.spawn(async {
         loop {
-            let result = inbound_wire.async_recv(|buf| socket.recv_from(buf)).await;
+            let result = inbound_wire.async_recv(move |buf| r_h.recv_from(buf)).await;
             if !process_recv(&mut state, result).await {
                 break;
             }
