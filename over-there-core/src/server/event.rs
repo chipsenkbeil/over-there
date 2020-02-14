@@ -20,15 +20,15 @@ pub struct Loops {
 }
 
 pub fn spawn_tcp_loops<V, D>(
-    handle: &Handle,
+    handle: &'static Handle,
     buffer: usize,
     listener: TcpListener,
     inbound_wire: InboundWire<V, D>,
-    state: &mut ServerState,
+    state: ServerState,
 ) -> Loops
 where
-    V: Verifier + Send,
-    D: Decrypter + Send,
+    V: Verifier + Send + 'static,
+    D: Decrypter + Send + 'static,
 {
     let mut connections: HashMap<SocketAddr, tcp::WriteHalf> = HashMap::new();
 
@@ -59,7 +59,7 @@ where
                                     r_h.read(buf).map(|res| res.map(|size| (size, addr)))
                                 })
                                 .await;
-                            if !process_recv(state, result, tx).await {
+                            if !process_recv(&mut state, result, tx).await {
                                 break;
                             }
                         }
@@ -83,15 +83,15 @@ where
 }
 
 pub fn spawn_udp_loops<V, D>(
-    handle: &Handle,
+    handle: &'static Handle,
     buffer: usize,
     socket: UdpSocket,
     inbound_wire: InboundWire<V, D>,
-    state: &mut ServerState,
+    state: ServerState,
 ) -> Loops
 where
-    V: Verifier + Send,
-    D: Decrypter + Send,
+    V: Verifier + Send + 'static,
+    D: Decrypter + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>(buffer);
     let (r_h, s_h) = socket.split();
@@ -105,7 +105,7 @@ where
     let event_handle = handle.spawn(async {
         loop {
             let result = inbound_wire.async_recv(|buf| r_h.recv_from(buf)).await;
-            if !process_recv(state, result, tx).await {
+            if !process_recv(&mut state, result, tx).await {
                 break;
             }
         }

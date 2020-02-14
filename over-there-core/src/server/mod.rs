@@ -37,9 +37,9 @@ pub struct Server {
 impl<S, V, E, D> Communicator<S, V, E, D>
 where
     S: Signer,
-    V: Verifier + Send,
+    V: Verifier + Send + 'static,
     E: Encrypter,
-    D: Decrypter + Send,
+    D: Decrypter + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
     pub async fn listen(self, transport: Transport, buffer: usize) -> io::Result<Server> {
@@ -80,7 +80,7 @@ where
                     event_handle,
                     send_handle,
                     tx,
-                } = event::spawn_tcp_loops(handle, buffer, listener, inbound_wire, &mut state);
+                } = event::spawn_tcp_loops(handle, buffer, listener, inbound_wire, state);
 
                 Ok(Server {
                     state,
@@ -121,7 +121,7 @@ where
                     event_handle,
                     send_handle,
                     tx,
-                } = event::spawn_udp_loops(handle, buffer, socket, inbound_wire, &mut state);
+                } = event::spawn_udp_loops(handle, buffer, socket, inbound_wire, state);
 
                 Ok(Server {
                     state,

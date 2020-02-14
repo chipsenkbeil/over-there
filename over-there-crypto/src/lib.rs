@@ -19,10 +19,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Error)]
 pub enum CryptError {
     /// Internal Error related to encryption occurred
-    EncryptFailed(Box<dyn std::error::Error>),
+    EncryptFailed(Box<dyn std::error::Error + Send + 'static>),
 
     /// Internal Error related to decryption occurred
-    DecryptFailed(Box<dyn std::error::Error>),
+    DecryptFailed(Box<dyn std::error::Error + Send + 'static>),
 
     /// Contains the nonce that was already used
     NonceAlreadyUsed { nonce: Vec<u8> },

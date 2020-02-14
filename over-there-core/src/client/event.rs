@@ -22,16 +22,16 @@ pub struct Loops {
 }
 
 pub fn spawn_tcp_loops<V, D>(
-    handle: &Handle,
+    handle: &'static Handle,
     buffer: usize,
     inbound_wire: InboundWire<V, D>,
     stream: TcpStream,
     remote_addr: SocketAddr,
-    state: &mut ClientState,
+    state: ClientState,
 ) -> Loops
 where
-    V: Verifier + Send,
-    D: Decrypter + Send,
+    V: Verifier + Send + 'static,
+    D: Decrypter + Send + 'static,
 {
     let mut connections: HashMap<SocketAddr, TcpStream> = HashMap::new();
 
@@ -58,7 +58,7 @@ where
                         .map(|res| res.map(|size| (size, remote_addr)))
                 })
                 .await;
-            if !process_recv(state, result).await {
+            if !process_recv(&mut state, result).await {
                 break;
             }
         }
@@ -72,15 +72,15 @@ where
 }
 
 pub fn spawn_udp_loops<V, D>(
-    handle: &Handle,
+    handle: &'static Handle,
     buffer: usize,
     inbound_wire: InboundWire<V, D>,
     socket: UdpSocket,
-    state: &mut ClientState,
+    state: ClientState,
 ) -> Loops
 where
-    V: Verifier + Send,
-    D: Decrypter + Send,
+    V: Verifier + Send + 'static,
+    D: Decrypter + Send + 'static,
 {
     let (tx, rx) = mpsc::channel::<(Vec<u8>, SocketAddr)>(buffer);
     let send_handle = handle.spawn(async {

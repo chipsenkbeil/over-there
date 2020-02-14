@@ -6,7 +6,7 @@ use crate::{
     server::{action::ActionError, file::LocalFile, state::ServerState},
 };
 use log::debug;
-use rand::RngCore;
+use rand::{rngs::OsRng, RngCore};
 use std::future::Future;
 use std::io;
 use tokio::fs::{self, OpenOptions};
@@ -30,9 +30,8 @@ where
         .await
     {
         Ok(file) => {
-            let mut r = rand::thread_rng();
-            let id = r.next_u32();
-            let sig = r.next_u32();
+            let id = OsRng.next_u32();
+            let sig = OsRng.next_u32();
 
             // Store the opened file so we can operate on it later
             state.files.insert(id, LocalFile { id, sig, file });
@@ -104,7 +103,7 @@ where
             if local_file.sig == args.sig {
                 match do_write_file_impl(&mut local_file.file, &args.data).await {
                     Ok(_) => {
-                        let new_sig = rand::thread_rng().next_u32();
+                        let new_sig = OsRng.next_u32();
                         local_file.sig = new_sig;
 
                         respond(Content::FileWritten(FileWrittenArgs { sig: new_sig })).await

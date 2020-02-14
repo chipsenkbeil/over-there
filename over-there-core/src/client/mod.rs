@@ -36,9 +36,9 @@ use tokio::{
 impl<S, V, E, D> Communicator<S, V, E, D>
 where
     S: Signer,
-    V: Verifier + Send,
+    V: Verifier + Send + 'static,
     E: Encrypter,
-    D: Decrypter + Send,
+    D: Decrypter + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
     pub async fn connect(self, transport: Transport, buffer: usize) -> io::Result<Client> {
@@ -85,7 +85,7 @@ where
                     inbound_wire,
                     stream,
                     remote_addr,
-                    &mut state,
+                    state,
                 );
 
                 Ok(Client {
@@ -138,7 +138,7 @@ where
                     send_handle,
                     event_handle,
                     tx,
-                } = event::spawn_udp_loops(handle, buffer, inbound_wire, socket, &mut state);
+                } = event::spawn_udp_loops(handle, buffer, inbound_wire, socket, state);
 
                 Ok(Client {
                     state,
