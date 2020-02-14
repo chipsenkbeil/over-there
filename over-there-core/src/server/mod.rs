@@ -80,7 +80,7 @@ where
                     event_handle,
                     send_handle,
                     tx,
-                } = event::spawn_tcp_loops(handle, buffer, listener, inbound_wire, state);
+                } = event::spawn_tcp_loops(handle.clone(), buffer, listener, inbound_wire, state);
 
                 Ok(Server {
                     state,
@@ -121,7 +121,7 @@ where
                     event_handle,
                     send_handle,
                     tx,
-                } = event::spawn_udp_loops(handle, buffer, socket, inbound_wire, state);
+                } = event::spawn_udp_loops(handle.clone(), buffer, socket, inbound_wire, state);
 
                 Ok(Server {
                     state,

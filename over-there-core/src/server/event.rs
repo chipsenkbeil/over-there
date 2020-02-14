@@ -20,7 +20,7 @@ pub struct Loops {
 }
 
 pub fn spawn_tcp_loops<V, D>(
-    handle: &'static Handle,
+    handle: Handle,
     buffer: usize,
     listener: TcpListener,
     inbound_wire: InboundWire<V, D>,
@@ -83,7 +83,7 @@ where
 }
 
 pub fn spawn_udp_loops<V, D>(
-    handle: &'static Handle,
+    handle: Handle,
     buffer: usize,
     socket: UdpSocket,
     inbound_wire: InboundWire<V, D>,
