@@ -58,9 +58,9 @@ where
 impl<S, V, E, D> Communicator<S, V, E, D>
 where
     S: Signer,
-    V: Verifier,
+    V: Verifier + Send,
     E: Encrypter,
-    D: Decrypter,
+    D: Decrypter + Send,
 {
     pub fn new(packet_ttl: Duration, signer: S, verifier: V, encrypter: E, decrypter: D) -> Self {
         Self {

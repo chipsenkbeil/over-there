@@ -1,4 +1,5 @@
 pub mod error;
+mod event;
 pub mod file;
 pub mod future;
 pub mod proc;
@@ -17,10 +18,10 @@ use crate::{
 };
 use error::{AskError, ExecAskError, FileAskError, TellError};
 use file::RemoteFile;
-use log::{error, trace, warn};
+use log::trace;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
-use over_there_wire::{self as wire, InboundWire, InboundWireError, NetTransmission, OutboundWire};
+use over_there_wire::{self as wire, InboundWire, NetTransmission, OutboundWire};
 use proc::RemoteProc;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -35,12 +36,12 @@ use tokio::{
 impl<S, V, E, D> Communicator<S, V, E, D>
 where
     S: Signer,
-    V: Verifier,
+    V: Verifier + Send,
     E: Encrypter,
-    D: Decrypter,
+    D: Decrypter + Send,
 {
     /// Starts actively listening for msgs via the specified transport medium
-    pub async fn connect(self, transport: Transport) -> io::Result<Client> {
+    pub async fn connect(self, transport: Transport, buffer: usize) -> io::Result<Client> {
         let runtime = Runtime::new()?;
         let handle = runtime.handle();
         let mut state = state::ClientState::default();
@@ -73,33 +74,19 @@ where
                     self.signer,
                     self.encrypter,
                 );
-                let event_handle = handle.spawn(async {
-                    loop {
-                        let result = inbound_wire
-                            .async_recv(|buf| {
-                                use futures::future::FutureExt;
-                                use io::AsyncReadExt;
-                                stream
-                                    .read(buf)
-                                    .map(|res| res.map(|size| (size, remote_addr)))
-                            })
-                            .await;
-                        if !process_recv(&mut state, result).await {
-                            break;
-                        }
-                    }
-                });
 
-                let (tx, rx) = mpsc::unbounded_channel::<(Vec<u8>, SocketAddr)>();
-                let send_handle = handle.spawn(async {
-                    while let Some((msg, _)) = rx.recv().await {
-                        use tokio::io::AsyncWriteExt;
-                        if let Err(x) = stream.write_all(&msg).await {
-                            error!("Failed to send: {}", x);
-                            break;
-                        }
-                    }
-                });
+                let event::Loops {
+                    send_handle,
+                    event_handle,
+                    tx,
+                } = event::spawn_tcp_loops(
+                    handle,
+                    buffer,
+                    inbound_wire,
+                    stream,
+                    remote_addr,
+                    &mut state,
+                );
 
                 Ok(Client {
                     state,
@@ -125,6 +112,7 @@ where
                         }
                     }
 
+                    // TODO: Use DNS resolver to evaluate addresses
                     // NOTE: Must use Handle::enter to provide proper runtime when
                     //       using UdpSocket::from_std
                     handle.enter(|| {
@@ -145,24 +133,12 @@ where
                 );
                 let outbound_wire =
                     OutboundWire::new(transmission.into(), self.signer, self.encrypter);
-                let event_handle = handle.spawn(async {
-                    loop {
-                        let result = inbound_wire.async_recv(|buf| socket.recv_from(buf)).await;
-                        if !process_recv(&mut state, result).await {
-                            break;
-                        }
-                    }
-                });
 
-                let (tx, rx) = mpsc::unbounded_channel::<(Vec<u8>, SocketAddr)>();
-                let send_handle = handle.spawn(async {
-                    while let Some((msg, addr)) = rx.recv().await {
-                        if let Err(x) = socket.send_to(&msg, addr).await {
-                            error!("Failed to send: {}", x);
-                            break;
-                        }
-                    }
-                });
+                let event::Loops {
+                    send_handle,
+                    event_handle,
+                    tx,
+                } = event::spawn_udp_loops(handle, buffer, inbound_wire, socket, &mut state);
 
                 Ok(Client {
                     state,
@@ -175,38 +151,6 @@ where
                 })
             }
         }
-    }
-}
-
-/// Process result of receiving data, indicating whether should continue
-/// processing additional data
-async fn process_recv(
-    state: &mut state::ClientState,
-    result: Result<Option<(Vec<u8>, SocketAddr)>, InboundWireError>,
-) -> bool {
-    match result {
-        Ok(None) => true,
-        Ok(Some((data, addr))) => {
-            trace!("Incoming data of size {}", data.len());
-            if let Ok(msg) = Msg::from_slice(&data) {
-                trace!("Forwarding {:?} using {:?}", msg, addr);
-                // TODO: Invoke callback
-                true
-            } else {
-                warn!("Discarding data of size {} as not valid msg", data.len());
-                true
-            }
-        }
-        Err(x) => match x {
-            InboundWireError::IO(x) => {
-                error!("Fatal IO on socket: {}", x);
-                false
-            }
-            InboundWireError::InputProcessor(x) => {
-                error!("Process error on socket: {}", x);
-                true
-            }
-        },
     }
 }
 
@@ -224,7 +168,7 @@ pub struct Client {
     send_handle: task::JoinHandle<()>,
 
     /// Means to send new outbound msgs
-    tx: mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>,
+    tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
 
     /// Represents the address the client is connected to
     remote_addr: SocketAddr,
@@ -269,7 +213,7 @@ impl Client {
             });
 
         // Send the msg and report back an error if it occurs
-        self.tell(msg).map_err(AskError::from)?;
+        self.tell(msg).await.map_err(AskError::from)?;
 
         tokio::time::timeout(timeout, rx)
             .await
@@ -278,15 +222,15 @@ impl Client {
     }
 
     /// Sends a msg to the server, not expecting a response
-    pub fn tell(&self, msg: Msg) -> Result<(), TellError> {
+    pub async fn tell(&self, msg: Msg) -> Result<(), TellError> {
         trace!("Sending to {}: {:?}", self.remote_addr, msg);
 
-        // NOTE: This is a non-blocking call
         self.tx
             .send((
                 msg.to_vec().map_err(|_| TellError::EncodingFailed)?,
                 self.remote_addr,
             ))
+            .await
             .map_err(|_| TellError::SendFailed)
     }
 

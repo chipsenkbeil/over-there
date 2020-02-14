@@ -5,7 +5,7 @@ authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 edition = "2018"
 
 [dependencies]
-rand = "0.7.2"
+rand = "0.7.3"
 aead = "0.2.0"
 aes-gcm = "0.3.0"
 aes-gcm-siv = "0.3.0"
