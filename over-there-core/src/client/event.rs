@@ -7,7 +7,6 @@ use over_there_crypto::Decrypter;
 use over_there_wire::{InboundWire, InboundWireError};
 use std::net::SocketAddr;
 use tokio::{
-    io,
     net::{TcpStream, UdpSocket},
     runtime::Handle,
     sync::mpsc,
@@ -45,13 +44,12 @@ where
     });
     let event_handle = handle.spawn(async {
         loop {
-            let result = inbound_wire
-                .async_recv(move |buf| {
-                    use futures::future::FutureExt;
-                    use io::AsyncReadExt;
-                    r_h.read(buf).map(|res| res.map(|size| (size, remote_addr)))
-                })
-                .await;
+            use tokio::io::AsyncReadExt;
+            let result = r_h
+                .read(&mut inbound_wire.buf)
+                .await
+                .map_err(InboundWireError::IO)
+                .and_then(|size| inbound_wire.process(size, remote_addr));
             if !process_recv(&mut state, result).await {
                 break;
             }
@@ -89,7 +87,11 @@ where
 
     let event_handle = handle.spawn(async {
         loop {
-            let result = inbound_wire.async_recv(move |buf| r_h.recv_from(buf)).await;
+            let result = r_h
+                .recv_from(&mut inbound_wire.buf)
+                .await
+                .map_err(InboundWireError::IO)
+                .and_then(|(size, addr)| inbound_wire.process(size, addr));
             if !process_recv(&mut state, result).await {
                 break;
             }

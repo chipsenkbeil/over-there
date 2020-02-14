@@ -6,7 +6,6 @@ use over_there_wire::{Decrypter, InboundWire, InboundWireError, Verifier};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::{
-    io,
     net::{tcp, TcpListener, UdpSocket},
     runtime::Handle,
     sync::mpsc,
@@ -52,13 +51,12 @@ where
                     connections.insert(addr, w_h);
                     let _ = handle.spawn(async {
                         loop {
-                            let result = inbound_wire
-                                .async_recv(|buf| {
-                                    use futures::future::FutureExt;
-                                    use io::AsyncReadExt;
-                                    r_h.read(buf).map(|res| res.map(|size| (size, addr)))
-                                })
-                                .await;
+                            use tokio::io::AsyncReadExt;
+                            let result = r_h
+                                .read(&mut inbound_wire.buf)
+                                .await
+                                .map_err(InboundWireError::IO)
+                                .and_then(|size| inbound_wire.process(size, addr));
                             if !process_recv(&mut state, result, tx).await {
                                 break;
                             }
@@ -82,7 +80,7 @@ where
     }
 }
 
-pub fn spawn_udp_loops<V, D>(
+pub fn spawn_udp_loops<'a, V, D>(
     handle: Handle,
     buffer: usize,
     socket: UdpSocket,
@@ -104,7 +102,11 @@ where
     });
     let event_handle = handle.spawn(async {
         loop {
-            let result = inbound_wire.async_recv(|buf| r_h.recv_from(buf)).await;
+            let result = r_h
+                .recv_from(&mut inbound_wire.buf)
+                .await
+                .map_err(InboundWireError::IO)
+                .and_then(|(size, addr)| inbound_wire.process(size, addr));
             if !process_recv(&mut state, result, tx).await {
                 break;
             }

@@ -36,11 +36,11 @@ where
     V: Verifier,
     D: Decrypter,
 {
+    /// Heap-allocated memory for temporary storage of input data
+    pub buf: Box<[u8]>,
+
     /// Processes input coming into the wire
     input_processor: InputProcessor<V, D>,
-
-    /// Maximum size to expect data
-    transmission_size: usize,
 }
 
 impl<V, D> InboundWire<V, D>
@@ -51,39 +51,21 @@ where
     pub fn new(transmission_size: usize, packet_ttl: Duration, verifier: V, decrypter: D) -> Self {
         let input_processor = InputProcessor::new(packet_ttl, verifier, decrypter);
         Self {
+            buf: vec![0; transmission_size].into_boxed_slice(),
             input_processor,
-            transmission_size,
         }
     }
 
-    /// Receives data synchronously using the provided function
-    pub fn recv<F>(&mut self, mut f: F) -> Result<Option<(Vec<u8>, SocketAddr)>, InboundWireError>
-    where
-        F: FnMut(&mut [u8]) -> io::Result<(usize, SocketAddr)>,
-    {
-        let mut tmp_buf = vec![0; self.transmission_size];
-
-        let (size, addr) = f(&mut tmp_buf).map_err(InboundWireError::IO)?;
-        self.input_processor
-            .process(&tmp_buf[..size])
-            .map(|opt| opt.map(|data| (data, addr)))
-            .map_err(InboundWireError::InputProcessor)
-    }
-
-    /// Receives data asynchronously using the provided function
-    pub async fn async_recv<F, R>(
+    /// Process data placed in buffer externally
+    /// NOTE: Doing it this way as opposed to taking a closure to do the read
+    ///       of data into the buffer because getting lifetime bound issues
+    pub fn process(
         &mut self,
-        mut f: F,
-    ) -> Result<Option<(Vec<u8>, SocketAddr)>, InboundWireError>
-    where
-        F: FnMut(&mut [u8]) -> R,
-        R: Future<Output = io::Result<(usize, SocketAddr)>>,
-    {
-        let mut tmp_buf = vec![0; self.transmission_size];
-
-        let (size, addr) = f(&mut tmp_buf).await.map_err(InboundWireError::IO)?;
+        size: usize,
+        addr: SocketAddr,
+    ) -> Result<Option<(Vec<u8>, SocketAddr)>, InboundWireError> {
         self.input_processor
-            .process(&tmp_buf[..size])
+            .process(&self.buf[..size])
             .map(|opt| opt.map(|data| (data, addr)))
             .map_err(InboundWireError::InputProcessor)
     }
