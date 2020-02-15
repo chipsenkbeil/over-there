@@ -12,6 +12,7 @@ pub enum AssemblerError {
     IncompletePacketCollection,
 }
 
+#[derive(Debug, Clone)]
 struct PacketGroup {
     /// Collection of packets, where the key is the index of the packet
     packets: HashMap<u32, Packet>,
@@ -30,6 +31,7 @@ impl Default for PacketGroup {
     }
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct Assembler {
     /// Map of unique id to associated group of packets being assembled
     packet_groups: HashMap<TtlValue<u32>, PacketGroup>,

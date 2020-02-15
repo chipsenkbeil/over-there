@@ -1,8 +1,9 @@
 use over_there_auth::Sha256Authenticator;
-use over_there_core::{Client, Server};
+use over_there_core::{Client, Communicator, Server, Transport};
 use over_there_crypto::{self as crypto, aes_gcm};
-use over_there_transport::{constants, net};
+use over_there_wire::{self as wire, constants};
 use std::time::Duration;
+use tokio::runtime::Handle;
 
 pub enum TestMode {
     Tcp,
@@ -15,17 +16,18 @@ pub struct TestBench {
 }
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_millis(2500);
+pub const CHANNEL_MAX_SIZE: usize = 1000;
 
-pub fn setup(mode: TestMode) -> TestBench {
-    setup_with_timeout(mode, DEFAULT_TIMEOUT)
+pub async fn setup(mode: TestMode) -> TestBench {
+    setup_with_timeout(mode, DEFAULT_TIMEOUT).await
 }
 
-pub fn setup_with_timeout(mode: TestMode, timeout: Duration) -> TestBench {
+pub async fn setup_with_timeout(mode: TestMode, timeout: Duration) -> TestBench {
     init_logger();
 
     let mut test_bench = match mode {
-        TestMode::Tcp => start_tcp_client_and_server(),
-        TestMode::Udp => start_udp_client_and_server(),
+        TestMode::Tcp => start_tcp_client_and_server().await,
+        TestMode::Udp => start_udp_client_and_server().await,
     };
 
     // Ensure that we fail after the provided timeout
@@ -41,51 +43,81 @@ fn init_logger() {
         .try_init();
 }
 
-fn start_tcp_client_and_server() -> TestBench {
+async fn start_tcp_client_and_server() -> TestBench {
+    let handle = Handle::current();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
+    let auth = Sha256Authenticator::new(sign_key);
+    let bicrypter = aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key);
 
-    let server = Server::listen_using_tcp_listener(
-        net::tcp::local().unwrap(),
+    let server = Communicator::new(
         constants::DEFAULT_TTL,
-        Sha256Authenticator::new(sign_key),
-        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
-        |_| false,
+        auth.clone(),
+        auth.clone(),
+        bicrypter.clone(),
+        bicrypter.clone(),
     )
+    .listen(
+        handle.clone(),
+        Transport::Tcp(wire::net::make_local_ipv4_addr_list()),
+        CHANNEL_MAX_SIZE,
+    )
+    .await
     .unwrap();
 
-    let client = Client::connect_tcp(
-        server.addr,
+    let client = Communicator::new(
         constants::DEFAULT_TTL,
-        Sha256Authenticator::new(sign_key),
-        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
-        |_| false,
+        auth.clone(),
+        auth.clone(),
+        bicrypter.clone(),
+        bicrypter.clone(),
     )
+    .connect(
+        handle,
+        Transport::Tcp(vec![server.addr()]),
+        CHANNEL_MAX_SIZE,
+    )
+    .await
     .unwrap();
 
     TestBench { client, server }
 }
 
-fn start_udp_client_and_server() -> TestBench {
+async fn start_udp_client_and_server() -> TestBench {
+    let handle = Handle::current();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
+    let auth = Sha256Authenticator::new(sign_key);
+    let bicrypter = aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key);
 
-    let server = Server::listen_using_udp_socket(
-        net::udp::local().unwrap(),
+    let server = Communicator::new(
         constants::DEFAULT_TTL,
-        Sha256Authenticator::new(sign_key),
-        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
-        |_| false,
+        auth.clone(),
+        auth.clone(),
+        bicrypter.clone(),
+        bicrypter.clone(),
     )
+    .listen(
+        handle.clone(),
+        Transport::Udp(wire::net::make_local_ipv4_addr_list()),
+        CHANNEL_MAX_SIZE,
+    )
+    .await
     .unwrap();
 
-    let client = Client::connect_udp(
-        server.addr,
+    let client = Communicator::new(
         constants::DEFAULT_TTL,
-        Sha256Authenticator::new(sign_key),
-        aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key),
-        |_| false,
+        auth.clone(),
+        auth.clone(),
+        bicrypter.clone(),
+        bicrypter.clone(),
     )
+    .connect(
+        handle,
+        Transport::Udp(vec![server.addr()]),
+        CHANNEL_MAX_SIZE,
+    )
+    .await
     .unwrap();
 
     TestBench { client, server }

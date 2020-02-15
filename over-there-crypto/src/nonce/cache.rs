@@ -1,11 +1,12 @@
 use super::AssociatedData;
 use crate::{Bicrypter, CryptError, Decrypter, Encrypter};
 use lru::LruCache;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
+#[derive(Clone)]
 pub struct NonceCacheBicrypter<T: Bicrypter> {
     bicrypter: T,
-    cache: Option<RwLock<LruCache<Vec<u8>, ()>>>,
+    cache: Option<Arc<RwLock<LruCache<Vec<u8>, ()>>>>,
 }
 
 impl<T: Bicrypter> NonceCacheBicrypter<T> {
@@ -13,7 +14,7 @@ impl<T: Bicrypter> NonceCacheBicrypter<T> {
         // LruCache does not handle zero capacity itself, so we make it an
         // option where we won't do anything if it's zero
         let cache = if nonce_cache_size > 0 {
-            Some(RwLock::new(LruCache::new(nonce_cache_size)))
+            Some(Arc::new(RwLock::new(LruCache::new(nonce_cache_size))))
         } else {
             None
         };
@@ -83,6 +84,7 @@ mod tests {
     use crate::nonce::{self, Nonce};
     use crate::{AssociatedData, CryptError};
 
+    #[derive(Clone)]
     struct StubBicrypter(fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError>);
     impl Bicrypter for StubBicrypter {}
     impl Encrypter for StubBicrypter {

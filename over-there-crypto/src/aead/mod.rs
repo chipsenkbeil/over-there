@@ -1,12 +1,11 @@
 pub mod aes_gcm;
 pub mod aes_gcm_siv;
-pub mod aes_siv;
 
 use crate::{
     nonce::{self, NonceSize},
     AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter,
 };
-use aead::{generic_array::GenericArray, Aead};
+use aead::{self, generic_array::GenericArray, Aead};
 use over_there_derive::Error;
 
 #[derive(Debug, Error)]
@@ -15,20 +14,21 @@ pub enum AeadError {
     Generic(aead::Error),
 }
 
-pub struct AesNonceBicrypter<T: Aead> {
+#[derive(Clone)]
+pub struct AesNonceBicrypter<T: Aead + Clone> {
     aead: T,
     nonce_size: NonceSize,
 }
 
-impl<T: Aead> AesNonceBicrypter<T> {
+impl<T: Aead + Clone> AesNonceBicrypter<T> {
     pub fn new(aead: T, nonce_size: NonceSize) -> Self {
         Self { aead, nonce_size }
     }
 }
 
-impl<T: Aead> Bicrypter for AesNonceBicrypter<T> {}
+impl<T: Aead + Clone> Bicrypter for AesNonceBicrypter<T> {}
 
-impl<T: Aead> Encrypter for AesNonceBicrypter<T> {
+impl<T: Aead + Clone> Encrypter for AesNonceBicrypter<T> {
     fn encrypt(
         &self,
         buffer: &[u8],
@@ -40,7 +40,7 @@ impl<T: Aead> Encrypter for AesNonceBicrypter<T> {
         nonce::validate_nonce_size(self.nonce_size, nonce.len())?;
         self.aead
             .encrypt(GenericArray::from_slice(nonce), buffer)
-            .map_err(|e| CryptError::EncryptFailed(Box::new(AeadError::Generic(e))))
+            .map_err(|e| CryptError::EncryptFailed(make_error_string(e)))
     }
 
     /// Returns a new nonce to be associated when encrypting
@@ -49,7 +49,7 @@ impl<T: Aead> Encrypter for AesNonceBicrypter<T> {
     }
 }
 
-impl<T: Aead> Decrypter for AesNonceBicrypter<T> {
+impl<T: Aead + Clone> Decrypter for AesNonceBicrypter<T> {
     fn decrypt(
         &self,
         buffer: &[u8],
@@ -61,8 +61,12 @@ impl<T: Aead> Decrypter for AesNonceBicrypter<T> {
         nonce::validate_nonce_size(self.nonce_size, nonce.len())?;
         self.aead
             .decrypt(GenericArray::from_slice(nonce), buffer)
-            .map_err(|e| CryptError::DecryptFailed(Box::new(AeadError::Generic(e))))
+            .map_err(|e| CryptError::DecryptFailed(make_error_string(e)))
     }
+}
+
+fn make_error_string(x: aead::Error) -> String {
+    format!("{:?}", x)
 }
 
 #[cfg(test)]

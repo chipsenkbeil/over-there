@@ -3,13 +3,13 @@ use std::time::{Duration, Instant};
 
 const OUTPUT_TIMEOUT: Duration = Duration::from_millis(2500);
 
-pub async fn async_test(client: Client) {
+pub async fn async_test(mut client: Client) {
     // Perform an echo, which will run once to completion
     let proc = client
         .ask_exec_proc(String::from("echo"), vec![String::from("hello")])
         .await
         .unwrap();
-    let output = wait_for_nonempty_output(&client, &proc, OUTPUT_TIMEOUT).await;
+    let output = wait_for_nonempty_output(&mut client, &proc, OUTPUT_TIMEOUT).await;
     assert_eq!(output, "hello\n");
 
     // Start a cat proc where we can feed in data and get it back out
@@ -19,7 +19,7 @@ pub async fn async_test(client: Client) {
         .unwrap();
     client.ask_write_stdin(&proc, b"test\n").await.unwrap();
 
-    let output = wait_for_nonempty_output(&client, &proc, OUTPUT_TIMEOUT).await;
+    let output = wait_for_nonempty_output(&mut client, &proc, OUTPUT_TIMEOUT).await;
     assert_eq!(output, "test\n");
 
     // Write again to proc to prove that it hasn't closed input
@@ -28,11 +28,15 @@ pub async fn async_test(client: Client) {
         .await
         .unwrap();
 
-    let output = wait_for_nonempty_output(&client, &proc, OUTPUT_TIMEOUT).await;
+    let output = wait_for_nonempty_output(&mut client, &proc, OUTPUT_TIMEOUT).await;
     assert_eq!(output, "another test\n");
 }
 
-async fn wait_for_nonempty_output(client: &Client, proc: &RemoteProc, timeout: Duration) -> String {
+async fn wait_for_nonempty_output(
+    client: &mut Client,
+    proc: &RemoteProc,
+    timeout: Duration,
+) -> String {
     let start = Instant::now();
 
     while start.elapsed() < timeout {

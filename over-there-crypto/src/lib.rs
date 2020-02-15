@@ -1,5 +1,5 @@
 pub mod aead;
-pub use crate::aead::{aes_gcm, aes_gcm_siv, aes_siv, AeadError, AesNonceBicrypter};
+pub use crate::aead::{aes_gcm, aes_gcm_siv, AeadError, AesNonceBicrypter};
 
 pub mod nonce;
 pub use nonce::{Nonce, Nonce128Bits, Nonce96Bits, NonceSize};
@@ -19,10 +19,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Error)]
 pub enum CryptError {
     /// Internal Error related to encryption occurred
-    EncryptFailed(Box<dyn std::error::Error + Send + 'static>),
+    EncryptFailed(String),
 
     /// Internal Error related to decryption occurred
-    DecryptFailed(Box<dyn std::error::Error + Send + 'static>),
+    DecryptFailed(String),
 
     /// Contains the nonce that was already used
     NonceAlreadyUsed { nonce: Vec<u8> },
@@ -78,7 +78,7 @@ impl From<NonceSize> for AssociatedData {
 pub trait Bicrypter: Encrypter + Decrypter {}
 
 /// Capable of encrypting data
-pub trait Encrypter {
+pub trait Encrypter: Clone {
     fn encrypt(
         &self,
         buffer: &[u8],
@@ -91,7 +91,7 @@ pub trait Encrypter {
 }
 
 /// Capable of decrypting data
-pub trait Decrypter {
+pub trait Decrypter: Clone {
     fn decrypt(
         &self,
         buffer: &[u8],

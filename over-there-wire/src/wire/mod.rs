@@ -34,6 +34,7 @@ pub enum OutboundWireError {
 }
 
 /// Wire for inbound communication
+#[derive(Debug, Clone)]
 pub struct InboundWire<V, D>
 where
     V: Verifier + Send + 'static,
@@ -46,7 +47,7 @@ where
     input_processor: InputProcessor<V, D>,
 }
 
-impl<'a, V, D> InboundWire<V, D>
+impl<V, D> InboundWire<V, D>
 where
     V: Verifier + Send + 'static,
     D: Decrypter + Send + 'static,
@@ -136,6 +137,7 @@ where
 }
 
 /// Wire for outbound communication
+#[derive(Debug, Clone)]
 pub struct OutboundWire<S, E>
 where
     S: Signer + Send + 'static,

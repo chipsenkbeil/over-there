@@ -43,7 +43,7 @@ impl From<Option<Nonce>> for PacketEncryption {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub(crate) enum PacketType {
     /// Represents packets that are not the final in a collection
     NotFinal,
@@ -70,7 +70,7 @@ impl PacketType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub(crate) struct Metadata {
     /// ID used to collect packets forming a single message
     pub(crate) id: u32,
@@ -90,7 +90,7 @@ impl Metadata {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct Packet {
     /// Represents metadata associated with the packet
     metadata: Metadata,

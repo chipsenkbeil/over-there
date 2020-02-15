@@ -1,6 +1,6 @@
 use over_there_core::Client;
 
-pub async fn async_test(client: Client) {
+pub async fn async_test(mut client: Client) {
     // Produce a new directory to work in
     let dir = tempfile::TempDir::new().unwrap();
     let dir_path = dir.path().to_string_lossy().to_string();

@@ -2,16 +2,17 @@ use super::Digest;
 
 pub trait Authenticator: Signer + Verifier {}
 
-pub trait Signer {
+pub trait Signer: Clone {
     /// Signs some some message, producing a digest
     fn sign(&self, message: &[u8]) -> Digest;
 }
 
-pub trait Verifier {
+pub trait Verifier: Clone {
     /// Verifies a signature (digest) for some message
     fn verify(&self, message: &[u8], signature: &Digest) -> bool;
 }
 
+#[derive(Clone, Copy)]
 pub struct NoopAuthenticator;
 
 impl Authenticator for NoopAuthenticator {}
@@ -30,6 +31,7 @@ impl Verifier for NoopAuthenticator {
     }
 }
 
+#[derive(Clone)]
 pub struct ClosureSigner<F>
 where
     F: Fn(&[u8]) -> Digest,
@@ -48,13 +50,14 @@ where
 
 impl<F> Signer for ClosureSigner<F>
 where
-    F: Fn(&[u8]) -> Digest,
+    F: Fn(&[u8]) -> Digest + Clone,
 {
     fn sign(&self, message: &[u8]) -> Digest {
         (self.f)(message)
     }
 }
 
+#[derive(Clone)]
 pub struct ClosureVerifier<F>
 where
     F: Fn(&[u8], &Digest) -> bool,
@@ -73,13 +76,14 @@ where
 
 impl<F> Verifier for ClosureVerifier<F>
 where
-    F: Fn(&[u8], &Digest) -> bool,
+    F: Fn(&[u8], &Digest) -> bool + Clone,
 {
     fn verify(&self, message: &[u8], signature: &Digest) -> bool {
         (self.f)(message, signature)
     }
 }
 
+#[derive(Clone)]
 pub struct Sha256Authenticator {
     key: Vec<u8>,
 }
@@ -106,6 +110,7 @@ impl Verifier for Sha256Authenticator {
     }
 }
 
+#[derive(Clone)]
 pub struct Sha512Authenticator {
     key: Vec<u8>,
 }

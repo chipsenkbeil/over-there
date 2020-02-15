@@ -1,7 +1,7 @@
 pub mod tcp;
 pub mod udp;
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 /// The Internet Assigned Numbers Authority (IANA) suggested range
 /// for dynamic and private ports
@@ -15,6 +15,20 @@ pub const LINUX_EPHEMERAL_PORT_RANGE: std::ops::RangeInclusive<u16> = (32768..=6
 
 pub fn make_addr_list(host: IpAddr, ports: Vec<u16>) -> Vec<SocketAddr> {
     ports.iter().map(|p| SocketAddr::new(host, *p)).collect()
+}
+
+pub fn make_local_ipv4_addr_list() -> Vec<SocketAddr> {
+    make_addr_list(
+        IpAddr::from(Ipv4Addr::LOCALHOST),
+        IANA_EPHEMERAL_PORT_RANGE.collect(),
+    )
+}
+
+pub fn make_local_ipv6_addr_list() -> Vec<SocketAddr> {
+    make_addr_list(
+        IpAddr::from(Ipv6Addr::LOCALHOST),
+        IANA_EPHEMERAL_PORT_RANGE.collect(),
+    )
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

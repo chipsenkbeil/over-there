@@ -13,6 +13,7 @@ pub enum OutputProcessorError {
     EncryptData(CryptError),
 }
 
+#[derive(Debug, Clone)]
 pub struct OutputProcessor<S, E>
 where
     S: Signer,
@@ -146,6 +147,7 @@ mod tests {
         use super::*;
         use over_there_crypto::{AssociatedData, CryptError, Decrypter, Encrypter};
 
+        #[derive(Clone)]
         struct BadEncrypter;
         impl Encrypter for BadEncrypter {
             fn encrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {

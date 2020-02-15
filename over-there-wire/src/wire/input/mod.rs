@@ -16,6 +16,7 @@ pub enum InputProcessorError {
     DecryptData(CryptError),
 }
 
+#[derive(Debug, Clone)]
 pub struct InputProcessor<V, D>
 where
     V: Verifier,
@@ -336,6 +337,7 @@ mod tests {
         use super::*;
         use over_there_crypto::{CryptError, Decrypter, Encrypter};
 
+        #[derive(Clone)]
         struct BadDecrypter;
         impl Decrypter for BadDecrypter {
             fn decrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {

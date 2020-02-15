@@ -1,15 +1,16 @@
 use crate::{AssociatedData, CryptError, Decrypter, Encrypter};
 
+#[derive(Clone)]
 pub struct ClosureEncrypter<F>
 where
-    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError>,
+    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError> + Clone,
 {
     f: F,
 }
 
 impl<F> ClosureEncrypter<F>
 where
-    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError>,
+    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError> + Clone,
 {
     pub fn new(f: F) -> Self {
         Self { f }
@@ -18,7 +19,7 @@ where
 
 impl<F> Encrypter for ClosureEncrypter<F>
 where
-    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError>,
+    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError> + Clone,
 {
     /// Does nothing but return existing data - NoOp
     fn encrypt(
@@ -35,16 +36,17 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct ClosureDecrypter<F>
 where
-    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError>,
+    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError> + Clone,
 {
     f: F,
 }
 
 impl<F> ClosureDecrypter<F>
 where
-    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError>,
+    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError> + Clone,
 {
     pub fn new(f: F) -> Self {
         Self { f }
@@ -53,7 +55,7 @@ where
 
 impl<F> Decrypter for ClosureDecrypter<F>
 where
-    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError>,
+    F: Fn(&[u8], &AssociatedData) -> Result<Vec<u8>, CryptError> + Clone,
 {
     fn decrypt(
         &self,

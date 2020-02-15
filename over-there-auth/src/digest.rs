@@ -7,7 +7,7 @@ pub type Digest512Bits = [u8; 64];
 
 big_array! { BigArray; }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum Digest {
     Digest256Bits(Digest256Bits),
 

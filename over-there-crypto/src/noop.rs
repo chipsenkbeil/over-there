@@ -1,5 +1,6 @@
 use crate::{AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter};
 
+#[derive(Clone, Copy)]
 pub struct NoopBicrypter;
 
 impl Bicrypter for NoopBicrypter {}

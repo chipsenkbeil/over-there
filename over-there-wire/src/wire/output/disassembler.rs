@@ -28,6 +28,7 @@ pub enum DisassemblerError {
     FailedToSignPacket,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct Disassembler {
     packet_overhead_size_cache: HashMap<String, usize>,
 }
@@ -127,12 +128,12 @@ impl Disassembler {
     }
 
     /// Creates a new packet and signs it using the given authenticator
-    fn make_new_packet(
+    fn make_new_packet<S: Signer>(
         id: u32,
         index: u32,
         r#type: PacketType,
         data: &[u8],
-        signer: &dyn Signer,
+        signer: &S,
     ) -> Result<Packet, rmp_serde::encode::Error> {
         let metadata = Metadata { id, index, r#type };
         metadata.to_vec().map(|md| {
@@ -141,11 +142,11 @@ impl Disassembler {
         })
     }
 
-    fn cached_estimate_packet_overhead_size(
+    fn cached_estimate_packet_overhead_size<S: Signer>(
         &mut self,
         desired_data_size: usize,
         r#type: PacketType,
-        signer: &dyn Signer,
+        signer: &S,
     ) -> Result<usize, rmp_serde::encode::Error> {
         // Calculate key to use for cache
         // TODO: Convert authenticator into part of the key? Is this necessary?
@@ -162,10 +163,10 @@ impl Disassembler {
         Ok(overhead_size)
     }
 
-    pub(crate) fn estimate_packet_overhead_size(
+    pub(crate) fn estimate_packet_overhead_size<S: Signer>(
         desired_data_size: usize,
         r#type: PacketType,
-        signer: &dyn Signer,
+        signer: &S,
     ) -> Result<usize, rmp_serde::encode::Error> {
         let packet_size = Self::estimate_packet_size(desired_data_size, r#type, signer)?;
 
@@ -180,10 +181,10 @@ impl Disassembler {
         })
     }
 
-    fn estimate_packet_size(
+    fn estimate_packet_size<S: Signer>(
         desired_data_size: usize,
         r#type: PacketType,
-        signer: &dyn Signer,
+        signer: &S,
     ) -> Result<usize, rmp_serde::encode::Error> {
         // Produce random fake data to avoid any byte sequencing
         let fake_data: Vec<u8> = (0..desired_data_size)
