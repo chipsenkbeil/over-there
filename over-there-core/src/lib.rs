@@ -1,4 +1,5 @@
 mod client;
+mod event;
 mod msg;
 mod server;
 
@@ -12,8 +13,7 @@ pub use msg::{
 };
 pub use server::{file::LocalFile, proc::LocalProc, Server};
 
-use over_there_auth::{Signer, Verifier};
-use over_there_crypto::{Decrypter, Encrypter};
+use over_there_wire::{Decrypter, Encrypter, Signer, Verifier};
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -57,10 +57,10 @@ where
 
 impl<S, V, E, D> Communicator<S, V, E, D>
 where
-    S: Signer,
-    V: Verifier + Send,
-    E: Encrypter,
-    D: Decrypter + Send,
+    S: Signer + Send + 'static,
+    V: Verifier + Send + 'static,
+    E: Encrypter + Send + 'static,
+    D: Decrypter + Send + 'static,
 {
     pub fn new(packet_ttl: Duration, signer: S, verifier: V, encrypter: E, decrypter: D) -> Self {
         Self {

@@ -17,6 +17,7 @@ pub fn make_addr_list(host: IpAddr, ports: Vec<u16>) -> Vec<SocketAddr> {
     ports.iter().map(|p| SocketAddr::new(host, *p)).collect()
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum NetTransmission {
     TcpEthernet,
     TcpDialup,
@@ -34,7 +35,7 @@ impl NetTransmission {
         }
     }
 
-    pub fn size(&self) -> usize {
+    pub fn size(self) -> usize {
         match self {
             Self::TcpEthernet => tcp::MTU_ETHERNET_SIZE,
             Self::TcpDialup => tcp::MTU_DIALUP_SIZE,

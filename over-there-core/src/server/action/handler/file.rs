@@ -9,10 +9,11 @@ use log::debug;
 use rand::{rngs::OsRng, RngCore};
 use std::future::Future;
 use std::io;
+use std::sync::Arc;
 use tokio::fs::{self, OpenOptions};
 
 pub async fn do_open_file<F, R>(
-    state: &mut ServerState,
+    state: Arc<ServerState>,
     args: &DoOpenFileArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -34,7 +35,11 @@ where
             let sig = OsRng.next_u32();
 
             // Store the opened file so we can operate on it later
-            state.files.insert(id, LocalFile { id, sig, file });
+            state
+                .files
+                .lock()
+                .await
+                .insert(id, LocalFile { id, sig, file });
 
             respond(Content::FileOpened(FileOpenedArgs { id, sig })).await
         }
@@ -43,7 +48,7 @@ where
 }
 
 pub async fn do_read_file<F, R>(
-    state: &mut ServerState,
+    state: Arc<ServerState>,
     args: &DoReadFileArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -53,7 +58,7 @@ where
 {
     debug!("do_read_file: {:?}", args);
 
-    match state.files.get_mut(&args.id) {
+    match state.files.lock().await.get_mut(&args.id) {
         Some(local_file) => {
             if local_file.sig == args.sig {
                 match do_read_file_impl(&mut local_file.file).await {
@@ -88,7 +93,7 @@ async fn do_read_file_impl(file: &mut fs::File) -> Result<Vec<u8>, IoErrorArgs> 
 }
 
 pub async fn do_write_file<F, R>(
-    state: &mut ServerState,
+    state: Arc<ServerState>,
     args: &DoWriteFileArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -98,7 +103,7 @@ where
 {
     debug!("do_write_file: {:?}", args);
 
-    match state.files.get_mut(&args.id) {
+    match state.files.lock().await.get_mut(&args.id) {
         Some(local_file) => {
             if local_file.sig == args.sig {
                 match do_write_file_impl(&mut local_file.file, &args.data).await {
@@ -139,7 +144,7 @@ async fn do_write_file_impl(file: &mut fs::File, buf: &[u8]) -> Result<(), IoErr
 }
 
 pub async fn do_list_dir_contents<F, R>(
-    _state: &mut ServerState,
+    _state: Arc<ServerState>,
     args: &DoListDirContentsArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -181,7 +186,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_open_file_should_send_success_if_create_flag_set_and_opening_new_file() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let tmp_path = tempfile::NamedTempFile::new()
@@ -191,7 +196,7 @@ mod tests {
             .to_string();
 
         do_open_file(
-            &mut state,
+            Arc::clone(&state),
             &DoOpenFileArgs {
                 path: tmp_path,
                 create_if_missing: true,
@@ -208,7 +213,8 @@ mod tests {
 
         match content.unwrap() {
             Content::FileOpened(args) => {
-                let local_file = state.files.get(&args.id).unwrap();
+                let x = state.files.lock().await;
+                let local_file = x.get(&args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig);
             }
             x => panic!("Bad content: {:?}", x),
@@ -217,14 +223,14 @@ mod tests {
 
     #[tokio::test]
     async fn do_open_file_should_send_success_opening_existing_file() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
         let tmp_file_path = tmp_file.path().to_string_lossy().to_string();
 
         do_open_file(
-            &mut state,
+            Arc::clone(&state),
             &DoOpenFileArgs {
                 path: tmp_file_path,
                 create_if_missing: false,
@@ -241,7 +247,8 @@ mod tests {
 
         match content.unwrap() {
             Content::FileOpened(args) => {
-                let local_file = state.files.get(&args.id).unwrap();
+                let x = state.files.lock().await;
+                let local_file = x.get(&args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig);
             }
             x => panic!("Bad content: {:?}", x),
@@ -250,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_open_file_should_send_error_if_file_missing_and_create_flag_not_set() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let tmp_path = tempfile::NamedTempFile::new()
@@ -260,7 +267,7 @@ mod tests {
             .to_string();
 
         do_open_file(
-            &mut state,
+            Arc::clone(&state),
             &DoOpenFileArgs {
                 path: tmp_path,
                 create_if_missing: false,
@@ -285,7 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_read_file_should_send_contents_if_read_successful() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
         let file_data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
@@ -297,7 +304,7 @@ mod tests {
         file.write_all(&file_data).unwrap();
         file.flush().unwrap();
 
-        state.files.insert(
+        state.files.lock().await.insert(
             id,
             LocalFile {
                 id,
@@ -306,7 +313,7 @@ mod tests {
             },
         );
 
-        do_read_file(&mut state, &DoReadFileArgs { id, sig }, |c| {
+        do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -326,7 +333,7 @@ mod tests {
         let mut content: Option<Content> = None;
 
         do_read_file(
-            &mut ServerState::default(),
+            Arc::new(ServerState::default()),
             &DoReadFileArgs { id: 0, sig: 0 },
             |c| {
                 content = Some(c);
@@ -346,7 +353,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_read_file_should_send_error_if_not_readable() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -363,7 +370,7 @@ mod tests {
         file.write_all(&vec![1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
         file.flush().unwrap();
 
-        state.files.insert(
+        state.files.lock().await.insert(
             id,
             LocalFile {
                 id,
@@ -372,7 +379,7 @@ mod tests {
             },
         );
 
-        do_read_file(&mut state, &DoReadFileArgs { id, sig }, |c| {
+        do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -390,13 +397,13 @@ mod tests {
 
     #[tokio::test]
     async fn do_read_file_should_send_error_if_file_sig_has_changed() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
         let cur_sig = 12345;
         let file = tempfile::tempfile().unwrap();
-        state.files.insert(
+        state.files.lock().await.insert(
             id,
             LocalFile {
                 id,
@@ -405,10 +412,14 @@ mod tests {
             },
         );
 
-        do_read_file(&mut state, &DoReadFileArgs { id, sig: 99999 }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
+        do_read_file(
+            Arc::clone(&state),
+            &DoReadFileArgs { id, sig: 99999 },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
         .await
         .unwrap();
 
@@ -422,14 +433,14 @@ mod tests {
 
     #[tokio::test]
     async fn do_write_file_should_send_success_if_write_successful() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let id = 999;
         let sig = 12345;
         let mut file = tempfile::tempfile().unwrap();
-        state.files.insert(
+        state.files.lock().await.insert(
             id,
             LocalFile {
                 id,
@@ -439,7 +450,7 @@ mod tests {
         );
 
         do_write_file(
-            &mut state,
+            Arc::clone(&state),
             &DoWriteFileArgs {
                 id,
                 sig,
@@ -472,7 +483,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_write_file_should_send_error_if_not_writeable() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -486,7 +497,7 @@ mod tests {
             .create(false)
             .open(tmp_file.path())
             .unwrap();
-        state.files.insert(
+        state.files.lock().await.insert(
             id,
             LocalFile {
                 id,
@@ -495,10 +506,14 @@ mod tests {
             },
         );
 
-        do_write_file(&mut state, &DoWriteFileArgs { id, sig, data }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
+        do_write_file(
+            Arc::clone(&state),
+            &DoWriteFileArgs { id, sig, data },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
         .await
         .unwrap();
 
@@ -513,14 +528,14 @@ mod tests {
 
     #[tokio::test]
     async fn do_write_file_should_send_error_if_file_sig_has_changed() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let id = 999;
         let cur_sig = 12345;
         let file = tempfile::tempfile().unwrap();
-        state.files.insert(
+        state.files.lock().await.insert(
             id,
             LocalFile {
                 id,
@@ -530,7 +545,7 @@ mod tests {
         );
 
         do_write_file(
-            &mut state,
+            Arc::clone(&state),
             &DoWriteFileArgs {
                 id,
                 sig: 99999,
@@ -563,7 +578,7 @@ mod tests {
         let tmp_dir = tempfile::tempdir_in(&dir).unwrap();
 
         do_list_dir_contents(
-            &mut ServerState::default(),
+            Arc::new(ServerState::default()),
             &DoListDirContentsArgs {
                 path: dir_path.clone(),
             },
@@ -604,7 +619,7 @@ mod tests {
         let mut content: Option<Content> = None;
 
         do_list_dir_contents(
-            &mut ServerState::default(),
+            Arc::new(ServerState::default()),
             &DoListDirContentsArgs {
                 path: String::from(""),
             },

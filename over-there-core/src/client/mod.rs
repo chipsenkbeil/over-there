@@ -1,11 +1,11 @@
 pub mod error;
-mod event;
 pub mod file;
 pub mod future;
 pub mod proc;
 pub mod state;
 
 use crate::{
+    event::{AddrEventManager, EventManager},
     msg::{
         content::{
             capabilities::Capability,
@@ -21,37 +21,52 @@ use file::RemoteFile;
 use log::trace;
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
+use over_there_utils::Either;
 use over_there_wire::{self as wire, InboundWire, NetTransmission, OutboundWire};
 use proc::RemoteProc;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::{
     io,
     net::{TcpStream, UdpSocket},
     runtime::Runtime,
-    sync::{mpsc, oneshot},
-    task,
+    sync::{oneshot, Mutex},
 };
 
 impl<S, V, E, D> Communicator<S, V, E, D>
 where
-    S: Signer,
+    S: Signer + Send + 'static,
     V: Verifier + Send + 'static,
-    E: Encrypter,
+    E: Encrypter + Send + 'static,
     D: Decrypter + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
     pub async fn connect(self, transport: Transport, buffer: usize) -> io::Result<Client> {
         let runtime = Runtime::new()?;
         let handle = runtime.handle();
-        let mut state = state::ClientState::default();
+        let mut state = Arc::new(Mutex::new(state::ClientState::default()));
+        let state_2 = Arc::clone(&state);
+        let do_callback = move |msg: Msg| {
+            async {
+                if let Some(header) = msg.parent_header.as_ref() {
+                    state_2
+                        .lock()
+                        .await
+                        .callback_manager
+                        .invoke_callback(header.id, &msg)
+                }
+
+                Ok(())
+            }
+        };
 
         match transport {
             Transport::Tcp(addrs) => {
                 // NOTE: Tokio does not support &[SocketAddr] -> ToSocketAddrs,
                 //       so we have to loop through manually
                 // See https://github.com/tokio-rs/tokio/pull/1760#discussion_r379120864
-                let stream = {
+                let mut stream = {
                     let mut stream = None;
                     for addr in addrs.iter() {
                         let result = TcpStream::connect(addr).await;
@@ -63,37 +78,32 @@ where
                     stream.ok_or(io::Error::from(io::ErrorKind::ConnectionRefused))?
                 };
                 let remote_addr = stream.peer_addr()?;
-                let inbound_wire = InboundWire::new(
+                let mut inbound_wire = InboundWire::new(
                     NetTransmission::TcpEthernet.into(),
                     self.packet_ttl,
                     self.verifier,
                     self.decrypter,
                 );
-                let outbound_wire = OutboundWire::new(
+                let mut outbound_wire = OutboundWire::new(
                     NetTransmission::TcpEthernet.into(),
                     self.signer,
                     self.encrypter,
                 );
 
-                let event::Loops {
-                    send_handle,
-                    event_handle,
-                    tx,
-                } = event::spawn_tcp_loops(
+                let event_manager = EventManager::for_tcp_stream(
                     handle.clone(),
                     buffer,
-                    inbound_wire,
                     stream,
                     remote_addr,
-                    state,
+                    inbound_wire,
+                    outbound_wire,
+                    move |(msg, _, _)| do_callback(msg),
                 );
 
                 Ok(Client {
                     state,
                     runtime,
-                    event_handle,
-                    send_handle,
-                    tx,
+                    event_manager: Either::Left(event_manager),
                     remote_addr,
                     timeout: Client::DEFAULT_TIMEOUT,
                 })
@@ -125,27 +135,28 @@ where
                 let addr = socket.local_addr()?;
                 let transmission = NetTransmission::udp_from_addr(addr);
 
-                let inbound_wire = InboundWire::new(
+                let mut inbound_wire = InboundWire::new(
                     transmission.into(),
                     self.packet_ttl,
                     self.verifier,
                     self.decrypter,
                 );
-                let outbound_wire =
+                let mut outbound_wire =
                     OutboundWire::new(transmission.into(), self.signer, self.encrypter);
 
-                let event::Loops {
-                    send_handle,
-                    event_handle,
-                    tx,
-                } = event::spawn_udp_loops(handle.clone(), buffer, inbound_wire, socket, state);
+                let addr_event_manager = AddrEventManager::for_udp_socket(
+                    handle.clone(),
+                    buffer,
+                    socket,
+                    inbound_wire,
+                    outbound_wire,
+                    move |(msg, _, _)| do_callback(msg),
+                );
 
                 Ok(Client {
                     state,
                     runtime,
-                    event_handle,
-                    send_handle,
-                    tx,
+                    event_manager: Either::Right(addr_event_manager),
                     remote_addr,
                     timeout: Client::DEFAULT_TIMEOUT,
                 })
@@ -156,19 +167,13 @@ where
 
 /// Represents a client after connecting to an endpoint
 pub struct Client {
-    state: state::ClientState,
+    state: Arc<Mutex<state::ClientState>>,
 
     /// Used to spawn jobs when communicating with the server
     runtime: Runtime,
 
-    /// Primary event handle processing incoming msgs
-    event_handle: task::JoinHandle<()>,
-
-    /// Primary send handle processing outgoing msgs
-    send_handle: task::JoinHandle<()>,
-
-    /// Means to send new outbound msgs
-    tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    /// Represents the event manager used to send and receive data
+    event_manager: Either<EventManager, AddrEventManager>,
 
     /// Represents the address the client is connected to
     remote_addr: SocketAddr,
@@ -180,10 +185,6 @@ pub struct Client {
 impl Client {
     /// Default timeout applied to a new client for any ask made
     pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
-
-    pub fn event_handle(&self) -> &task::JoinHandle<()> {
-        &self.event_handle
-    }
 
     pub fn runtime(&self) -> &Runtime {
         &self.runtime
@@ -201,6 +202,8 @@ impl Client {
         // Assign a synchronous callback that uses the oneshot channel to
         // get back the result
         self.state
+            .lock()
+            .await
             .callback_manager
             .add_callback(msg.header.id, |msg| {
                 if let Content::Error(args) = &msg.content {
@@ -225,13 +228,14 @@ impl Client {
     pub async fn tell(&self, msg: Msg) -> Result<(), TellError> {
         trace!("Sending to {}: {:?}", self.remote_addr, msg);
 
-        self.tx
-            .send((
-                msg.to_vec().map_err(|_| TellError::EncodingFailed)?,
-                self.remote_addr,
-            ))
-            .await
-            .map_err(|_| TellError::SendFailed)
+        let data = msg.to_vec().map_err(|_| TellError::EncodingFailed)?;
+        match self.event_manager {
+            Either::Left(m) => m.send(data).await.map_err(|_| TellError::SendFailed),
+            Either::Right(m) => m
+                .send_to(data, self.remote_addr)
+                .await
+                .map_err(|_| TellError::SendFailed),
+        }
     }
 
     /// Requests the version from the server

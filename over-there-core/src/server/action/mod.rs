@@ -6,8 +6,9 @@ use crate::{
 };
 use log::trace;
 use over_there_derive::Error;
-use std::net::SocketAddr;
-use tokio::{io, sync::mpsc};
+use std::future::Future;
+use std::sync::Arc;
+use tokio::io;
 
 #[derive(Debug, Error)]
 pub enum ActionError {
@@ -17,16 +18,15 @@ pub enum ActionError {
 }
 
 /// Evaluate a message's content and potentially respond using the provided responder
-pub async fn execute(
-    state: &mut ServerState,
-    msg: &Msg,
-    tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
-    origin_addr: SocketAddr,
-) -> Result<(), ActionError> {
+pub async fn execute<F, R>(state: Arc<ServerState>, msg: Msg, send: F) -> Result<(), ActionError>
+where
+    F: FnMut(Vec<u8>) -> R,
+    R: Future<Output = io::Result<()>>,
+{
     trace!("Received msg: {:?}", msg);
 
     let header = msg.header.clone();
-    let do_respond = move |content: Content| respond(content, header, tx, origin_addr);
+    let do_respond = move |content: Content| respond(content, header, send);
 
     match &msg.content {
         Content::Heartbeat => handler::heartbeat::heartbeat(do_respond).await,
@@ -48,19 +48,17 @@ pub async fn execute(
 }
 
 /// Sends a response to the originator of a msg
-async fn respond(
+async fn respond<F, R>(
     content: Content,
     parent_header: Header,
-    tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
-    origin_addr: SocketAddr,
-) -> Result<(), ActionError> {
+    mut send: F,
+) -> Result<(), ActionError>
+where
+    F: FnMut(Vec<u8>) -> R,
+    R: Future<Output = io::Result<()>>,
+{
     let new_msg = Msg::from((content, parent_header));
     let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
 
-    tx.send((data, origin_addr)).await.map_err(|_| {
-        ActionError::IoError(io::Error::new(
-            io::ErrorKind::BrokenPipe,
-            "Outbound communication closed",
-        ))
-    })
+    send(data).await.map_err(ActionError::IoError)
 }

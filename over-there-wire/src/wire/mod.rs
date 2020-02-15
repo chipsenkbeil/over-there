@@ -28,45 +28,109 @@ pub enum InboundWireError {
 pub enum OutboundWireError {
     IO(io::Error),
     OutputProcessor(OutputProcessorError),
+
+    /// When fail to send all bytes out together on the wire
+    IncompleteSend,
 }
 
 /// Wire for inbound communication
 pub struct InboundWire<V, D>
 where
-    V: Verifier,
-    D: Decrypter,
+    V: Verifier + Send + 'static,
+    D: Decrypter + Send + 'static,
 {
-    /// Heap-allocated memory for temporary storage of input data
-    pub buf: Box<[u8]>,
+    /// Maximum size of expected data
+    transmission_size: usize,
 
     /// Processes input coming into the wire
     input_processor: InputProcessor<V, D>,
 }
 
-impl<V, D> InboundWire<V, D>
+impl<'a, V, D> InboundWire<V, D>
 where
-    V: Verifier,
-    D: Decrypter,
+    V: Verifier + Send + 'static,
+    D: Decrypter + Send + 'static,
 {
     pub fn new(transmission_size: usize, packet_ttl: Duration, verifier: V, decrypter: D) -> Self {
         let input_processor = InputProcessor::new(packet_ttl, verifier, decrypter);
         Self {
-            buf: vec![0; transmission_size].into_boxed_slice(),
+            transmission_size,
             input_processor,
         }
     }
 
-    /// Process data placed in buffer externally
-    /// NOTE: Doing it this way as opposed to taking a closure to do the read
-    ///       of data into the buffer because getting lifetime bound issues
-    pub fn process(
+    pub fn transmission_size(&self) -> usize {
+        self.transmission_size
+    }
+
+    /// CHIP CHIP CHIP
+    ///
+    /// UdpSocket.split creates Arc<UdpSocket> and provides one to each
+    /// of the Recv and Send halves
+    ///
+    /// TcpStream.split creates &'a TcpStream and provides one to each of
+    /// the Read and Write halves
+    ///
+    /// Seems like easiest approach is to create Arc of stream and socket,
+    /// try_clone does not work with mio::Event per https://github.com/tokio-rs/tokio/pull/1308#issuecomment-513337003
+    ///
+    /// Tokio used to have try_clone, but was deprecated via
+    /// https://github.com/tokio-rs/tokio/pull/824
+    ///
+    /// <<<>>>
+    ///
+    /// Explanation of UdpSocket split versus TcpStream split here:
+    /// https://github.com/tokio-rs/tokio/pull/1226#issuecomment-538033875
+    ///
+    /// Maybe best path is to create some wrapper structure that will contain
+    /// the TcpStream and perform the split
+    ///
+    /// <<<>>>
+    ///
+    /// It might make more sense to use the select! macro instead, which
+    /// can then run on a single thread and not have to split
+    ///
+    /// VV DO THIS vvv
+    ///
+    /// https://docs.rs/tokio/0.2.11/tokio/macro.select.html
+    ///
+    /// ^^^ DO THIS ^^^
+
+    /// Receives data synchronously using the provided function
+    /// If None returned for data, indicates that bytes were received but
+    /// the full message has yet to be collected
+    pub fn recv<F>(&mut self, f: F) -> Result<(Option<Vec<u8>>, SocketAddr), InboundWireError>
+    where
+        F: FnOnce(&mut [u8]) -> io::Result<(usize, SocketAddr)>,
+    {
+        let mut buf = vec![0; self.transmission_size].into_boxed_slice();
+        let (size, addr) = f(&mut buf).map_err(InboundWireError::IO)?;
+        let data = self.process(&buf[..size])?;
+        Ok((data, addr))
+    }
+
+    /// Receives data asynchronously using the provided function
+    /// If None returned for data, indicates that bytes were received but
+    /// the full message has yet to be collected
+    pub async fn async_recv<F, R>(
         &mut self,
-        size: usize,
-        addr: SocketAddr,
-    ) -> Result<Option<(Vec<u8>, SocketAddr)>, InboundWireError> {
+        f: F,
+    ) -> Result<(Option<Vec<u8>>, SocketAddr), InboundWireError>
+    where
+        F: FnOnce(&mut [u8]) -> R,
+        R: Future<Output = io::Result<(usize, SocketAddr)>>,
+    {
+        let mut buf = vec![0; self.transmission_size].into_boxed_slice();
+        let (size, addr) = f(&mut buf).await.map_err(InboundWireError::IO)?;
+        let data = self.process(&buf[..size])?;
+        Ok((data, addr))
+    }
+
+    /// Processes received data
+    #[inline]
+    pub fn process(&mut self, buf: &[u8]) -> Result<Option<Vec<u8>>, InboundWireError> {
         self.input_processor
-            .process(&self.buf[..size])
-            .map(|opt| opt.map(|data| (data, addr)))
+            .process(buf)
             .map_err(InboundWireError::InputProcessor)
     }
 }
@@ -74,8 +138,8 @@ where
 /// Wire for outbound communication
 pub struct OutboundWire<S, E>
 where
-    S: Signer,
-    E: Encrypter,
+    S: Signer + Send + 'static,
+    E: Encrypter + Send + 'static,
 {
     /// Processes output leaving on the wire
     output_processor: OutputProcessor<S, E>,
@@ -83,8 +147,8 @@ where
 
 impl<S, E> OutboundWire<S, E>
 where
-    S: Signer,
-    E: Encrypter,
+    S: Signer + Send + 'static,
+    E: Encrypter + Send + 'static,
 {
     pub fn new(transmission_size: usize, signer: S, encrypter: E) -> Self {
         let output_processor = OutputProcessor::new(transmission_size, signer, encrypter);
@@ -94,15 +158,15 @@ where
     /// Sends data in buf synchronously using the provided function
     pub fn send<F>(&mut self, buf: &[u8], mut f: F) -> Result<(), OutboundWireError>
     where
-        F: FnMut(&[u8]) -> io::Result<()>,
+        F: FnMut(&[u8]) -> io::Result<usize>,
     {
-        let data = self
-            .output_processor
-            .process(buf)
-            .map_err(OutboundWireError::OutputProcessor)?;
+        let data = self.process(buf)?;
 
         for packet_bytes in data.iter() {
-            f(packet_bytes).map_err(OutboundWireError::IO)?;
+            let size = f(packet_bytes).map_err(OutboundWireError::IO)?;
+            if size < packet_bytes.len() {
+                return Err(OutboundWireError::IncompleteSend);
+            }
         }
 
         Ok(())
@@ -112,17 +176,25 @@ where
     pub async fn async_send<F, R>(&mut self, buf: &[u8], mut f: F) -> Result<(), OutboundWireError>
     where
         F: FnMut(&[u8]) -> R,
-        R: Future<Output = io::Result<()>>,
+        R: Future<Output = io::Result<usize>>,
     {
-        let data = self
-            .output_processor
-            .process(buf)
-            .map_err(OutboundWireError::OutputProcessor)?;
+        let data = self.process(buf)?;
 
         for packet_bytes in data.iter() {
-            f(packet_bytes).await.map_err(OutboundWireError::IO)?;
+            let size = f(packet_bytes).await.map_err(OutboundWireError::IO)?;
+            if size < packet_bytes.len() {
+                return Err(OutboundWireError::IncompleteSend);
+            }
         }
 
         Ok(())
+    }
+
+    /// Processes outgoing data
+    #[inline]
+    pub fn process(&mut self, buf: &[u8]) -> Result<Vec<Vec<u8>>, OutboundWireError> {
+        self.output_processor
+            .process(buf)
+            .map_err(OutboundWireError::OutputProcessor)
     }
 }

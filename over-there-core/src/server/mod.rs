@@ -1,51 +1,40 @@
 mod action;
-mod event;
 pub mod file;
 pub mod proc;
 pub mod state;
 
-use crate::{Communicator, Transport};
+use crate::{event::AddrEventManager, Communicator, Transport};
 use over_there_wire::{
     Decrypter, Encrypter, InboundWire, NetTransmission, OutboundWire, Signer, Verifier,
 };
-use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::{
     io,
     net::{TcpListener, UdpSocket},
     runtime::Runtime,
-    sync::mpsc,
-    task,
 };
 
 /// Represents a server after listening has begun
 pub struct Server {
-    state: state::ServerState,
-
     /// Used to spawn jobs when communicating with clients
     runtime: Runtime,
 
-    /// Primary event handle processing incoming msgs
-    event_handle: task::JoinHandle<()>,
-
-    /// Primary send handle processing outgoing msgs
-    send_handle: task::JoinHandle<()>,
-
-    /// Means to send new outbound msgs
-    tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    /// Represents the event manager used to send and receive data
+    addr_event_manager: AddrEventManager,
 }
 
 impl<S, V, E, D> Communicator<S, V, E, D>
 where
-    S: Signer,
+    S: Signer + Send + 'static,
     V: Verifier + Send + 'static,
-    E: Encrypter,
+    E: Encrypter + Send + 'static,
     D: Decrypter + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
     pub async fn listen(self, transport: Transport, buffer: usize) -> io::Result<Server> {
         let runtime = Runtime::new()?;
         let handle = runtime.handle();
-        let mut state = state::ServerState::default();
+        let state = Arc::new(state::ServerState::default());
 
         match transport {
             Transport::Tcp(addrs) => {
@@ -76,18 +65,34 @@ where
                     self.encrypter,
                 );
 
-                let event::Loops {
-                    event_handle,
-                    send_handle,
-                    tx,
-                } = event::spawn_tcp_loops(handle.clone(), buffer, listener, inbound_wire, state);
+                let addr_event_manager = AddrEventManager::for_tcp_listener(
+                    handle.clone(),
+                    buffer,
+                    listener,
+                    inbound_wire,
+                    outbound_wire,
+                    move |(msg, _, mut tx)| {
+                        use futures::future::TryFutureExt;
+                        action::execute(Arc::clone(&state), msg, move |data: Vec<u8>| {
+                            let data = data.to_vec();
+                            async {
+                                tx.send(data)
+                                    .map_err(|_| {
+                                        io::Error::new(
+                                            io::ErrorKind::BrokenPipe,
+                                            "Outbound communication closed",
+                                        )
+                                    })
+                                    .await
+                            }
+                        })
+                        .map_err(|x| x.into())
+                    },
+                );
 
                 Ok(Server {
-                    state,
                     runtime,
-                    event_handle,
-                    send_handle,
-                    tx,
+                    addr_event_manager,
                 })
             }
             Transport::Udp(addrs) => {
@@ -117,18 +122,34 @@ where
                 let outbound_wire =
                     OutboundWire::new(transmission.into(), self.signer, self.encrypter);
 
-                let event::Loops {
-                    event_handle,
-                    send_handle,
-                    tx,
-                } = event::spawn_udp_loops(handle.clone(), buffer, socket, inbound_wire, state);
+                let addr_event_manager = AddrEventManager::for_udp_socket(
+                    handle.clone(),
+                    buffer,
+                    socket,
+                    inbound_wire,
+                    outbound_wire,
+                    move |(msg, addr, mut tx)| {
+                        use futures::future::TryFutureExt;
+                        action::execute(Arc::clone(&state), msg, move |data: Vec<u8>| {
+                            let data = data.to_vec();
+                            async {
+                                tx.send((data, addr))
+                                    .map_err(|_| {
+                                        io::Error::new(
+                                            io::ErrorKind::BrokenPipe,
+                                            "Outbound communication closed",
+                                        )
+                                    })
+                                    .await
+                            }
+                        })
+                        .map_err(|x| x.into())
+                    },
+                );
 
                 Ok(Server {
-                    state,
                     runtime,
-                    event_handle,
-                    send_handle,
-                    tx,
+                    addr_event_manager,
                 })
             }
         }

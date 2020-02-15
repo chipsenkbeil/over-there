@@ -10,9 +10,10 @@ use std::convert::TryFrom;
 use std::future::Future;
 use std::io;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 
 pub async fn do_exec_proc<F, R>(
-    state: &mut ServerState,
+    state: Arc<ServerState>,
     args: &DoExecProcArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -41,7 +42,7 @@ where
     ) {
         Ok(local_proc) => {
             let id = local_proc.id();
-            state.procs.insert(id, local_proc);
+            state.procs.lock().await.insert(id, local_proc);
             respond(Content::ProcStarted(ProcStartedArgs { id })).await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,
@@ -49,7 +50,7 @@ where
 }
 
 pub async fn do_write_stdin<F, R>(
-    state: &mut ServerState,
+    state: Arc<ServerState>,
     args: &DoWriteStdinArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -59,7 +60,7 @@ where
 {
     debug!("do_write_stdin: {:?}", args);
 
-    match state.procs.get_mut(&args.id) {
+    match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => {
             use std::io::Write;
 
@@ -78,7 +79,7 @@ where
 }
 
 pub async fn do_get_stdout<F, R>(
-    state: &mut ServerState,
+    state: Arc<ServerState>,
     args: &DoGetStdoutArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -88,7 +89,7 @@ where
 {
     debug!("do_get_stdout: {:?}", args);
 
-    match state.procs.get_mut(&args.id) {
+    match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => {
             let mut buf = [0; 1024];
             match local_proc.read_stdout(&mut buf) {
@@ -112,7 +113,7 @@ where
 }
 
 pub async fn do_get_stderr<F, R>(
-    state: &mut ServerState,
+    state: Arc<ServerState>,
     args: &DoGetStderrArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -122,7 +123,7 @@ where
 {
     debug!("do_get_stderr: {:?}", args);
 
-    match state.procs.get_mut(&args.id) {
+    match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => {
             let mut buf = [0; 1024];
             match local_proc.read_stderr(&mut buf) {
@@ -146,7 +147,7 @@ where
 }
 
 pub async fn do_kill_proc<F, R>(
-    state: &mut ServerState,
+    state: Arc<ServerState>,
     args: &DoKillProcArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -156,7 +157,7 @@ where
 {
     debug!("do_kill_proc: {:?}", args);
 
-    match state.procs.remove(&args.id) {
+    match state.procs.lock().await.remove(&args.id) {
         // NOTE: We are killing and then WAITING for the process to die, which
         //       would block, but seems to be required in order to properly
         //       have the process clean up -- try_wait doesn't seem to work
@@ -187,11 +188,11 @@ mod tests {
 
     #[tokio::test]
     async fn do_exec_proc_should_send_success_if_can_execute_process() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         do_exec_proc(
-            &mut state,
+            Arc::clone(&state),
             &DoExecProcArgs {
                 command: String::from("rev"),
                 args: vec![String::from("test")],
@@ -209,7 +210,8 @@ mod tests {
 
         match content.unwrap() {
             Content::ProcStarted(args) => {
-                let proc = state.procs.get(&args.id).unwrap();
+                let x = state.procs.lock().await;
+                let proc = x.get(&args.id).unwrap();
                 assert_eq!(proc.id(), args.id);
             }
             x => panic!("Bad content: {:?}", x),
@@ -218,11 +220,11 @@ mod tests {
 
     #[tokio::test]
     async fn do_exec_proc_should_send_error_if_process_does_not_exist() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         do_exec_proc(
-            &mut state,
+            Arc::clone(&state),
             &DoExecProcArgs {
                 command: String::from("<a><b><c>"),
                 args: vec![],
@@ -246,7 +248,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_write_stdin_should_send_data_to_running_process() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -257,12 +259,16 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::try_from(child).unwrap());
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
 
-        do_write_stdin(&mut state, &DoWriteStdinArgs { id, input }, |c| {
+        do_write_stdin(Arc::clone(&state), &DoWriteStdinArgs { id, input }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -270,7 +276,8 @@ mod tests {
         .unwrap();
 
         let output = {
-            let local_proc = state.procs.get_mut(&id).unwrap();
+            let mut x = state.procs.lock().await;
+            let local_proc = x.get_mut(&id).unwrap();
 
             let mut buf = [0; 1024];
             exec::loop_timeout_panic(Duration::from_millis(500), move || {
@@ -292,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_write_stdin_should_send_error_if_process_exited() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -303,12 +310,16 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::try_from(child).unwrap());
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
 
-        do_write_stdin(&mut state, &DoWriteStdinArgs { id, input }, |c| {
+        do_write_stdin(Arc::clone(&state), &DoWriteStdinArgs { id, input }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -325,11 +336,11 @@ mod tests {
 
     #[tokio::test]
     async fn do_write_stdin_should_send_error_if_process_id_not_registered() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         do_write_stdin(
-            &mut state,
+            Arc::clone(&state),
             &DoWriteStdinArgs {
                 id: 0,
                 input: b"test\n".to_vec(),
@@ -352,7 +363,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_get_stdout_should_send_contents_if_process_sent_stdout() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -363,12 +374,16 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::try_from(child).unwrap());
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
 
-        do_get_stdout(&mut state, &DoGetStdoutArgs { id }, |c| {
+        do_get_stdout(Arc::clone(&state), &DoGetStdoutArgs { id }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -385,7 +400,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_get_stdout_should_send_empty_contents_if_process_has_no_stdout() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -395,12 +410,16 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::try_from(child).unwrap());
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
 
-        do_get_stdout(&mut state, &DoGetStdoutArgs { id }, |c| {
+        do_get_stdout(Arc::clone(&state), &DoGetStdoutArgs { id }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -417,10 +436,10 @@ mod tests {
 
     #[tokio::test]
     async fn do_get_stdout_should_send_error_if_process_id_not_registered() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
-        do_get_stdout(&mut state, &DoGetStdoutArgs { id: 0 }, |c| {
+        do_get_stdout(Arc::clone(&state), &DoGetStdoutArgs { id: 0 }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -437,7 +456,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_get_stderr_should_send_contents_if_process_sent_stderr() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -448,12 +467,16 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::try_from(child).unwrap());
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
 
-        do_get_stderr(&mut state, &DoGetStderrArgs { id }, |c| {
+        do_get_stderr(Arc::clone(&state), &DoGetStderrArgs { id }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -470,7 +493,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_get_stderr_should_send_empty_contents_if_process_has_no_stderr() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -480,12 +503,16 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::try_from(child).unwrap());
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
 
-        do_get_stderr(&mut state, &DoGetStderrArgs { id }, |c| {
+        do_get_stderr(Arc::clone(&state), &DoGetStderrArgs { id }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -502,10 +529,10 @@ mod tests {
 
     #[tokio::test]
     async fn do_get_stderr_should_send_error_if_process_id_not_registered() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
-        do_get_stderr(&mut state, &DoGetStderrArgs { id: 0 }, |c| {
+        do_get_stderr(Arc::clone(&state), &DoGetStderrArgs { id: 0 }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -522,7 +549,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_proc_kill_should_send_exit_status_after_killing_process() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -533,12 +560,16 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::try_from(child).unwrap());
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
 
-        do_kill_proc(&mut state, &DoKillProcArgs { id }, |c| {
+        do_kill_proc(Arc::clone(&state), &DoKillProcArgs { id }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
@@ -560,7 +591,7 @@ mod tests {
 
     #[tokio::test]
     async fn do_proc_kill_should_send_exit_status_if_process_already_exited() {
-        let mut state = ServerState::default();
+        let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
         let id = 999;
@@ -570,12 +601,16 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.insert(id, LocalProc::try_from(child).unwrap());
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::try_from(child).unwrap());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
 
-        do_kill_proc(&mut state, &DoKillProcArgs { id }, |c| {
+        do_kill_proc(Arc::clone(&state), &DoKillProcArgs { id }, |c| {
             content = Some(c);
             async { Ok(()) }
         })
