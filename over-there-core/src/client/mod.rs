@@ -210,6 +210,13 @@ impl Client {
         self.remote_addr
     }
 
+    pub async fn wait(self) -> Result<(), task::JoinError> {
+        match self.event_manager {
+            Either::Left(m) => tokio::try_join!(m.wait(), self._event_handle).map(|_| ()),
+            Either::Right(m) => tokio::try_join!(m.wait(), self._event_handle).map(|_| ()),
+        }
+    }
+
     /// Generic ask of the server that is expecting a response
     pub async fn ask(&mut self, msg: Msg) -> Result<Msg, AskError> {
         let timeout = self.timeout;

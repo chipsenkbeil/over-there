@@ -4,10 +4,9 @@ pub mod server;
 
 use clap::Clap;
 use over_there_auth::NoopAuthenticator;
-use over_there_core::{Client, Server};
+use over_there_core::{Communicator, Transport};
 use over_there_crypto::NoopBicrypter;
-use over_there_transport::constants;
-use over_there_utils::nonblocking;
+use over_there_wire::{self as wire, constants};
 use std::error::Error;
 use std::io;
 
@@ -38,29 +37,38 @@ pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
 }
 
 async fn run_server(cmd: server::ServerCommand) -> Result<(), Box<dyn Error>> {
-    let server = Server::listen_udp(
-        cmd.addr.ip(),
-        vec![cmd.addr.port()],
+    let server = Communicator::new(
         constants::DEFAULT_TTL,
         NoopAuthenticator,
+        NoopAuthenticator,
         NoopBicrypter,
-        |_| true,
-    )?;
+        NoopBicrypter,
+    )
+    .listen(
+        Transport::Udp(wire::net::make_addr_list(
+            cmd.addr.ip(),
+            vec![cmd.addr.port()],
+        )),
+        1000,
+    )
+    .await?;
 
     // Let server run to completion
-    server.join()?;
+    server.wait().await?;
 
     Ok(())
 }
 
 async fn run_client(cmd: client::ClientCommand) -> Result<(), Box<dyn Error>> {
-    let client = Client::connect_udp(
-        cmd.addr,
+    let mut client = Communicator::new(
         constants::DEFAULT_TTL,
         NoopAuthenticator,
+        NoopAuthenticator,
         NoopBicrypter,
-        |_| true,
+        NoopBicrypter,
     )
+    .connect(Transport::Udp(vec![cmd.addr]), 1000)
+    .await
     .expect("Failed to connect with client");
 
     match &cmd.command {
@@ -124,12 +132,7 @@ async fn run_client(cmd: client::ClientCommand) -> Result<(), Box<dyn Error>> {
                 .ask_exec_proc(c.command.clone(), c.args.clone())
                 .await?;
 
-            // If supporting forwarding stdin, make it nonblocking
             let stdin = io::stdin();
-            if c.stdin {
-                nonblocking::stdin_set_nonblocking(&stdin)
-                    .expect("Unable to make stdin nonblocking");
-            }
 
             loop {
                 if c.stdin {

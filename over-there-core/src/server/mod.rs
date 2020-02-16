@@ -38,6 +38,10 @@ impl Server {
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
+
+    pub async fn wait(self) -> Result<(), task::JoinError> {
+        tokio::try_join!(self.addr_event_manager.wait(), self._event_handle).map(|_| ())
+    }
 }
 
 async fn tcp_event_handler(mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<Vec<u8>>)>) {
