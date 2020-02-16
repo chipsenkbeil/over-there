@@ -6,11 +6,11 @@ use crate::{
     server::{action::ActionError, proc::LocalProc, state::ServerState},
 };
 use log::debug;
-use std::convert::TryFrom;
 use std::future::Future;
 use std::io;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::process::Command;
 
 pub async fn do_exec_proc<F, R>(
     state: Arc<ServerState>,
@@ -32,15 +32,16 @@ where
 
     let make_pipe = |yes| if yes { Stdio::piped() } else { Stdio::null() };
 
-    match LocalProc::try_from(
-        Command::new(command)
-            .args(args)
-            .stdin(make_pipe(*stdin))
-            .stdout(make_pipe(*stdout))
-            .stderr(make_pipe(*stderr))
-            .spawn(),
-    ) {
-        Ok(local_proc) => {
+    match Command::new(command)
+        .args(args)
+        .stdin(make_pipe(*stdin))
+        .stdout(make_pipe(*stdout))
+        .stderr(make_pipe(*stderr))
+        .kill_on_drop(true)
+        .spawn()
+    {
+        Ok(child) => {
+            let local_proc = LocalProc::new(child);
             let id = local_proc.id();
             state.procs.lock().await.insert(id, local_proc);
             respond(Content::ProcStarted(ProcStartedArgs { id })).await
@@ -61,19 +62,10 @@ where
     debug!("do_write_stdin: {:?}", args);
 
     match state.procs.lock().await.get_mut(&args.id) {
-        Some(local_proc) => {
-            use std::io::Write;
-
-            let mut result = local_proc.write_all(&args.input);
-            if result.is_ok() {
-                result = local_proc.flush();
-            }
-
-            match result {
-                Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)).await,
-                Err(x) => respond(Content::IoError(From::from(x))).await,
-            }
-        }
+        Some(local_proc) => match local_proc.write_stdin(&args.input).await {
+            Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)).await,
+            Err(x) => respond(Content::IoError(From::from(x))).await,
+        },
         None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))).await,
     }
 }
@@ -92,7 +84,7 @@ where
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => {
             let mut buf = [0; 1024];
-            match local_proc.read_stdout(&mut buf) {
+            match local_proc.read_stdout(&mut buf).await {
                 Ok(size) => {
                     respond(Content::StdoutContents(StdoutContentsArgs {
                         output: buf[..size].to_vec(),
@@ -126,7 +118,7 @@ where
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => {
             let mut buf = [0; 1024];
-            match local_proc.read_stderr(&mut buf) {
+            match local_proc.read_stderr(&mut buf).await {
                 Ok(size) => {
                     respond(Content::StderrContents(StderrContentsArgs {
                         output: buf[..size].to_vec(),
@@ -161,12 +153,12 @@ where
         // NOTE: We are killing and then WAITING for the process to die, which
         //       would block, but seems to be required in order to properly
         //       have the process clean up -- try_wait doesn't seem to work
-        Some(local_proc) => match local_proc.kill_and_wait() {
-            Ok(exit_status) => {
+        Some(local_proc) => match local_proc.kill_and_wait().await {
+            Ok(output) => {
                 respond(Content::ProcStatus(ProcStatusArgs {
                     id: args.id,
                     is_alive: false,
-                    exit_code: exit_status.code(),
+                    exit_code: output.status.code(),
                 }))
                 .await
             }
@@ -179,8 +171,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use over_there_utils::exec;
-    use std::convert::TryFrom;
     use std::io;
     use std::process::Stdio;
     use std::thread;
@@ -259,11 +249,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state
-            .procs
-            .lock()
-            .await
-            .insert(id, LocalProc::try_from(child).unwrap());
+        state.procs.lock().await.insert(id, LocalProc::new(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -279,15 +265,17 @@ mod tests {
             let mut x = state.procs.lock().await;
             let local_proc = x.get_mut(&id).unwrap();
 
+            use tokio::time::timeout;
             let mut buf = [0; 1024];
-            exec::loop_timeout_panic(Duration::from_millis(500), move || {
-                let result = local_proc.read_stdout(&mut buf);
-                match result {
-                    Err(x) if x.kind() == io::ErrorKind::WouldBlock => None,
-                    Err(x) => panic!("Unexpected error {}", x),
-                    Ok(size) => Some(buf[..size].to_vec()),
-                }
+            match timeout(Duration::from_millis(500), async {
+                local_proc.read_stdout(&mut buf).await
             })
+            .await
+            {
+                Ok(result) if result.is_ok() => buf[..result.unwrap()].to_vec(),
+                Ok(result) => panic!("Unexpected error {}", result.unwrap_err()),
+                Err(x) => panic!("Timeout {}", x),
+            }
         };
         assert_eq!(output, b"test\n");
 
@@ -310,11 +298,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state
-            .procs
-            .lock()
-            .await
-            .insert(id, LocalProc::try_from(child).unwrap());
+        state.procs.lock().await.insert(id, LocalProc::new(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -374,11 +358,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state
-            .procs
-            .lock()
-            .await
-            .insert(id, LocalProc::try_from(child).unwrap());
+        state.procs.lock().await.insert(id, LocalProc::new(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -410,11 +390,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state
-            .procs
-            .lock()
-            .await
-            .insert(id, LocalProc::try_from(child).unwrap());
+        state.procs.lock().await.insert(id, LocalProc::new(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -467,11 +443,7 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state
-            .procs
-            .lock()
-            .await
-            .insert(id, LocalProc::try_from(child).unwrap());
+        state.procs.lock().await.insert(id, LocalProc::new(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -503,11 +475,7 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state
-            .procs
-            .lock()
-            .await
-            .insert(id, LocalProc::try_from(child).unwrap());
+        state.procs.lock().await.insert(id, LocalProc::new(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -560,11 +528,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state
-            .procs
-            .lock()
-            .await
-            .insert(id, LocalProc::try_from(child).unwrap());
+        state.procs.lock().await.insert(id, LocalProc::new(child));
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -601,11 +565,7 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state
-            .procs
-            .lock()
-            .await
-            .insert(id, LocalProc::try_from(child).unwrap());
+        state.procs.lock().await.insert(id, LocalProc::new(child));
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));

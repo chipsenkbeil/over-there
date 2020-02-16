@@ -9,6 +9,3 @@ edition = "2018"
 [dependencies]
 serde = { version = "1.0.103", features = ["derive"] }
 over-there-derive = { path = "../over-there-derive" }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2.66"

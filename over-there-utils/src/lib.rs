@@ -4,7 +4,6 @@ mod delay;
 mod delimiter;
 mod either;
 pub mod exec;
-pub mod nonblocking;
 pub mod serializers;
 mod ttl;
 
