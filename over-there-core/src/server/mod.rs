@@ -30,10 +30,18 @@ pub struct Server {
     addr_event_manager: AddrEventManager,
 
     /// Represents the handle for processing events
-    event_handle: task::JoinHandle<()>,
+    _event_handle: task::JoinHandle<()>,
 }
 
 impl Server {
+    pub fn handle(&self) -> &Handle {
+        &self.handle
+    }
+
+    pub fn addr_event_manager(&self) -> &AddrEventManager {
+        &self.addr_event_manager
+    }
+
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -93,7 +101,7 @@ where
                             break;
                         }
                     }
-                    listener.ok_or(io::Error::from(io::ErrorKind::AddrNotAvailable))?
+                    listener.ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?
                 };
                 let addr = listener.local_addr()?;
 
@@ -110,7 +118,7 @@ where
                 );
 
                 let (tx, rx) = mpsc::channel(buffer);
-                let event_handle = handle.spawn(tcp_event_handler(rx));
+                let _event_handle = handle.spawn(tcp_event_handler(rx));
                 let addr_event_manager = AddrEventManager::for_tcp_listener(
                     handle.clone(),
                     buffer,
@@ -124,7 +132,7 @@ where
                     handle,
                     addr,
                     addr_event_manager,
-                    event_handle,
+                    _event_handle,
                 })
             }
             Transport::Udp(addrs) => {
@@ -140,7 +148,7 @@ where
                             break;
                         }
                     }
-                    socket.ok_or(io::Error::from(io::ErrorKind::AddrNotAvailable))?
+                    socket.ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?
                 };
                 let addr = socket.local_addr()?;
                 let transmission = NetTransmission::udp_from_addr(addr);
@@ -155,7 +163,7 @@ where
                     OutboundWire::new(transmission.into(), self.signer, self.encrypter);
 
                 let (tx, rx) = mpsc::channel(buffer);
-                let event_handle = handle.spawn(udp_event_handler(rx));
+                let _event_handle = handle.spawn(udp_event_handler(rx));
                 let addr_event_manager = AddrEventManager::for_udp_socket(
                     handle.clone(),
                     buffer,
@@ -169,7 +177,7 @@ where
                     handle,
                     addr,
                     addr_event_manager,
-                    event_handle,
+                    _event_handle,
                 })
             }
         }

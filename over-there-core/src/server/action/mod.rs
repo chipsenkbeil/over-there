@@ -9,12 +9,11 @@ use over_there_derive::Error;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::{io, sync::mpsc};
+use tokio::sync::mpsc;
 
 #[derive(Debug, Error)]
 pub enum ActionError {
     MsgError(MsgError),
-    IoError(io::Error),
     RespondFailed,
     Unknown,
 }

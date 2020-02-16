@@ -7,6 +7,7 @@ pub use client::{
     error::AskError, error::ExecAskError, error::FileAskError, error::TellError, file::RemoteFile,
     proc::RemoteProc, Client,
 };
+pub use event::{AddrEventManager, EventManager};
 pub use msg::{
     content::{self, Content},
     Msg, MsgError,

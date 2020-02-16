@@ -31,8 +31,8 @@ impl EventManager {
         self.outbound_tx.send(data).await.map_err(|x| x.0)
     }
 
-    pub async fn join(self) {
-        tokio::join!(self.inbound_handle, self.outbound_handle);
+    pub async fn wait(self) -> Result<(), task::JoinError> {
+        tokio::try_join!(self.inbound_handle, self.outbound_handle).map(|_| ())
     }
 }
 
@@ -55,8 +55,8 @@ impl AddrEventManager {
         self.outbound_tx.send((data, addr)).await.map_err(|x| x.0)
     }
 
-    pub async fn join(self) {
-        tokio::join!(self.inbound_handle, self.outbound_handle);
+    pub async fn wait(self) -> Result<(), task::JoinError> {
+        tokio::try_join!(self.inbound_handle, self.outbound_handle).map(|_| ())
     }
 }
 
@@ -97,7 +97,6 @@ where
 {
     outbound_wire: OutboundWire<S, E>,
     stream: io::WriteHalf<TcpStream>,
-    remote_addr: SocketAddr,
 }
 
 impl<S, E> OutboundTcpStream<S, E>
@@ -215,7 +214,6 @@ impl EventManager {
             let mut writer = OutboundTcpStream {
                 outbound_wire,
                 stream: stream_writer,
-                remote_addr,
             };
 
             while let Some(msg) = rx.recv().await {
@@ -225,7 +223,6 @@ impl EventManager {
             }
         });
 
-        let handle_2 = handle.clone();
         let tx_2 = tx.clone();
         let inbound_handle = handle.spawn(async move {
             let mut reader = InboundTcpStream {
@@ -235,10 +232,9 @@ impl EventManager {
             };
 
             loop {
-                let handle_3 = handle_2.clone();
                 let tx_3 = tx_2.clone();
                 let result = reader.read().await;
-                if !process_inbound(handle_3, result, tx_3, on_inbound_tx.clone()).await {
+                if !process_inbound(result, tx_3, on_inbound_tx.clone()).await {
                     break;
                 }
             }
@@ -289,7 +285,6 @@ impl AddrEventManager {
             }
         });
 
-        let handle_2 = handle.clone();
         let tx_2 = tx.clone();
         let inbound_handle = handle.spawn(async move {
             let mut reader = InboundUdpSocket {
@@ -298,10 +293,9 @@ impl AddrEventManager {
             };
 
             loop {
-                let handle_3 = handle_2.clone();
                 let tx_3 = tx_2.clone();
                 let result = reader.read().await;
-                if !process_inbound(handle_3, result, tx_3, on_inbound_tx.clone()).await {
+                if !process_inbound(result, tx_3, on_inbound_tx.clone()).await {
                     break;
                 }
             }
@@ -336,7 +330,7 @@ impl AddrEventManager {
         let outbound_handle = handle.spawn(async move {
             while let Some((msg, addr)) = rx.recv().await {
                 if let Some(stream) = connections_2.lock().await.get_mut(&addr) {
-                    if let Err(_) = stream.send(msg).await {
+                    if stream.send(msg).await.is_err() {
                         error!("Failed to send to {}", addr);
                     }
                 }
@@ -373,7 +367,9 @@ impl AddrEventManager {
 
                             // Wait for the stream's event manager to exit,
                             // and remove the connection once it does
-                            event_manager.join().await;
+                            if let Err(x) = event_manager.wait().await {
+                                error!("Event manager exited badly: {}", x);
+                            }
 
                             connections_3.lock().await.remove(&addr);
                         });
@@ -397,7 +393,6 @@ impl AddrEventManager {
 /// Process result of receiving data, indicating whether should continue
 /// processing additional data
 async fn process_inbound<T>(
-    handle: Handle,
     result: Result<(Option<Vec<u8>>, SocketAddr), InboundWireError>,
     sender: mpsc::Sender<T>,
     mut on_inbound_tx: mpsc::Sender<(Msg, SocketAddr, mpsc::Sender<T>)>,

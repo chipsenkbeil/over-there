@@ -1,6 +1,5 @@
 pub mod error;
 pub mod file;
-pub mod future;
 pub mod proc;
 pub mod state;
 
@@ -18,7 +17,7 @@ use crate::{
 };
 use error::{AskError, ExecAskError, FileAskError, TellError};
 use file::RemoteFile;
-use log::trace;
+use log::{error, trace};
 use over_there_auth::{Signer, Verifier};
 use over_there_crypto::{Decrypter, Encrypter};
 use over_there_utils::Either;
@@ -66,7 +65,7 @@ where
                             break;
                         }
                     }
-                    stream.ok_or(io::Error::from(io::ErrorKind::ConnectionRefused))?
+                    stream.ok_or_else(|| io::Error::from(io::ErrorKind::ConnectionRefused))?
                 };
                 let remote_addr = stream.peer_addr()?;
                 let inbound_wire = InboundWire::new(
@@ -82,7 +81,7 @@ where
                 );
 
                 let (tx, rx) = mpsc::channel(buffer);
-                let event_handle = handle.spawn(tcp_event_handler(state_2, rx));
+                let _event_handle = handle.spawn(tcp_event_handler(state_2, rx));
                 let event_manager = EventManager::for_tcp_stream(
                     handle.clone(),
                     buffer,
@@ -97,7 +96,7 @@ where
                     state,
                     handle,
                     event_manager: Either::Left(event_manager),
-                    event_handle,
+                    _event_handle,
                     remote_addr,
                     timeout: Client::DEFAULT_TIMEOUT,
                 })
@@ -107,11 +106,11 @@ where
                 //       so we have to loop through manually
                 // See https://github.com/tokio-rs/tokio/pull/1760#discussion_r379120864
                 let (socket, remote_addr) = {
-                    let mut socketAndAddr = None;
+                    let mut socket_and_addr = None;
                     for addr in addrs.iter() {
                         let result = wire::net::udp::connect(*addr);
                         if result.is_ok() {
-                            socketAndAddr = result.ok().map(|s| (s, *addr));
+                            socket_and_addr = result.ok().map(|s| (s, *addr));
                             break;
                         }
                     }
@@ -120,8 +119,8 @@ where
                     // NOTE: Must use Handle::enter to provide proper runtime when
                     //       using UdpSocket::from_std
                     handle.enter(|| {
-                        socketAndAddr
-                            .ok_or(io::Error::from(io::ErrorKind::ConnectionRefused))
+                        socket_and_addr
+                            .ok_or_else(|| io::Error::from(io::ErrorKind::ConnectionRefused))
                             .and_then(|(s, addr)| UdpSocket::from_std(s).map(|s| (s, addr)))
                     })?
                 };
@@ -139,7 +138,7 @@ where
                     OutboundWire::new(transmission.into(), self.signer, self.encrypter);
 
                 let (tx, rx) = mpsc::channel(buffer);
-                let event_handle = handle.spawn(udp_event_handler(state_2, rx));
+                let _event_handle = handle.spawn(udp_event_handler(state_2, rx));
                 let addr_event_manager = AddrEventManager::for_udp_socket(
                     handle.clone(),
                     buffer,
@@ -153,7 +152,7 @@ where
                     state,
                     handle,
                     event_manager: Either::Right(addr_event_manager),
-                    event_handle,
+                    _event_handle,
                     remote_addr,
                     timeout: Client::DEFAULT_TIMEOUT,
                 })
@@ -203,7 +202,7 @@ pub struct Client {
     event_manager: Either<EventManager, AddrEventManager>,
 
     /// Represents the handle for processing events
-    event_handle: task::JoinHandle<()>,
+    _event_handle: task::JoinHandle<()>,
 
     /// Represents the address the client is connected to
     remote_addr: SocketAddr,
@@ -236,12 +235,16 @@ impl Client {
             .await
             .callback_manager
             .add_callback(msg.header.id, |msg| {
-                if let Content::Error(args) = &msg.content {
+                let result = if let Content::Error(args) = &msg.content {
                     tx.send(Err(AskError::Failure {
                         msg: args.msg.to_string(),
-                    }));
+                    }))
                 } else {
-                    tx.send(Ok(msg.clone()));
+                    tx.send(Ok(msg.clone()))
+                };
+
+                if result.is_err() {
+                    error!("Failed to trigger callback: {:?}", msg);
                 }
             });
 
