@@ -3,7 +3,6 @@ use over_there_core::{Client, Communicator, Server, Transport};
 use over_there_crypto::{self as crypto, aes_gcm};
 use over_there_wire::{self as wire, constants};
 use std::time::Duration;
-use tokio::runtime::Handle;
 
 pub enum TestMode {
     Tcp,
@@ -44,7 +43,6 @@ fn init_logger() {
 }
 
 async fn start_tcp_client_and_server() -> TestBench {
-    let handle = Handle::current();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
     let auth = Sha256Authenticator::new(sign_key);
@@ -58,7 +56,6 @@ async fn start_tcp_client_and_server() -> TestBench {
         bicrypter.clone(),
     )
     .listen(
-        handle.clone(),
         Transport::Tcp(wire::net::make_local_ipv4_addr_list()),
         CHANNEL_MAX_SIZE,
     )
@@ -72,11 +69,7 @@ async fn start_tcp_client_and_server() -> TestBench {
         bicrypter.clone(),
         bicrypter.clone(),
     )
-    .connect(
-        handle,
-        Transport::Tcp(vec![server.addr()]),
-        CHANNEL_MAX_SIZE,
-    )
+    .connect(Transport::Tcp(vec![server.addr()]), CHANNEL_MAX_SIZE)
     .await
     .unwrap();
 
@@ -84,7 +77,6 @@ async fn start_tcp_client_and_server() -> TestBench {
 }
 
 async fn start_udp_client_and_server() -> TestBench {
-    let handle = Handle::current();
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
     let auth = Sha256Authenticator::new(sign_key);
@@ -98,7 +90,6 @@ async fn start_udp_client_and_server() -> TestBench {
         bicrypter.clone(),
     )
     .listen(
-        handle.clone(),
         Transport::Udp(wire::net::make_local_ipv4_addr_list()),
         CHANNEL_MAX_SIZE,
     )
@@ -112,11 +103,7 @@ async fn start_udp_client_and_server() -> TestBench {
         bicrypter.clone(),
         bicrypter.clone(),
     )
-    .connect(
-        handle,
-        Transport::Udp(vec![server.addr()]),
-        CHANNEL_MAX_SIZE,
-    )
+    .connect(Transport::Udp(vec![server.addr()]), CHANNEL_MAX_SIZE)
     .await
     .unwrap();
 

@@ -20,9 +20,6 @@ use tokio::{
 
 /// Represents a server after listening has begun
 pub struct Server {
-    /// Used to spawn jobs when communicating with clients
-    handle: Handle,
-
     /// Address of bound server
     addr: SocketAddr,
 
@@ -34,10 +31,6 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn handle(&self) -> &Handle {
-        &self.handle
-    }
-
     pub fn addr_event_manager(&self) -> &AddrEventManager {
         &self.addr_event_manager
     }
@@ -81,12 +74,9 @@ where
     D: Decrypter + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
-    pub async fn listen(
-        self,
-        handle: Handle,
-        transport: Transport,
-        buffer: usize,
-    ) -> io::Result<Server> {
+    pub async fn listen(self, transport: Transport, buffer: usize) -> io::Result<Server> {
+        let handle = Handle::current();
+
         match transport {
             Transport::Tcp(addrs) => {
                 // NOTE: Tokio does not support &[SocketAddr] -> ToSocketAddrs,
@@ -129,7 +119,6 @@ where
                 );
 
                 Ok(Server {
-                    handle,
                     addr,
                     addr_event_manager,
                     _event_handle,
@@ -174,7 +163,6 @@ where
                 );
 
                 Ok(Server {
-                    handle,
                     addr,
                     addr_event_manager,
                     _event_handle,

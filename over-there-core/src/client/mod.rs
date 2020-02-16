@@ -42,12 +42,8 @@ where
     D: Decrypter + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
-    pub async fn connect(
-        self,
-        handle: Handle,
-        transport: Transport,
-        buffer: usize,
-    ) -> io::Result<Client> {
+    pub async fn connect(self, transport: Transport, buffer: usize) -> io::Result<Client> {
+        let handle = Handle::current();
         let state = Arc::new(Mutex::new(state::ClientState::default()));
         let state_2 = Arc::clone(&state);
 
@@ -94,7 +90,6 @@ where
 
                 Ok(Client {
                     state,
-                    handle,
                     event_manager: Either::Left(event_manager),
                     _event_handle,
                     remote_addr,
@@ -150,7 +145,6 @@ where
 
                 Ok(Client {
                     state,
-                    handle,
                     event_manager: Either::Right(addr_event_manager),
                     _event_handle,
                     remote_addr,
@@ -195,9 +189,6 @@ async fn udp_event_handler(
 pub struct Client {
     state: Arc<Mutex<state::ClientState>>,
 
-    /// Used to spawn jobs when communicating with the server
-    handle: Handle,
-
     /// Represents the event manager used to send and receive data
     event_manager: Either<EventManager, AddrEventManager>,
 
@@ -214,10 +205,6 @@ pub struct Client {
 impl Client {
     /// Default timeout applied to a new client for any ask made
     pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
-
-    pub fn handle(&self) -> &Handle {
-        &self.handle
-    }
 
     pub fn remote_addr(&self) -> SocketAddr {
         self.remote_addr
