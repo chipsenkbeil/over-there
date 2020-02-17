@@ -2,12 +2,12 @@ use super::Digest;
 
 pub trait Authenticator: Signer + Verifier {}
 
-pub trait Signer: Clone {
+pub trait Signer {
     /// Signs some some message, producing a digest
     fn sign(&self, message: &[u8]) -> Digest;
 }
 
-pub trait Verifier: Clone {
+pub trait Verifier {
     /// Verifies a signature (digest) for some message
     fn verify(&self, message: &[u8], signature: &Digest) -> bool;
 }
@@ -31,7 +31,6 @@ impl Verifier for NoopAuthenticator {
     }
 }
 
-#[derive(Clone)]
 pub struct ClosureSigner<F>
 where
     F: Fn(&[u8]) -> Digest,
@@ -48,16 +47,24 @@ where
     }
 }
 
-impl<F> Signer for ClosureSigner<F>
+impl<F> Clone for ClosureSigner<F>
 where
     F: Fn(&[u8]) -> Digest + Clone,
+{
+    fn clone(&self) -> Self {
+        Self { f: self.f.clone() }
+    }
+}
+
+impl<F> Signer for ClosureSigner<F>
+where
+    F: Fn(&[u8]) -> Digest,
 {
     fn sign(&self, message: &[u8]) -> Digest {
         (self.f)(message)
     }
 }
 
-#[derive(Clone)]
 pub struct ClosureVerifier<F>
 where
     F: Fn(&[u8], &Digest) -> bool,
@@ -71,6 +78,15 @@ where
 {
     pub fn new(f: F) -> Self {
         Self { f }
+    }
+}
+
+impl<F> Clone for ClosureVerifier<F>
+where
+    F: Fn(&[u8], &Digest) -> bool + Clone,
+{
+    fn clone(&self) -> Self {
+        Self { f: self.f.clone() }
     }
 }
 

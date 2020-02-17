@@ -7,6 +7,8 @@ pub use auth::{
 mod digest;
 pub use digest::{Digest, Digest256Bits, Digest512Bits};
 
+pub mod split;
+
 use hmac::{Hmac, Mac};
 use sha2::{Sha256, Sha512};
 
