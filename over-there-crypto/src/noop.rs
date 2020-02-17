@@ -7,7 +7,11 @@ impl Bicrypter for NoopBicrypter {}
 
 impl Encrypter for NoopBicrypter {
     /// Does nothing but return existing data - NoOp
-    fn encrypt(&self, buffer: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
+    fn encrypt(
+        &self,
+        buffer: &[u8],
+        _: &AssociatedData,
+    ) -> Result<Vec<u8>, CryptError> {
         Ok(Vec::from(buffer))
     }
 
@@ -19,7 +23,11 @@ impl Encrypter for NoopBicrypter {
 
 impl Decrypter for NoopBicrypter {
     /// Does nothing but return existing data - NoOp
-    fn decrypt(&self, buffer: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
+    fn decrypt(
+        &self,
+        buffer: &[u8],
+        _: &AssociatedData,
+    ) -> Result<Vec<u8>, CryptError> {
         Ok(Vec::from(buffer))
     }
 }

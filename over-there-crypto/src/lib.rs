@@ -1,5 +1,7 @@
 pub mod aead;
-pub use crate::aead::{aes_gcm, aes_gcm_siv, aes_siv, AeadError, AesNonceBicrypter};
+pub use crate::aead::{
+    aes_gcm, aes_gcm_siv, aes_siv, AeadError, AesNonceBicrypter,
+};
 
 pub mod nonce;
 pub use nonce::{Nonce, Nonce128Bits, Nonce96Bits, NonceSize};

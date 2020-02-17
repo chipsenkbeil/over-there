@@ -40,8 +40,6 @@ async fn run_server(cmd: server::ServerCommand) -> Result<(), Box<dyn Error>> {
     let server = Communicator::new(
         constants::DEFAULT_TTL,
         NoopAuthenticator,
-        NoopAuthenticator,
-        NoopBicrypter,
         NoopBicrypter,
     )
     .listen(
@@ -63,8 +61,6 @@ async fn run_client(cmd: client::ClientCommand) -> Result<(), Box<dyn Error>> {
     let mut client = Communicator::new(
         constants::DEFAULT_TTL,
         NoopAuthenticator,
-        NoopAuthenticator,
-        NoopBicrypter,
         NoopBicrypter,
     )
     .connect(Transport::Udp(vec![cmd.addr]), 1000)
@@ -72,8 +68,12 @@ async fn run_client(cmd: client::ClientCommand) -> Result<(), Box<dyn Error>> {
     .expect("Failed to connect with client");
 
     match &cmd.command {
-        client::Subcommand::Version(_) => println!("{}", client.ask_version().await?),
-        client::Subcommand::Capabilities(_) => println!("{:?}", client.ask_capabilities().await?),
+        client::Subcommand::Version(_) => {
+            println!("{}", client.ask_version().await?)
+        }
+        client::Subcommand::Capabilities(_) => {
+            println!("{:?}", client.ask_capabilities().await?)
+        }
         client::Subcommand::RootDir(_) => println!(
             "{}",
             client
@@ -124,7 +124,8 @@ async fn run_client(cmd: client::ClientCommand) -> Result<(), Box<dyn Error>> {
             let bytes = client.ask_read_file(&file).await?;
             println!(
                 "{}",
-                String::from_utf8(bytes).expect("Failed to translate file back to string")
+                String::from_utf8(bytes)
+                    .expect("Failed to translate file back to string")
             );
         }
         client::Subcommand::Exec(c) => {
@@ -142,7 +143,9 @@ async fn run_client(cmd: client::ClientCommand) -> Result<(), Box<dyn Error>> {
                     match handle.read_line(&mut line) {
                         Ok(_) => (),
                         Err(x) if x.kind() == io::ErrorKind::WouldBlock => (),
-                        Err(x) => panic!("Failed to read line of input: {:?}", x),
+                        Err(x) => {
+                            panic!("Failed to read line of input: {:?}", x)
+                        }
                     }
 
                     if !line.is_empty() {

@@ -28,7 +28,9 @@ pub async fn async_test(mut client: Client) {
     let dir_contents = client.ask_list_dir_contents(dir_path).await.unwrap();
     assert_eq!(dir_contents.len(), 1);
 
-    let result =
-        String::from(std::str::from_utf8(&client.ask_read_file(&file).await.unwrap()).unwrap());
+    let result = String::from(
+        std::str::from_utf8(&client.ask_read_file(&file).await.unwrap())
+            .unwrap(),
+    );
     assert_eq!(result, "Hello!\nThis is a test!\nGoodbye!");
 }

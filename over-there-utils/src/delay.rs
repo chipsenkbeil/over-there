@@ -29,7 +29,8 @@ impl Delay {
             loop {
                 thread::park_timeout(timeout_remaining);
                 let elapsed = start_time.elapsed();
-                if elapsed >= timeout || should_cancel_2.load(Ordering::Acquire) {
+                if elapsed >= timeout || should_cancel_2.load(Ordering::Acquire)
+                {
                     break;
                 }
                 timeout_remaining = timeout - elapsed;

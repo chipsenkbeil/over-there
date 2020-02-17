@@ -115,7 +115,9 @@ mod tests {
     fn default_should_return_empty_256bit_digest() {
         let digest = Digest::default();
         match digest {
-            Digest::Digest256Bits(d) => assert_eq!(d, [0; 32], "Created digest was not empty"),
+            Digest::Digest256Bits(d) => {
+                assert_eq!(d, [0; 32], "Created digest was not empty")
+            }
             x => panic!("Unexpected digest produced: {:?}", x),
         }
     }

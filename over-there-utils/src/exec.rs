@@ -30,6 +30,9 @@ pub fn loop_timeout<T>(
 
 /// Invokes a function repeatedly until it yields true; if a timeout is
 /// reached, the function will panic
-pub fn loop_timeout_panic<T>(timeout: Duration, mut f: impl FnMut() -> Option<T>) -> T {
+pub fn loop_timeout_panic<T>(
+    timeout: Duration,
+    mut f: impl FnMut() -> Option<T>,
+) -> T {
     loop_timeout(timeout, || Ok(f())).unwrap()
 }

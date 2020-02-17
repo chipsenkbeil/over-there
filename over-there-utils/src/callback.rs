@@ -14,7 +14,11 @@ pub struct CallbackManager<T> {
 
 impl<T> CallbackManager<T> {
     /// Adds a new callback, associated with the given id
-    pub fn add_callback(&mut self, id: u32, callback: impl FnOnce(&T) + Send + 'static) {
+    pub fn add_callback(
+        &mut self,
+        id: u32,
+        callback: impl FnOnce(&T) + Send + 'static,
+    ) {
         self.callbacks.insert(id, Box::new(callback));
     }
 

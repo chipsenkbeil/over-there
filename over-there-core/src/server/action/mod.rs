@@ -28,13 +28,19 @@ impl OriginSender<Vec<u8>> {
         Self { tx, addr }
     }
 
-    pub async fn send(&mut self, data: Vec<u8>) -> Result<(), mpsc::error::SendError<Vec<u8>>> {
+    pub async fn send(
+        &mut self,
+        data: Vec<u8>,
+    ) -> Result<(), mpsc::error::SendError<Vec<u8>>> {
         self.tx.send(data).await
     }
 }
 
 impl OriginSender<(Vec<u8>, SocketAddr)> {
-    pub fn new(tx: mpsc::Sender<(Vec<u8>, SocketAddr)>, addr: SocketAddr) -> Self {
+    pub fn new(
+        tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+        addr: SocketAddr,
+    ) -> Self {
         Self { tx, addr }
     }
 
@@ -56,7 +62,11 @@ impl Executor<Vec<u8>> {
         Self { origin_sender }
     }
 
-    pub async fn execute(self, state: Arc<ServerState>, msg: Msg) -> Result<(), ActionError> {
+    pub async fn execute(
+        self,
+        state: Arc<ServerState>,
+        msg: Msg,
+    ) -> Result<(), ActionError> {
         let header = msg.header.clone();
         let origin_sender = self.origin_sender;
 
@@ -82,12 +92,20 @@ impl Executor<Vec<u8>> {
 }
 
 impl Executor<(Vec<u8>, SocketAddr)> {
-    pub fn new(tx: mpsc::Sender<(Vec<u8>, SocketAddr)>, origin_addr: SocketAddr) -> Self {
-        let origin_sender = OriginSender::<(Vec<u8>, SocketAddr)>::new(tx, origin_addr);
+    pub fn new(
+        tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+        origin_addr: SocketAddr,
+    ) -> Self {
+        let origin_sender =
+            OriginSender::<(Vec<u8>, SocketAddr)>::new(tx, origin_addr);
         Self { origin_sender }
     }
 
-    pub async fn execute(self, state: Arc<ServerState>, msg: Msg) -> Result<(), ActionError> {
+    pub async fn execute(
+        self,
+        state: Arc<ServerState>,
+        msg: Msg,
+    ) -> Result<(), ActionError> {
         let header = msg.header.clone();
         let origin_sender = self.origin_sender;
 
@@ -126,20 +144,31 @@ impl<T> Executor<T> {
         trace!("Received msg: {:?}", msg);
 
         match &msg.content {
-            Content::Heartbeat => handler::heartbeat::heartbeat(do_respond).await,
-            Content::DoGetVersion => handler::version::do_get_version(do_respond).await,
+            Content::Heartbeat => {
+                handler::heartbeat::heartbeat(do_respond).await
+            }
+            Content::DoGetVersion => {
+                handler::version::do_get_version(do_respond).await
+            }
             Content::DoGetCapabilities => {
                 handler::capabilities::do_get_capabilities(do_respond).await
             }
-            Content::DoOpenFile(args) => handler::file::do_open_file(state, args, do_respond).await,
-            Content::DoReadFile(args) => handler::file::do_read_file(state, args, do_respond).await,
+            Content::DoOpenFile(args) => {
+                handler::file::do_open_file(state, args, do_respond).await
+            }
+            Content::DoReadFile(args) => {
+                handler::file::do_read_file(state, args, do_respond).await
+            }
             Content::DoWriteFile(args) => {
                 handler::file::do_write_file(state, args, do_respond).await
             }
             Content::DoListDirContents(args) => {
-                handler::file::do_list_dir_contents(state, args, do_respond).await
+                handler::file::do_list_dir_contents(state, args, do_respond)
+                    .await
             }
-            Content::DoExecProc(args) => handler::proc::do_exec_proc(state, args, do_respond).await,
+            Content::DoExecProc(args) => {
+                handler::proc::do_exec_proc(state, args, do_respond).await
+            }
             Content::DoWriteStdin(args) => {
                 handler::proc::do_write_stdin(state, args, do_respond).await
             }
@@ -149,7 +178,9 @@ impl<T> Executor<T> {
             Content::DoGetStderr(args) => {
                 handler::proc::do_get_stderr(state, args, do_respond).await
             }
-            Content::DoKillProc(args) => handler::proc::do_kill_proc(state, args, do_respond).await,
+            Content::DoKillProc(args) => {
+                handler::proc::do_kill_proc(state, args, do_respond).await
+            }
             _ => Err(ActionError::Unknown),
         }
     }

@@ -40,7 +40,10 @@ where
         }
     }
 
-    pub fn process(&mut self, data: &[u8]) -> Result<Vec<Vec<u8>>, OutputProcessorError> {
+    pub fn process(
+        &mut self,
+        data: &[u8],
+    ) -> Result<Vec<Vec<u8>>, OutputProcessorError> {
         // Encrypt entire dataset before splitting as it will grow in size
         // and it's difficult to predict if we can stay under our transmission
         // limit if encrypting at the individual packet level
@@ -94,12 +97,15 @@ mod tests {
     use over_there_auth::{ClosureSigner, Digest, NoopAuthenticator};
     use over_there_crypto::{ClosureEncrypter, NoopBicrypter};
 
-    fn new_processor(buffer_size: usize) -> OutputProcessor<NoopAuthenticator, NoopBicrypter> {
+    fn new_processor(
+        buffer_size: usize,
+    ) -> OutputProcessor<NoopAuthenticator, NoopBicrypter> {
         OutputProcessor::new(buffer_size, NoopAuthenticator, NoopBicrypter)
     }
 
     #[test]
-    fn output_processor_process_should_fail_if_unable_to_convert_bytes_to_packets() {
+    fn output_processor_process_should_fail_if_unable_to_convert_bytes_to_packets(
+    ) {
         // Produce a transmitter with a "bytes per packet" that is too
         // low, causing the process to fail
         let mut processor = new_processor(0);
@@ -112,7 +118,8 @@ mod tests {
     }
 
     #[test]
-    fn output_processor_process_should_return_signed_and_encrypted_serialized_packets() {
+    fn output_processor_process_should_return_signed_and_encrypted_serialized_packets(
+    ) {
         use std::convert::TryFrom;
         let signer = ClosureSigner::new(|_| Digest::try_from([9; 32]).unwrap());
         let encrypter = ClosureEncrypter::new(|msg, _| {
@@ -131,7 +138,11 @@ mod tests {
 
         match processor.process(&data) {
             Ok(packeted_data) => {
-                assert_eq!(packeted_data.len(), 1, "More packets than expected");
+                assert_eq!(
+                    packeted_data.len(),
+                    1,
+                    "More packets than expected"
+                );
                 let packet_bytes = &packeted_data[0];
                 let packet = Packet::from_slice(packet_bytes).unwrap();
 
@@ -145,12 +156,18 @@ mod tests {
     #[cfg(test)]
     mod crypt {
         use super::*;
-        use over_there_crypto::{AssociatedData, CryptError, Decrypter, Encrypter};
+        use over_there_crypto::{
+            AssociatedData, CryptError, Decrypter, Encrypter,
+        };
 
         #[derive(Clone)]
         struct BadEncrypter;
         impl Encrypter for BadEncrypter {
-            fn encrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
+            fn encrypt(
+                &self,
+                _: &[u8],
+                _: &AssociatedData,
+            ) -> Result<Vec<u8>, CryptError> {
                 Err(CryptError::EncryptFailed(From::from("Some error")))
             }
 
@@ -159,12 +176,18 @@ mod tests {
             }
         }
         impl Decrypter for BadEncrypter {
-            fn decrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
+            fn decrypt(
+                &self,
+                _: &[u8],
+                _: &AssociatedData,
+            ) -> Result<Vec<u8>, CryptError> {
                 Err(CryptError::DecryptFailed(From::from("Some error")))
             }
         }
 
-        fn new_processor(buffer_size: usize) -> OutputProcessor<NoopAuthenticator, BadEncrypter> {
+        fn new_processor(
+            buffer_size: usize,
+        ) -> OutputProcessor<NoopAuthenticator, BadEncrypter> {
             OutputProcessor::new(buffer_size, NoopAuthenticator, BadEncrypter)
         }
 

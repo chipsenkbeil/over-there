@@ -48,7 +48,11 @@ impl Disassembler {
 
         // Determine overhead needed to produce packet with desired data size
         let non_final_overhead_size = self
-            .cached_estimate_packet_overhead_size(desired_chunk_size, PacketType::NotFinal, signer)
+            .cached_estimate_packet_overhead_size(
+                desired_chunk_size,
+                PacketType::NotFinal,
+                signer,
+            )
             .map_err(|_| DisassemblerError::FailedToEstimatePacketSize)?;
 
         let final_overhead_size = self
@@ -89,9 +93,13 @@ impl Disassembler {
             //    packet but it will fit entirely in a non-final packet, we
             //    store N bytes into a non-final packet where N is the capable
             //    size of the final packet data section
-            let can_fit_all_in_final_packet = i + final_chunk_size >= data.len();
-            let can_fit_all_in_non_final_packet = i + non_final_chunk_size >= data.len();
-            let chunk_size = if can_fit_all_in_final_packet || can_fit_all_in_non_final_packet {
+            let can_fit_all_in_final_packet =
+                i + final_chunk_size >= data.len();
+            let can_fit_all_in_non_final_packet =
+                i + non_final_chunk_size >= data.len();
+            let chunk_size = if can_fit_all_in_final_packet
+                || can_fit_all_in_non_final_packet
+            {
                 final_chunk_size
             } else {
                 non_final_chunk_size
@@ -158,7 +166,11 @@ impl Disassembler {
         }
 
         // Otherwise, estimate the packet size, cache it, and return it
-        let overhead_size = Self::estimate_packet_overhead_size(desired_data_size, r#type, signer)?;
+        let overhead_size = Self::estimate_packet_overhead_size(
+            desired_data_size,
+            r#type,
+            signer,
+        )?;
         self.packet_overhead_size_cache.insert(key, overhead_size);
         Ok(overhead_size)
     }
@@ -168,7 +180,8 @@ impl Disassembler {
         r#type: PacketType,
         signer: &S,
     ) -> Result<usize, rmp_serde::encode::Error> {
-        let packet_size = Self::estimate_packet_size(desired_data_size, r#type, signer)?;
+        let packet_size =
+            Self::estimate_packet_size(desired_data_size, r#type, signer)?;
 
         // Figure out how much overhead is needed to fit the data into the packet
         // NOTE: If for some reason the packet -> msgpack has optimized the
@@ -247,7 +260,8 @@ mod tests {
     fn produces_single_packet_with_data() {
         let id = 12345;
         let data: Vec<u8> = vec![1, 2];
-        let encryption = PacketEncryption::from(Nonce::from(nonce::new_128bit_nonce()));
+        let encryption =
+            PacketEncryption::from(Nonce::from(nonce::new_128bit_nonce()));
 
         // Make it so all the data fits in one packet
         let chunk_size = 1000;
@@ -325,7 +339,8 @@ mod tests {
     #[test]
     fn produces_multiple_packets_respecting_size_constraints() {
         let id = 67890;
-        let encryption = PacketEncryption::from(Nonce::from(nonce::new_128bit_nonce()));
+        let encryption =
+            PacketEncryption::from(Nonce::from(nonce::new_128bit_nonce()));
 
         // Make it so not all of the data fits in one packet
         //

@@ -85,7 +85,10 @@ impl From<NonceSize> for Nonce {
 }
 
 /// Validates the size of a nonce with a desired size
-pub fn validate_nonce_size(nonce_size: NonceSize, desired_size: usize) -> Result<(), CryptError> {
+pub fn validate_nonce_size(
+    nonce_size: NonceSize,
+    desired_size: usize,
+) -> Result<(), CryptError> {
     if desired_size != nonce_size.size_in_bytes() {
         return Err(CryptError::NonceWrongSize {
             provided_size: desired_size,

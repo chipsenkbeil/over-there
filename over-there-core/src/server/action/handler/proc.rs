@@ -66,7 +66,10 @@ where
             Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)).await,
             Err(x) => respond(Content::IoError(From::from(x))).await,
         },
-        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))).await,
+        None => {
+            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
+                .await
+        }
     }
 }
 
@@ -100,7 +103,10 @@ where
                 Err(x) => respond(Content::IoError(From::from(x))).await,
             }
         }
-        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))).await,
+        None => {
+            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
+                .await
+        }
     }
 }
 
@@ -134,7 +140,10 @@ where
                 Err(x) => respond(Content::IoError(From::from(x))).await,
             }
         }
-        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))).await,
+        None => {
+            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
+                .await
+        }
     }
 }
 
@@ -164,7 +173,10 @@ where
             }
             Err(x) => respond(Content::IoError(From::from(x))).await,
         },
-        None => respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id))).await,
+        None => {
+            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
+                .await
+        }
     }
 }
 
@@ -231,7 +243,9 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::IoError(args) => assert_eq!(args.error_kind, io::ErrorKind::NotFound),
+            Content::IoError(args) => {
+                assert_eq!(args.error_kind, io::ErrorKind::NotFound)
+            }
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -254,10 +268,14 @@ mod tests {
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
 
-        do_write_stdin(Arc::clone(&state), &DoWriteStdinArgs { id, input }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
+        do_write_stdin(
+            Arc::clone(&state),
+            &DoWriteStdinArgs { id, input },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
         .await
         .unwrap();
 
@@ -273,7 +291,9 @@ mod tests {
             .await
             {
                 Ok(result) if result.is_ok() => buf[..result.unwrap()].to_vec(),
-                Ok(result) => panic!("Unexpected error {}", result.unwrap_err()),
+                Ok(result) => {
+                    panic!("Unexpected error {}", result.unwrap_err())
+                }
                 Err(x) => panic!("Timeout {}", x),
             }
         };
@@ -303,10 +323,14 @@ mod tests {
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
 
-        do_write_stdin(Arc::clone(&state), &DoWriteStdinArgs { id, input }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
+        do_write_stdin(
+            Arc::clone(&state),
+            &DoWriteStdinArgs { id, input },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
         .await
         .unwrap();
 
@@ -379,7 +403,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_get_stdout_should_send_empty_contents_if_process_has_no_stdout() {
+    async fn do_get_stdout_should_send_empty_contents_if_process_has_no_stdout()
+    {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
@@ -464,7 +489,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_get_stderr_should_send_empty_contents_if_process_has_no_stderr() {
+    async fn do_get_stderr_should_send_empty_contents_if_process_has_no_stderr()
+    {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
@@ -578,7 +604,9 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::ProcStatus(ProcStatusArgs { exit_code, .. }) => assert_eq!(exit_code, Some(0)),
+            Content::ProcStatus(ProcStatusArgs { exit_code, .. }) => {
+                assert_eq!(exit_code, Some(0))
+            }
             x => panic!("Bad content: {:?}", x),
         }
     }

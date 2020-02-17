@@ -62,7 +62,12 @@ where
         Some(local_file) => {
             if local_file.sig == args.sig {
                 match do_read_file_impl(&mut local_file.file).await {
-                    Ok(data) => respond(Content::FileContents(FileContentsArgs { data })).await,
+                    Ok(data) => {
+                        respond(Content::FileContents(FileContentsArgs {
+                            data,
+                        }))
+                        .await
+                    }
                     Err(x) => respond(Content::IoError(x)).await,
                 }
             } else {
@@ -72,11 +77,16 @@ where
                 .await
             }
         }
-        None => respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))).await,
+        None => {
+            respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id)))
+                .await
+        }
     }
 }
 
-async fn do_read_file_impl(file: &mut fs::File) -> Result<Vec<u8>, IoErrorArgs> {
+async fn do_read_file_impl(
+    file: &mut fs::File,
+) -> Result<Vec<u8>, IoErrorArgs> {
     use std::io::SeekFrom;
     use tokio::io::AsyncReadExt;
     let mut buf = Vec::new();
@@ -106,12 +116,16 @@ where
     match state.files.lock().await.get_mut(&args.id) {
         Some(local_file) => {
             if local_file.sig == args.sig {
-                match do_write_file_impl(&mut local_file.file, &args.data).await {
+                match do_write_file_impl(&mut local_file.file, &args.data).await
+                {
                     Ok(_) => {
                         let new_sig = OsRng.next_u32();
                         local_file.sig = new_sig;
 
-                        respond(Content::FileWritten(FileWrittenArgs { sig: new_sig })).await
+                        respond(Content::FileWritten(FileWrittenArgs {
+                            sig: new_sig,
+                        }))
+                        .await
                     }
                     Err(x) => respond(Content::IoError(x)).await,
                 }
@@ -122,11 +136,17 @@ where
                 .await
             }
         }
-        None => respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))).await,
+        None => {
+            respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id)))
+                .await
+        }
     }
 }
 
-async fn do_write_file_impl(file: &mut fs::File, buf: &[u8]) -> Result<(), IoErrorArgs> {
+async fn do_write_file_impl(
+    file: &mut fs::File,
+    buf: &[u8],
+) -> Result<(), IoErrorArgs> {
     use std::io::SeekFrom;
     use tokio::io::AsyncWriteExt;
 
@@ -155,7 +175,9 @@ where
     debug!("do_list_dir_contents: {:?}", args);
 
     match lookup_entries(&args.path).await {
-        Ok(entries) => respond(Content::DirContentsList(From::from(entries))).await,
+        Ok(entries) => {
+            respond(Content::DirContentsList(From::from(entries))).await
+        }
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
@@ -166,12 +188,14 @@ async fn lookup_entries(path: &str) -> Result<Vec<DirEntry>, io::Error> {
     while let Some(entry) = dir_stream.next_entry().await? {
         let file_type = entry.file_type().await?;
         entries.push(DirEntry {
-            path: entry.path().into_os_string().into_string().map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "OS String does not contain valid unicode",
-                )
-            })?,
+            path: entry.path().into_os_string().into_string().map_err(
+                |_| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "OS String does not contain valid unicode",
+                    )
+                },
+            )?,
             is_file: file_type.is_file(),
             is_dir: file_type.is_dir(),
             is_symlink: file_type.is_symlink(),
@@ -185,7 +209,8 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn do_open_file_should_send_success_if_create_flag_set_and_opening_new_file() {
+    async fn do_open_file_should_send_success_if_create_flag_set_and_opening_new_file(
+    ) {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
@@ -256,7 +281,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_open_file_should_send_error_if_file_missing_and_create_flag_not_set() {
+    async fn do_open_file_should_send_error_if_file_missing_and_create_flag_not_set(
+    ) {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
@@ -475,7 +501,10 @@ mod tests {
                 let mut file_data = Vec::new();
                 file.read_to_end(&mut file_data).unwrap();
 
-                assert_eq!(data, file_data, "File does not match written content");
+                assert_eq!(
+                    data, file_data,
+                    "File does not match written content"
+                );
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -594,7 +623,11 @@ mod tests {
 
         match content.unwrap() {
             Content::DirContentsList(args) => {
-                assert_eq!(args.entries.len(), 2, "Unexpected number of entries");
+                assert_eq!(
+                    args.entries.len(),
+                    2,
+                    "Unexpected number of entries"
+                );
 
                 assert!(args.entries.contains(&DirEntry {
                     path: tmp_file.path().to_string_lossy().to_string(),

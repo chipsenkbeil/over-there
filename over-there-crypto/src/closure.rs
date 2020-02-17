@@ -89,7 +89,8 @@ mod tests {
             Ok(v)
         });
         let data = vec![1, 2, 3];
-        let associated_data = AssociatedData::Nonce(From::from(nonce::new_96bit_nonce()));
+        let associated_data =
+            AssociatedData::Nonce(From::from(nonce::new_96bit_nonce()));
 
         let encrypted_data = encrypter
             .encrypt(&data, &associated_data)
@@ -118,7 +119,8 @@ mod tests {
             Ok(v)
         });
         let data = vec![1, 2, 3];
-        let associated_data = AssociatedData::Nonce(From::from(nonce::new_96bit_nonce()));
+        let associated_data =
+            AssociatedData::Nonce(From::from(nonce::new_96bit_nonce()));
 
         let decrypted_data = decrypter
             .decrypt(&data, &associated_data)

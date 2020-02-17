@@ -153,7 +153,12 @@ mod tests {
     use crate::wire::packet::{Metadata, PacketEncryption, PacketType};
 
     /// Make a packet with data; if last, mark as so with no nonce
-    fn make_packet(id: u32, index: u32, is_last: bool, data: Vec<u8>) -> Packet {
+    fn make_packet(
+        id: u32,
+        index: u32,
+        is_last: bool,
+        data: Vec<u8>,
+    ) -> Packet {
         let r#type = if is_last {
             PacketType::Final {
                 encryption: PacketEncryption::None,
@@ -246,7 +251,10 @@ mod tests {
         match a.add_packet(make_empty_packet(0, 0, true)).unwrap_err() {
             AssemblerError::FinalPacketAlreadyExists { id, index } => {
                 assert_eq!(id, 0, "Last packet id different than expected");
-                assert_eq!(index, 1, "Last packet index different than expected");
+                assert_eq!(
+                    index, 1,
+                    "Last packet index different than expected"
+                );
             }
             e => panic!("Unexpected error {} received", e),
         }

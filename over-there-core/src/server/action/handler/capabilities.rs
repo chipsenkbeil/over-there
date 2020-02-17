@@ -46,7 +46,11 @@ mod tests {
         assert_eq!(
             content.unwrap(),
             Content::Capabilities(CapabilitiesArgs {
-                capabilities: vec![Capability::Exec, Capability::File, Capability::Forward],
+                capabilities: vec![
+                    Capability::Exec,
+                    Capability::File,
+                    Capability::Forward
+                ],
             })
         );
     }
