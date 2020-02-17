@@ -5,9 +5,7 @@ pub mod state;
 
 use crate::{event::AddrEventManager, Communicator, Msg, Transport};
 use log::error;
-use over_there_wire::{
-    Decrypter, Encrypter, InboundWire, NetTransmission, OutboundWire, Signer, Verifier,
-};
+use over_there_wire::{Authenticator, Bicrypter, NetTransmission, Wire};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::{
@@ -40,11 +38,14 @@ impl Server {
     }
 
     pub async fn wait(self) -> Result<(), task::JoinError> {
-        tokio::try_join!(self.addr_event_manager.wait(), self._event_handle).map(|_| ())
+        tokio::try_join!(self.addr_event_manager.wait(), self._event_handle)
+            .map(|_| ())
     }
 }
 
-async fn tcp_event_handler(mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<Vec<u8>>)>) {
+async fn tcp_event_handler(
+    mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<Vec<u8>>)>,
+) {
     let state = Arc::new(state::ServerState::default());
     while let Some((msg, addr, tx)) = rx.recv().await {
         if let Err(x) = action::Executor::<Vec<u8>>::new(tx, addr)
@@ -57,7 +58,11 @@ async fn tcp_event_handler(mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender
 }
 
 async fn udp_event_handler(
-    mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<(Vec<u8>, SocketAddr)>)>,
+    mut rx: mpsc::Receiver<(
+        Msg,
+        SocketAddr,
+        mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    )>,
 ) {
     let state = Arc::new(state::ServerState::default());
     while let Some((msg, addr, tx)) = rx.recv().await {
@@ -70,15 +75,17 @@ async fn udp_event_handler(
     }
 }
 
-impl<S, V, E, D> Communicator<S, V, E, D>
+impl<A, B> Communicator<A, B>
 where
-    S: Signer + Send + 'static,
-    V: Verifier + Send + 'static,
-    E: Encrypter + Send + 'static,
-    D: Decrypter + Send + 'static,
+    A: Authenticator + Clone + Send + 'static,
+    B: Bicrypter + Clone + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
-    pub async fn listen(self, transport: Transport, buffer: usize) -> io::Result<Server> {
+    pub async fn listen(
+        self,
+        transport: Transport,
+        buffer: usize,
+    ) -> io::Result<Server> {
         let handle = Handle::current();
 
         match transport {
@@ -95,20 +102,17 @@ where
                             break;
                         }
                     }
-                    listener.ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?
+                    listener.ok_or_else(|| {
+                        io::Error::from(io::ErrorKind::AddrNotAvailable)
+                    })?
                 };
                 let addr = listener.local_addr()?;
 
-                let inbound_wire = InboundWire::new(
+                let wire = Wire::new(
                     NetTransmission::TcpEthernet.into(),
                     self.packet_ttl,
-                    self.verifier,
-                    self.decrypter,
-                );
-                let outbound_wire = OutboundWire::new(
-                    NetTransmission::TcpEthernet.into(),
-                    self.signer,
-                    self.encrypter,
+                    self.authenticator,
+                    self.bicrypter,
                 );
 
                 let (tx, rx) = mpsc::channel(buffer);
@@ -117,8 +121,7 @@ where
                     handle.clone(),
                     buffer,
                     listener,
-                    inbound_wire,
-                    outbound_wire,
+                    wire,
                     tx,
                 );
 
@@ -141,19 +144,19 @@ where
                             break;
                         }
                     }
-                    socket.ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?
+                    socket.ok_or_else(|| {
+                        io::Error::from(io::ErrorKind::AddrNotAvailable)
+                    })?
                 };
                 let addr = socket.local_addr()?;
                 let transmission = NetTransmission::udp_from_addr(addr);
 
-                let inbound_wire = InboundWire::new(
+                let wire = Wire::new(
                     transmission.into(),
                     self.packet_ttl,
-                    self.verifier,
-                    self.decrypter,
+                    self.authenticator,
+                    self.bicrypter,
                 );
-                let outbound_wire =
-                    OutboundWire::new(transmission.into(), self.signer, self.encrypter);
 
                 let (tx, rx) = mpsc::channel(buffer);
                 let _event_handle = handle.spawn(udp_event_handler(rx));
@@ -161,8 +164,7 @@ where
                     handle.clone(),
                     buffer,
                     socket,
-                    inbound_wire,
-                    outbound_wire,
+                    wire,
                     tx,
                 );
 

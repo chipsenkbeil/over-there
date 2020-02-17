@@ -21,7 +21,10 @@ pub async fn setup(mode: TestMode) -> TestBench {
     setup_with_timeout(mode, DEFAULT_TIMEOUT).await
 }
 
-pub async fn setup_with_timeout(mode: TestMode, timeout: Duration) -> TestBench {
+pub async fn setup_with_timeout(
+    mode: TestMode,
+    timeout: Duration,
+) -> TestBench {
     init_logger();
 
     let mut test_bench = match mode {
@@ -51,8 +54,6 @@ async fn start_tcp_client_and_server() -> TestBench {
     let server = Communicator::new(
         constants::DEFAULT_TTL,
         auth.clone(),
-        auth.clone(),
-        bicrypter.clone(),
         bicrypter.clone(),
     )
     .listen(
@@ -65,8 +66,6 @@ async fn start_tcp_client_and_server() -> TestBench {
     let client = Communicator::new(
         constants::DEFAULT_TTL,
         auth.clone(),
-        auth.clone(),
-        bicrypter.clone(),
         bicrypter.clone(),
     )
     .connect(Transport::Tcp(vec![server.addr()]), CHANNEL_MAX_SIZE)
@@ -85,8 +84,6 @@ async fn start_udp_client_and_server() -> TestBench {
     let server = Communicator::new(
         constants::DEFAULT_TTL,
         auth.clone(),
-        auth.clone(),
-        bicrypter.clone(),
         bicrypter.clone(),
     )
     .listen(
@@ -99,8 +96,6 @@ async fn start_udp_client_and_server() -> TestBench {
     let client = Communicator::new(
         constants::DEFAULT_TTL,
         auth.clone(),
-        auth.clone(),
-        bicrypter.clone(),
         bicrypter.clone(),
     )
     .connect(Transport::Udp(vec![server.addr()]), CHANNEL_MAX_SIZE)

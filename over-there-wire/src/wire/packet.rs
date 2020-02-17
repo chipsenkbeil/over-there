@@ -134,7 +134,9 @@ impl Packet {
     }
 
     /// Creates content used when producing and verifying a signature
-    pub(crate) fn content_for_signature(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+    pub(crate) fn content_for_signature(
+        &self,
+    ) -> Result<Vec<u8>, rmp_serde::encode::Error> {
         Ok([self.metadata.to_vec()?, self.data.to_vec()].concat())
     }
 

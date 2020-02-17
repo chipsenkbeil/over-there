@@ -20,12 +20,12 @@ where
 }
 
 /// Splits bicrypter into encryper and decrypter halves by cloning the bicrypter,
-pub fn clone_split<B>(bicrypter: B) -> (B, B)
+pub fn clone_split<B>(original: B) -> (B, B)
 where
     B: Bicrypter + Clone,
 {
-    let bicrypter_clone = bicrypter.clone();
-    (bicrypter, bicrypter_clone)
+    let clone = original.clone();
+    (original, clone)
 }
 
 pub struct EncrypterHalf<E>

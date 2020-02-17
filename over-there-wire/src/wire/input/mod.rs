@@ -1,6 +1,6 @@
 pub mod assembler;
 
-use super::packet::Packet;
+use crate::wire::packet::Packet;
 use assembler::Assembler;
 use over_there_auth::Verifier;
 use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
@@ -41,13 +41,17 @@ where
         }
     }
 
-    pub fn process(&mut self, data: &[u8]) -> Result<Option<Vec<u8>>, InputProcessorError> {
+    pub fn process(
+        &mut self,
+        data: &[u8],
+    ) -> Result<Option<Vec<u8>>, InputProcessorError> {
         if data.is_empty() {
             return Ok(None);
         }
 
         // Process the data as a packet
-        let p = Packet::from_slice(data).map_err(InputProcessorError::DecodePacket)?;
+        let p = Packet::from_slice(data)
+            .map_err(InputProcessorError::DecodePacket)?;
 
         // Verify the packet's signature, skipping any form of assembly if
         // it is not a legit packet
@@ -65,7 +69,12 @@ where
         let do_assemble = add_packet_and_verify(&mut self.assembler, p)?;
         if do_assemble {
             // Gather the complete data
-            let data = assemble_and_decrypt(group_id, &self.assembler, &self.decrypter, nonce)?;
+            let data = assemble_and_decrypt(
+                group_id,
+                &self.assembler,
+                &self.decrypter,
+                nonce,
+            )?;
 
             // Remove the underlying group as we no longer need to keep it
             self.assembler.remove_group(group_id);
@@ -77,7 +86,10 @@ where
     }
 }
 
-fn verify_packet<V>(verifier: &V, packet: &Packet) -> Result<bool, InputProcessorError>
+fn verify_packet<V>(
+    verifier: &V,
+    packet: &Packet,
+) -> Result<bool, InputProcessorError>
 where
     V: Verifier,
 {
@@ -140,11 +152,16 @@ mod tests {
     use std::time::Duration;
 
     fn new_processor() -> InputProcessor<NoopAuthenticator, NoopBicrypter> {
-        InputProcessor::new(Duration::from_secs(1), NoopAuthenticator, NoopBicrypter)
+        InputProcessor::new(
+            Duration::from_secs(1),
+            NoopAuthenticator,
+            NoopBicrypter,
+        )
     }
 
     #[test]
-    fn input_processor_process_should_fail_if_unable_to_convert_bytes_to_packet() {
+    fn input_processor_process_should_fail_if_unable_to_convert_bytes_to_packet(
+    ) {
         let mut processor = new_processor();
 
         match processor.process(&[0; 5]) {
@@ -155,7 +172,8 @@ mod tests {
     }
 
     #[test]
-    fn input_processor_process_should_fail_if_unable_to_add_packet_to_assembler() {
+    fn input_processor_process_should_fail_if_unable_to_add_packet_to_assembler(
+    ) {
         let mut processor = new_processor();
         let id = 0;
         let encryption = PacketEncryption::None;
@@ -211,7 +229,8 @@ mod tests {
     }
 
     #[test]
-    fn input_processor_process_should_return_none_if_received_packet_does_not_complete_data() {
+    fn input_processor_process_should_return_none_if_received_packet_does_not_complete_data(
+    ) {
         let mut processor = new_processor();
 
         let id = 0;
@@ -248,7 +267,8 @@ mod tests {
     }
 
     #[test]
-    fn input_processor_process_should_return_some_data_if_received_packet_does_complete_data() {
+    fn input_processor_process_should_return_some_data_if_received_packet_does_complete_data(
+    ) {
         let mut processor = new_processor();
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
@@ -280,8 +300,11 @@ mod tests {
     fn input_processor_process_should_remove_expired_packet_groups() {
         // Create a custom context whose packet groups within its assembler
         // will expire immediately
-        let mut processor =
-            InputProcessor::new(Duration::new(0, 0), NoopAuthenticator, NoopBicrypter);
+        let mut processor = InputProcessor::new(
+            Duration::new(0, 0),
+            NoopAuthenticator,
+            NoopBicrypter,
+        );
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make many small packets
@@ -295,8 +318,7 @@ mod tests {
                     PacketType::NotFinal,
                     &NoopAuthenticator,
                 )
-                .unwrap()
-                    + data.len(),
+                .unwrap() + data.len(),
                 signer: &NoopAuthenticator,
             })
             .unwrap();
@@ -312,7 +334,8 @@ mod tests {
     }
 
     #[test]
-    fn input_processor_process_should_remove_the_assembler_packet_group_if_does_complete_data() {
+    fn input_processor_process_should_remove_the_assembler_packet_group_if_does_complete_data(
+    ) {
         let mut processor = new_processor();
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
@@ -340,22 +363,36 @@ mod tests {
         #[derive(Clone)]
         struct BadDecrypter;
         impl Decrypter for BadDecrypter {
-            fn decrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
+            fn decrypt(
+                &self,
+                _: &[u8],
+                _: &AssociatedData,
+            ) -> Result<Vec<u8>, CryptError> {
                 Err(CryptError::DecryptFailed(From::from("Some error")))
             }
         }
         impl Encrypter for BadDecrypter {
-            fn encrypt(&self, _: &[u8], _: &AssociatedData) -> Result<Vec<u8>, CryptError> {
+            fn encrypt(
+                &self,
+                _: &[u8],
+                _: &AssociatedData,
+            ) -> Result<Vec<u8>, CryptError> {
                 Err(CryptError::EncryptFailed(From::from("Some error")))
             }
 
-            fn new_encrypt_associated_data(&self) -> over_there_crypto::AssociatedData {
+            fn new_encrypt_associated_data(
+                &self,
+            ) -> over_there_crypto::AssociatedData {
                 over_there_crypto::AssociatedData::None
             }
         }
 
         fn new_processor() -> InputProcessor<NoopAuthenticator, BadDecrypter> {
-            InputProcessor::new(Duration::from_secs(1), NoopAuthenticator, BadDecrypter)
+            InputProcessor::new(
+                Duration::from_secs(1),
+                NoopAuthenticator,
+                BadDecrypter,
+            )
         }
 
         #[test]

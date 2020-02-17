@@ -10,14 +10,18 @@ pub mod constants {
 
 // Export errors
 pub use wire::{
-    AssemblerError, DisassemblerError, InboundWireError, InputProcessorError, OutboundWireError,
-    OutputProcessorError,
+    AssemblerError, DisassemblerError, InboundWireError, InputProcessorError,
+    OutboundWireError, OutputProcessorError,
 };
 
 // Export useful constructs
 pub use net::NetTransmission;
-pub use wire::{InboundWire, OutboundWire};
+pub use wire::{
+    tcp::{TcpStreamInboundWire, TcpStreamOutboundWire, TcpStreamWire},
+    udp::{UdpSocketInboundWire, UdpSocketOutboundWire, UdpSocketWire},
+    InboundWire, OutboundWire, Wire,
+};
 
 // Re-export the auth and crypto interfaces
-pub use over_there_auth::{Signer, Verifier};
-pub use over_there_crypto::{Decrypter, Encrypter};
+pub use over_there_auth::{self as auth, Authenticator, Signer, Verifier};
+pub use over_there_crypto::{self as crypto, Bicrypter, Decrypter, Encrypter};

@@ -4,8 +4,8 @@ mod msg;
 mod server;
 
 pub use client::{
-    error::AskError, error::ExecAskError, error::FileAskError, error::TellError, file::RemoteFile,
-    proc::RemoteProc, Client,
+    error::AskError, error::ExecAskError, error::FileAskError,
+    error::TellError, file::RemoteFile, proc::RemoteProc, Client,
 };
 pub use event::{AddrEventManager, EventManager};
 pub use msg::{
@@ -14,7 +14,7 @@ pub use msg::{
 };
 pub use server::{file::LocalFile, proc::LocalProc, Server};
 
-use over_there_wire::{Decrypter, Encrypter, Signer, Verifier};
+use over_there_wire::{Authenticator, Bicrypter};
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -33,43 +33,31 @@ pub enum Transport {
 }
 
 /// Represents an generic communicator that can become a client or server
-pub struct Communicator<S, V, E, D>
+pub struct Communicator<A, B>
 where
-    S: Signer,
-    V: Verifier,
-    E: Encrypter,
-    D: Decrypter,
+    A: Authenticator,
+    B: Bicrypter,
 {
     /// TTL to collect all packets for a msg
     packet_ttl: Duration,
 
-    /// Used to sign outbound msgs
-    signer: S,
+    /// Used to sign & verify msgs
+    authenticator: A,
 
-    /// Used to verify inbound msgs
-    verifier: V,
-
-    /// Used to encrypt outbound msgs
-    encrypter: E,
-
-    /// Used to decrypt inbound msgs
-    decrypter: D,
+    /// Used to encrypt & decrypt msgs
+    bicrypter: B,
 }
 
-impl<S, V, E, D> Communicator<S, V, E, D>
+impl<A, B> Communicator<A, B>
 where
-    S: Signer + Send + 'static,
-    V: Verifier + Send + 'static,
-    E: Encrypter + Send + 'static,
-    D: Decrypter + Send + 'static,
+    A: Authenticator,
+    B: Bicrypter,
 {
-    pub fn new(packet_ttl: Duration, signer: S, verifier: V, encrypter: E, decrypter: D) -> Self {
+    pub fn new(packet_ttl: Duration, authenticator: A, bicrypter: B) -> Self {
         Self {
             packet_ttl,
-            signer,
-            verifier,
-            encrypter,
-            decrypter,
+            authenticator,
+            bicrypter,
         }
     }
 }

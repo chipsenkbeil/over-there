@@ -18,10 +18,10 @@ use crate::{
 use error::{AskError, ExecAskError, FileAskError, TellError};
 use file::RemoteFile;
 use log::{error, trace};
-use over_there_auth::{Signer, Verifier};
-use over_there_crypto::{Decrypter, Encrypter};
 use over_there_utils::Either;
-use over_there_wire::{self as wire, InboundWire, NetTransmission, OutboundWire};
+use over_there_wire::{
+    self as wire, Authenticator, Bicrypter, NetTransmission, Wire,
+};
 use proc::RemoteProc;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -34,15 +34,17 @@ use tokio::{
     task,
 };
 
-impl<S, V, E, D> Communicator<S, V, E, D>
+impl<A, B> Communicator<A, B>
 where
-    S: Signer + Send + 'static,
-    V: Verifier + Send + 'static,
-    E: Encrypter + Send + 'static,
-    D: Decrypter + Send + 'static,
+    A: Authenticator + Clone + Send + 'static,
+    B: Bicrypter + Clone + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
-    pub async fn connect(self, transport: Transport, buffer: usize) -> io::Result<Client> {
+    pub async fn connect(
+        self,
+        transport: Transport,
+        buffer: usize,
+    ) -> io::Result<Client> {
         let handle = Handle::current();
         let state = Arc::new(Mutex::new(state::ClientState::default()));
         let state_2 = Arc::clone(&state);
@@ -61,30 +63,27 @@ where
                             break;
                         }
                     }
-                    stream.ok_or_else(|| io::Error::from(io::ErrorKind::ConnectionRefused))?
+                    stream.ok_or_else(|| {
+                        io::Error::from(io::ErrorKind::ConnectionRefused)
+                    })?
                 };
                 let remote_addr = stream.peer_addr()?;
-                let inbound_wire = InboundWire::new(
+                let wire = Wire::new(
                     NetTransmission::TcpEthernet.into(),
                     self.packet_ttl,
-                    self.verifier,
-                    self.decrypter,
-                );
-                let outbound_wire = OutboundWire::new(
-                    NetTransmission::TcpEthernet.into(),
-                    self.signer,
-                    self.encrypter,
+                    self.authenticator,
+                    self.bicrypter,
                 );
 
                 let (tx, rx) = mpsc::channel(buffer);
-                let _event_handle = handle.spawn(tcp_event_handler(state_2, rx));
+                let _event_handle =
+                    handle.spawn(tcp_event_handler(state_2, rx));
                 let event_manager = EventManager::for_tcp_stream(
                     handle.clone(),
                     buffer,
                     stream,
                     remote_addr,
-                    inbound_wire,
-                    outbound_wire,
+                    wire,
                     tx,
                 );
 
@@ -115,31 +114,35 @@ where
                     //       using UdpSocket::from_std
                     handle.enter(|| {
                         socket_and_addr
-                            .ok_or_else(|| io::Error::from(io::ErrorKind::ConnectionRefused))
-                            .and_then(|(s, addr)| UdpSocket::from_std(s).map(|s| (s, addr)))
+                            .ok_or_else(|| {
+                                io::Error::from(
+                                    io::ErrorKind::ConnectionRefused,
+                                )
+                            })
+                            .and_then(|(s, addr)| {
+                                UdpSocket::from_std(s).map(|s| (s, addr))
+                            })
                     })?
                 };
 
                 let addr = socket.local_addr()?;
                 let transmission = NetTransmission::udp_from_addr(addr);
 
-                let inbound_wire = InboundWire::new(
+                let wire = Wire::new(
                     transmission.into(),
                     self.packet_ttl,
-                    self.verifier,
-                    self.decrypter,
+                    self.authenticator,
+                    self.bicrypter,
                 );
-                let outbound_wire =
-                    OutboundWire::new(transmission.into(), self.signer, self.encrypter);
 
                 let (tx, rx) = mpsc::channel(buffer);
-                let _event_handle = handle.spawn(udp_event_handler(state_2, rx));
+                let _event_handle =
+                    handle.spawn(udp_event_handler(state_2, rx));
                 let addr_event_manager = AddrEventManager::for_udp_socket(
                     handle.clone(),
                     buffer,
                     socket,
-                    inbound_wire,
-                    outbound_wire,
+                    wire,
                     tx,
                 );
 
@@ -172,7 +175,11 @@ async fn tcp_event_handler(
 
 async fn udp_event_handler(
     state: Arc<Mutex<state::ClientState>>,
-    mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<(Vec<u8>, SocketAddr)>)>,
+    mut rx: mpsc::Receiver<(
+        Msg,
+        SocketAddr,
+        mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    )>,
 ) {
     while let Some((msg, _, _)) = rx.recv().await {
         if let Some(header) = msg.parent_header.as_ref() {
@@ -212,8 +219,12 @@ impl Client {
 
     pub async fn wait(self) -> Result<(), task::JoinError> {
         match self.event_manager {
-            Either::Left(m) => tokio::try_join!(m.wait(), self._event_handle).map(|_| ()),
-            Either::Right(m) => tokio::try_join!(m.wait(), self._event_handle).map(|_| ()),
+            Either::Left(m) => {
+                tokio::try_join!(m.wait(), self._event_handle).map(|_| ())
+            }
+            Either::Right(m) => {
+                tokio::try_join!(m.wait(), self._event_handle).map(|_| ())
+            }
         }
     }
 
@@ -224,11 +235,9 @@ impl Client {
 
         // Assign a synchronous callback that uses the oneshot channel to
         // get back the result
-        self.state
-            .lock()
-            .await
-            .callback_manager
-            .add_callback(msg.header.id, |msg| {
+        self.state.lock().await.callback_manager.add_callback(
+            msg.header.id,
+            |msg| {
                 let result = if let Content::Error(args) = &msg.content {
                     tx.send(Err(AskError::Failure {
                         msg: args.msg.to_string(),
@@ -240,7 +249,8 @@ impl Client {
                 if result.is_err() {
                     error!("Failed to trigger callback: {:?}", msg);
                 }
-            });
+            },
+        );
 
         // Send the msg and report back an error if it occurs
         self.tell(msg).await.map_err(AskError::from)?;
@@ -257,7 +267,9 @@ impl Client {
 
         let data = msg.to_vec().map_err(|_| TellError::EncodingFailed)?;
         match &mut self.event_manager {
-            Either::Left(m) => m.send(data).await.map_err(|_| TellError::SendFailed),
+            Either::Left(m) => {
+                m.send(data).await.map_err(|_| TellError::SendFailed)
+            }
             Either::Right(m) => m
                 .send_to(data, self.remote_addr)
                 .await
@@ -275,7 +287,9 @@ impl Client {
     }
 
     /// Requests the capabilities from the server
-    pub async fn ask_capabilities(&mut self) -> Result<Vec<Capability>, AskError> {
+    pub async fn ask_capabilities(
+        &mut self,
+    ) -> Result<Vec<Capability>, AskError> {
         let msg = self.ask(Msg::from(Content::DoGetCapabilities)).await?;
         match msg.content {
             Content::Capabilities(args) => Ok(args.capabilities),
@@ -284,7 +298,9 @@ impl Client {
     }
 
     /// Requests to get a list of the root directory's contents on the server
-    pub async fn ask_list_root_dir_contents(&mut self) -> Result<Vec<DirEntry>, FileAskError> {
+    pub async fn ask_list_root_dir_contents(
+        &mut self,
+    ) -> Result<Vec<DirEntry>, FileAskError> {
         self.ask_list_dir_contents(String::from(".")).await
     }
 
@@ -311,7 +327,10 @@ impl Client {
 
     /// Requests to open a file for reading/writing on the server,
     /// creating the file if it does not exist
-    pub async fn ask_open_file(&mut self, path: String) -> Result<RemoteFile, FileAskError> {
+    pub async fn ask_open_file(
+        &mut self,
+        path: String,
+    ) -> Result<RemoteFile, FileAskError> {
         self.ask_open_file_with_options(path, true, true, true)
             .await
     }
@@ -348,7 +367,10 @@ impl Client {
     }
 
     /// Requests the full contents of a file on the server
-    pub async fn ask_read_file(&mut self, file: &RemoteFile) -> Result<Vec<u8>, FileAskError> {
+    pub async fn ask_read_file(
+        &mut self,
+        file: &RemoteFile,
+    ) -> Result<Vec<u8>, FileAskError> {
         let result = self
             .ask(Msg::from(Content::DoReadFile(DoReadFileArgs {
                 id: file.id,
@@ -460,7 +482,10 @@ impl Client {
 
     /// Requests to get all stdout from a remote process on the server since
     /// the last ask was made
-    pub async fn ask_get_stdout(&mut self, proc: &RemoteProc) -> Result<Vec<u8>, ExecAskError> {
+    pub async fn ask_get_stdout(
+        &mut self,
+        proc: &RemoteProc,
+    ) -> Result<Vec<u8>, ExecAskError> {
         let result = self
             .ask(Msg::from(Content::DoGetStdout(DoGetStdoutArgs {
                 id: proc.id,
@@ -479,7 +504,10 @@ impl Client {
 
     /// Requests to get all stderr from a remote process on the server since
     /// the last ask was made
-    pub async fn ask_get_stderr(&mut self, proc: &RemoteProc) -> Result<Vec<u8>, ExecAskError> {
+    pub async fn ask_get_stderr(
+        &mut self,
+        proc: &RemoteProc,
+    ) -> Result<Vec<u8>, ExecAskError> {
         let result = self
             .ask(Msg::from(Content::DoGetStderr(DoGetStderrArgs {
                 id: proc.id,
@@ -497,7 +525,10 @@ impl Client {
     }
 
     /// Requests to kill a remote process on the server
-    pub async fn ask_proc_kill(&mut self, proc: &RemoteProc) -> Result<(), ExecAskError> {
+    pub async fn ask_proc_kill(
+        &mut self,
+        proc: &RemoteProc,
+    ) -> Result<(), ExecAskError> {
         let result = self
             .ask(Msg::from(Content::DoKillProc(DoKillProcArgs {
                 id: proc.id,
@@ -509,7 +540,9 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::ProcStatus(args) if args.is_alive => Err(ExecAskError::FailedToKill),
+            Content::ProcStatus(args) if args.is_alive => {
+                Err(ExecAskError::FailedToKill)
+            }
             Content::ProcStatus(_) => Ok(()),
             x => Err(make_exec_ask_error(x)),
         }
