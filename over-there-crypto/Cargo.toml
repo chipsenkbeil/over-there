@@ -9,6 +9,7 @@ rand = "0.7.3"
 aead = "0.2.0"
 aes-gcm = "0.3.0"
 aes-gcm-siv = "0.3.0"
+aes-siv = "0.2.0"
 lru = "0.4.3"
 serde = { version = "1.0.103", features = ["derive"] }
 serde-big-array = "0.2.0"

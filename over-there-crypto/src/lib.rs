@@ -1,5 +1,5 @@
 pub mod aead;
-pub use crate::aead::{aes_gcm, aes_gcm_siv, AeadError, AesNonceBicrypter};
+pub use crate::aead::{aes_gcm, aes_gcm_siv, aes_siv, AeadError, AesNonceBicrypter};
 
 pub mod nonce;
 pub use nonce::{Nonce, Nonce128Bits, Nonce96Bits, NonceSize};
@@ -12,6 +12,8 @@ pub use noop::NoopBicrypter;
 
 mod closure;
 pub use closure::{ClosureDecrypter, ClosureEncrypter};
+
+pub mod split;
 
 use over_there_derive::Error;
 use serde::{Deserialize, Serialize};
@@ -78,7 +80,7 @@ impl From<NonceSize> for AssociatedData {
 pub trait Bicrypter: Encrypter + Decrypter {}
 
 /// Capable of encrypting data
-pub trait Encrypter: Clone {
+pub trait Encrypter {
     fn encrypt(
         &self,
         buffer: &[u8],
@@ -91,7 +93,7 @@ pub trait Encrypter: Clone {
 }
 
 /// Capable of decrypting data
-pub trait Decrypter: Clone {
+pub trait Decrypter {
     fn decrypt(
         &self,
         buffer: &[u8],

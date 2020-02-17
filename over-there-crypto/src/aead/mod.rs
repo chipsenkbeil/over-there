@@ -1,5 +1,6 @@
 pub mod aes_gcm;
 pub mod aes_gcm_siv;
+pub mod aes_siv;
 
 use crate::{
     nonce::{self, NonceSize},
@@ -14,21 +15,29 @@ pub enum AeadError {
     Generic(aead::Error),
 }
 
-#[derive(Clone)]
-pub struct AesNonceBicrypter<T: Aead + Clone> {
+pub struct AesNonceBicrypter<T: Aead> {
     aead: T,
     nonce_size: NonceSize,
 }
 
-impl<T: Aead + Clone> AesNonceBicrypter<T> {
+impl<T: Aead> AesNonceBicrypter<T> {
     pub fn new(aead: T, nonce_size: NonceSize) -> Self {
         Self { aead, nonce_size }
     }
 }
 
-impl<T: Aead + Clone> Bicrypter for AesNonceBicrypter<T> {}
+impl<T: Aead + Clone> Clone for AesNonceBicrypter<T> {
+    fn clone(&self) -> Self {
+        Self {
+            aead: self.aead.clone(),
+            nonce_size: self.nonce_size,
+        }
+    }
+}
 
-impl<T: Aead + Clone> Encrypter for AesNonceBicrypter<T> {
+impl<T: Aead> Bicrypter for AesNonceBicrypter<T> {}
+
+impl<T: Aead> Encrypter for AesNonceBicrypter<T> {
     fn encrypt(
         &self,
         buffer: &[u8],
@@ -49,7 +58,7 @@ impl<T: Aead + Clone> Encrypter for AesNonceBicrypter<T> {
     }
 }
 
-impl<T: Aead + Clone> Decrypter for AesNonceBicrypter<T> {
+impl<T: Aead> Decrypter for AesNonceBicrypter<T> {
     fn decrypt(
         &self,
         buffer: &[u8],
