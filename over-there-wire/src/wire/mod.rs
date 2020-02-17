@@ -64,39 +64,6 @@ where
         self.transmission_size
     }
 
-    /// CHIP CHIP CHIP
-    ///
-    /// UdpSocket.split creates Arc<UdpSocket> and provides one to each
-    /// of the Recv and Send halves
-    ///
-    /// TcpStream.split creates &'a TcpStream and provides one to each of
-    /// the Read and Write halves
-    ///
-    /// Seems like easiest approach is to create Arc of stream and socket,
-    /// try_clone does not work with mio::Event per https://github.com/tokio-rs/tokio/pull/1308#issuecomment-513337003
-    ///
-    /// Tokio used to have try_clone, but was deprecated via
-    /// https://github.com/tokio-rs/tokio/pull/824
-    ///
-    /// <<<>>>
-    ///
-    /// Explanation of UdpSocket split versus TcpStream split here:
-    /// https://github.com/tokio-rs/tokio/pull/1226#issuecomment-538033875
-    ///
-    /// Maybe best path is to create some wrapper structure that will contain
-    /// the TcpStream and perform the split
-    ///
-    /// <<<>>>
-    ///
-    /// It might make more sense to use the select! macro instead, which
-    /// can then run on a single thread and not have to split
-    ///
-    /// VV DO THIS vvv
-    ///
-    /// https://docs.rs/tokio/0.2.11/tokio/macro.select.html
-    ///
-    /// ^^^ DO THIS ^^^
-
     /// Receives data synchronously using the provided function
     /// If None returned for data, indicates that bytes were received but
     /// the full message has yet to be collected

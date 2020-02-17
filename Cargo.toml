@@ -15,6 +15,11 @@ members = [
     "over-there-wire",
 ]
 
+[features]
+default = ["single-threaded"]
+single-threaded = ["tokio/rt-core"]
+multi-threaded = ["tokio/rt-threaded"]
+
 # TODO: Currently, there is not a way to mark a dependency as binary-only
 #       and the workarounds suggested are:
 #
@@ -27,12 +32,15 @@ members = [
 #       I'll ignore the problem and bring everything in to the library.
 [dependencies]
 clap = { version = "3.0.0-beta.1", git = "https://github.com/clap-rs/clap.git"}
-tokio = { version = "0.2.11", features = ["rt-threaded"] }
 over-there-auth = { path = "./over-there-auth" }
 over-there-crypto = { path = "./over-there-crypto" }
 over-there-core = { path = "./over-there-core" }
 over-there-utils = { path = "./over-there-utils" }
 over-there-wire = { path = "./over-there-wire" }
+
+[dependencies.tokio]
+version = "0.2.11"
+default-features = false
 
 [dev-dependencies]
 env_logger = "0.7.1"

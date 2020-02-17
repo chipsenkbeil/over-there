@@ -35,7 +35,7 @@ over-there-wire = { path = "../over-there-wire" }
 
 [dependencies.tokio]
 version = "0.2.11"
-features = ["fs", "io-util", "macros", "process", "rt-threaded", "sync", "time", "tcp", "udp"]
+features = ["fs", "io-util", "macros", "process", "sync", "time", "tcp", "udp"]
 
 [dev-dependencies]
 tokio = { version = "0.2.11", features = ["test-util"] }
