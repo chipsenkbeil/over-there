@@ -49,4 +49,9 @@ pub struct ClientCommand {
     #[clap(long, parse(try_from_str = parsers::parse_duration), default_value = "5")]
     /// Timeout (in seconds) used when communicating with the server
     pub timeout: Duration,
+
+    #[clap(long, default_value = "1000")]
+    /// Maximum size of internal message passing between reader, writer, and
+    /// callback loops
+    pub internal_buffer_size: usize,
 }

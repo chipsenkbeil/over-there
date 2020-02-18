@@ -47,7 +47,7 @@ async fn run_server(cmd: server::ServerCommand) -> Result<(), Box<dyn Error>> {
             cmd.addr.ip(),
             vec![cmd.addr.port()],
         )),
-        1000,
+        cmd.internal_buffer_size,
     )
     .await?;
 
@@ -63,7 +63,7 @@ async fn run_client(cmd: client::ClientCommand) -> Result<(), Box<dyn Error>> {
         NoopAuthenticator,
         NoopBicrypter,
     )
-    .connect(Transport::Udp(vec![cmd.addr]), 1000)
+    .connect(Transport::Udp(vec![cmd.addr]), cmd.internal_buffer_size)
     .await
     .expect("Failed to connect with client");
 
