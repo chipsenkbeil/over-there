@@ -71,17 +71,23 @@ impl LocalProc {
 
                         loop {
                             match stdout.read(&mut buf).await {
-                                Ok(size) => {
+                                Ok(size) if size > 0 => {
                                     stdout_buf
                                         .lock()
                                         .await
                                         .extend_from_slice(&buf[..size]);
                                 }
+                                Ok(_) => (),
                                 Err(x) => {
                                     error!("stdout reader died: {}", x);
                                     break;
                                 }
                             }
+
+                            // NOTE: Loop recovers too quickly from await on
+                            //       read yielding size == 0, so yielding to
+                            //       ensure that other tasks get a fair shake
+                            task::yield_now().await;
                         }
                     }
                 },
@@ -93,17 +99,23 @@ impl LocalProc {
 
                         loop {
                             match stderr.read(&mut buf).await {
-                                Ok(size) => {
+                                Ok(size) if size > 0 => {
                                     stderr_buf
                                         .lock()
                                         .await
                                         .extend_from_slice(&buf[..size]);
                                 }
+                                Ok(_) => (),
                                 Err(x) => {
                                     error!("stderr reader died: {}", x);
                                     break;
                                 }
                             }
+
+                            // NOTE: Loop recovers too quickly from await on
+                            //       read yielding size == 0, so yielding to
+                            //       ensure that other tasks get a fair shake
+                            task::yield_now().await;
                         }
                     }
                 }
@@ -130,29 +142,17 @@ impl LocalProc {
         }
     }
 
-    pub async fn read_stdout(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    pub async fn read_stdout(&mut self) -> io::Result<Vec<u8>> {
         if self.supports_stdout {
-            let stdout_buf: Vec<u8> =
-                self.stdout_buf.lock().await.drain(..).collect();
-            let size = std::cmp::min(buf.len(), stdout_buf.len());
-            if size > 0 {
-                buf.copy_from_slice(&stdout_buf[..size]);
-            }
-            Ok(size)
+            Ok(self.stdout_buf.lock().await.drain(..).collect())
         } else {
             Err(io::Error::from(io::ErrorKind::BrokenPipe))
         }
     }
 
-    pub async fn read_stderr(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    pub async fn read_stderr(&mut self) -> io::Result<Vec<u8>> {
         if self.supports_stderr {
-            let stderr_buf: Vec<u8> =
-                self.stderr_buf.lock().await.drain(..).collect();
-            let size = std::cmp::min(buf.len(), stderr_buf.len());
-            if size > 0 {
-                buf.copy_from_slice(&stderr_buf[..size]);
-            }
-            Ok(size)
+            Ok(self.stderr_buf.lock().await.drain(..).collect())
         } else {
             Err(io::Error::from(io::ErrorKind::BrokenPipe))
         }
@@ -228,6 +228,8 @@ mod tests {
                         if !s.is_empty() {
                             break s;
                         }
+
+                        task::yield_now().await;
                     }
                 })
                 .await
@@ -240,48 +242,254 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_read_stdout_should_return_an_error_if_not_piped() {
-        unimplemented!();
+    #[tokio::test]
+    async fn test_read_stdout_should_return_an_error_if_not_piped() {
+        let child = Command::new("echo")
+            .arg("test")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let mut local_proc = LocalProc::new(child);
+        match local_proc.read_stdout().await {
+            Ok(_) => {
+                panic!("Unexpectedly succeeded in reading stdout not piped")
+            }
+            Err(x) => assert_eq!(x.kind(), io::ErrorKind::BrokenPipe),
+        }
     }
 
-    #[test]
-    fn test_read_stdout_should_yield_zero_size_if_no_content_available() {
-        unimplemented!();
+    #[tokio::test]
+    async fn test_read_stdout_should_return_empty_content_if_none_available() {
+        let child = Command::new("echo")
+            .arg("test")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        // NOTE: Not spawning so we can ensure that no content is available
+        let mut local_proc = LocalProc::new(child);
+
+        match local_proc.read_stdout().await {
+            Ok(buf) => assert!(buf.is_empty()),
+            Err(x) => panic!("Unexpected error: {}", x),
+        }
     }
 
-    #[test]
-    fn test_read_stdout_should_not_return_content_returned_previously() {
-        unimplemented!();
+    #[tokio::test]
+    async fn test_read_stdout_should_not_return_content_returned_previously() {
+        let child = Command::new("echo")
+            .arg("test")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let mut local_proc = LocalProc::new(child).spawn();
+
+        // Get first batch of bytes and discard
+        assert!(
+            !timeout(Duration::from_millis(10), async {
+                loop {
+                    match local_proc.read_stdout().await {
+                        Ok(buf) => {
+                            if !buf.is_empty() {
+                                break buf;
+                            }
+
+                            // NOTE: The read above is too quick as it only awaits
+                            //       for a lock, and thereby prevents switching
+                            //       to another task -- yield to enable switching
+                            task::yield_now().await;
+                        }
+                        Err(x) => panic!("Unexpected error: {}", x),
+                    }
+                }
+            })
+            .await
+            .unwrap()
+            .is_empty(),
+            "Failed to get first batch of content"
+        );
+
+        // Assert second batch is empty
+        assert!(
+            local_proc.read_stdout().await.unwrap().is_empty(),
+            "Unexpectedly got content when nothing should be left"
+        );
     }
 
-    #[test]
-    fn test_read_stdout_should_write_content_to_buf_and_return_bytes_read() {
-        unimplemented!();
+    #[tokio::test]
+    async fn test_read_stdout_should_return_content_if_available() {
+        let child = Command::new("echo")
+            .arg("test")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let mut local_proc = LocalProc::new(child).spawn();
+
+        let buf = timeout(Duration::from_millis(10), async {
+            loop {
+                match local_proc.read_stdout().await {
+                    Ok(buf) => {
+                        if !buf.is_empty() {
+                            break buf;
+                        }
+
+                        // NOTE: The read above is too quick as it only awaits
+                        //       for a lock, and thereby prevents switching
+                        //       to another task -- yield to enable switching
+                        task::yield_now().await;
+                    }
+                    Err(x) => panic!("Unexpected error: {}", x),
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(buf, b"test\n");
     }
 
-    #[test]
-    fn test_read_stderr_should_return_an_error_if_not_piped() {
-        unimplemented!();
+    #[tokio::test]
+    async fn test_read_stderr_should_return_an_error_if_not_piped() {
+        let child = Command::new("rev")
+            .arg("--aaa")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let mut local_proc = LocalProc::new(child);
+        match local_proc.read_stderr().await {
+            Ok(_) => {
+                panic!("Unexpectedly succeeded in reading stderr not piped")
+            }
+            Err(x) => assert_eq!(x.kind(), io::ErrorKind::BrokenPipe),
+        }
     }
 
-    #[test]
-    fn test_read_stderr_should_yield_zero_size_if_no_content_available() {
-        unimplemented!();
+    #[tokio::test]
+    async fn test_read_stderr_should_return_empty_content_if_none_available() {
+        let child = Command::new("rev")
+            .arg("--aaa")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        // NOTE: Not spawning so we can ensure that no content is available
+        let mut local_proc = LocalProc::new(child);
+
+        match local_proc.read_stderr().await {
+            Ok(buf) => assert!(buf.is_empty()),
+            Err(x) => panic!("Unexpected error: {}", x),
+        }
     }
 
-    #[test]
-    fn test_read_stderr_should_not_return_content_returned_previously() {
-        unimplemented!();
+    #[tokio::test]
+    async fn test_read_stderr_should_not_return_content_returned_previously() {
+        let child = Command::new("rev")
+            .arg("--aaa")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let mut local_proc = LocalProc::new(child).spawn();
+
+        // Get first batch of bytes and discard
+        assert!(
+            !timeout(Duration::from_millis(10), async {
+                loop {
+                    match local_proc.read_stderr().await {
+                        Ok(buf) => {
+                            if !buf.is_empty() {
+                                break buf;
+                            }
+
+                            // NOTE: The read above is too quick as it only awaits
+                            //       for a lock, and thereby prevents switching
+                            //       to another task -- yield to enable switching
+                            task::yield_now().await;
+                        }
+                        Err(x) => panic!("Unexpected error: {}", x),
+                    }
+                }
+            })
+            .await
+            .unwrap()
+            .is_empty(),
+            "Failed to get first batch of content"
+        );
+
+        // Assert second batch is empty
+        assert!(
+            local_proc.read_stderr().await.unwrap().is_empty(),
+            "Unexpectedly got content when nothing should be left"
+        );
     }
 
-    #[test]
-    fn test_read_stderr_should_write_content_to_buf_and_return_bytes_read() {
-        unimplemented!();
+    #[tokio::test]
+    async fn test_read_stderr_should_return_content_if_available() {
+        let child = Command::new("rev")
+            .arg("--aaa")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let mut local_proc = LocalProc::new(child).spawn();
+
+        let buf = timeout(Duration::from_millis(10), async {
+            loop {
+                match local_proc.read_stderr().await {
+                    Ok(buf) => {
+                        if !buf.is_empty() {
+                            break buf;
+                        }
+
+                        // NOTE: The read above is too quick as it only awaits
+                        //       for a lock, and thereby prevents switching
+                        //       to another task -- yield to enable switching
+                        task::yield_now().await;
+                    }
+                    Err(x) => panic!("Unexpected error: {}", x),
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        assert!(buf.len() > 0);
     }
 
-    #[test]
-    fn kill_and_wait_should_kill_and_return_process_result() {
-        unimplemented!();
+    #[tokio::test]
+    async fn kill_and_wait_should_kill_and_return_process_result() {
+        let child = Command::new("sleep")
+            .arg("60")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let local_proc = LocalProc::new(child).spawn();
+        match local_proc.kill_and_wait().await {
+            Ok(_) => (),
+            Err(x) => panic!("Unexpected error: {}", x),
+        }
     }
 }

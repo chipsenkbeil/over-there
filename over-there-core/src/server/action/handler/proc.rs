@@ -85,24 +85,19 @@ where
     debug!("do_get_stdout: {:?}", args);
 
     match state.procs.lock().await.get_mut(&args.id) {
-        Some(local_proc) => {
-            let mut buf = [0; 1024];
-            match local_proc.read_stdout(&mut buf).await {
-                Ok(size) => {
-                    respond(Content::StdoutContents(StdoutContentsArgs {
-                        output: buf[..size].to_vec(),
-                    }))
+        Some(local_proc) => match local_proc.read_stdout().await {
+            Ok(output) => {
+                respond(Content::StdoutContents(StdoutContentsArgs { output }))
                     .await
-                }
-                Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
-                    respond(Content::StdoutContents(StdoutContentsArgs {
-                        output: vec![],
-                    }))
-                    .await
-                }
-                Err(x) => respond(Content::IoError(From::from(x))).await,
             }
-        }
+            Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
+                respond(Content::StdoutContents(StdoutContentsArgs {
+                    output: vec![],
+                }))
+                .await
+            }
+            Err(x) => respond(Content::IoError(From::from(x))).await,
+        },
         None => {
             respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
                 .await
@@ -122,24 +117,19 @@ where
     debug!("do_get_stderr: {:?}", args);
 
     match state.procs.lock().await.get_mut(&args.id) {
-        Some(local_proc) => {
-            let mut buf = [0; 1024];
-            match local_proc.read_stderr(&mut buf).await {
-                Ok(size) => {
-                    respond(Content::StderrContents(StderrContentsArgs {
-                        output: buf[..size].to_vec(),
-                    }))
+        Some(local_proc) => match local_proc.read_stderr().await {
+            Ok(output) => {
+                respond(Content::StderrContents(StderrContentsArgs { output }))
                     .await
-                }
-                Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
-                    respond(Content::StderrContents(StderrContentsArgs {
-                        output: vec![],
-                    }))
-                    .await
-                }
-                Err(x) => respond(Content::IoError(From::from(x))).await,
             }
-        }
+            Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
+                respond(Content::StderrContents(StderrContentsArgs {
+                    output: vec![],
+                }))
+                .await
+            }
+            Err(x) => respond(Content::IoError(From::from(x))).await,
+        },
         None => {
             respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
                 .await
@@ -186,8 +176,11 @@ mod tests {
     use super::*;
     use std::io;
     use std::process::Stdio;
-    use std::thread;
     use std::time::Duration;
+    use tokio::{
+        task,
+        time::{delay_for, timeout},
+    };
 
     #[tokio::test]
     async fn do_exec_proc_should_send_success_if_can_execute_process() {
@@ -271,7 +264,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        thread::sleep(Duration::from_millis(10));
+        delay_for(Duration::from_millis(10)).await;
 
         do_write_stdin(
             Arc::clone(&state),
@@ -288,14 +281,17 @@ mod tests {
             let mut x = state.procs.lock().await;
             let local_proc = x.get_mut(&id).unwrap();
 
-            use tokio::time::timeout;
-            let mut buf = [0; 1024];
             match timeout(Duration::from_millis(500), async {
-                local_proc.read_stdout(&mut buf).await
+                loop {
+                    match local_proc.read_stdout().await {
+                        Ok(buf) if buf.is_empty() => task::yield_now().await,
+                        x => break x,
+                    }
+                }
             })
             .await
             {
-                Ok(result) if result.is_ok() => buf[..result.unwrap()].to_vec(),
+                Ok(result) if result.is_ok() => result.unwrap(),
                 Ok(result) => {
                     panic!("Unexpected error {}", result.unwrap_err())
                 }
@@ -330,7 +326,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
-        thread::sleep(Duration::from_millis(10));
+        delay_for(Duration::from_millis(10)).await;
 
         do_write_stdin(
             Arc::clone(&state),
@@ -398,7 +394,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
-        thread::sleep(Duration::from_millis(10));
+        delay_for(Duration::from_millis(10)).await;
 
         do_get_stdout(Arc::clone(&state), &DoGetStdoutArgs { id }, |c| {
             content = Some(c);
@@ -435,7 +431,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        thread::sleep(Duration::from_millis(10));
+        delay_for(Duration::from_millis(10)).await;
 
         do_get_stdout(Arc::clone(&state), &DoGetStdoutArgs { id }, |c| {
             content = Some(c);
@@ -492,7 +488,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
-        thread::sleep(Duration::from_millis(10));
+        delay_for(Duration::from_millis(10)).await;
 
         do_get_stderr(Arc::clone(&state), &DoGetStderrArgs { id }, |c| {
             content = Some(c);
@@ -529,7 +525,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        thread::sleep(Duration::from_millis(10));
+        delay_for(Duration::from_millis(10)).await;
 
         do_get_stderr(Arc::clone(&state), &DoGetStderrArgs { id }, |c| {
             content = Some(c);
@@ -586,7 +582,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        thread::sleep(Duration::from_millis(10));
+        delay_for(Duration::from_millis(10)).await;
 
         do_kill_proc(Arc::clone(&state), &DoKillProcArgs { id }, |c| {
             content = Some(c);
@@ -627,7 +623,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
-        thread::sleep(Duration::from_millis(10));
+        delay_for(Duration::from_millis(10)).await;
 
         do_kill_proc(Arc::clone(&state), &DoKillProcArgs { id }, |c| {
             content = Some(c);
