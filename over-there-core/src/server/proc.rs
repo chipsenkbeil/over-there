@@ -132,7 +132,8 @@ impl LocalProc {
 
     pub async fn read_stdout(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.supports_stdout {
-            let stdout_buf = self.stdout_buf.lock().await;
+            let stdout_buf: Vec<u8> =
+                self.stdout_buf.lock().await.drain(..).collect();
             let size = std::cmp::min(buf.len(), stdout_buf.len());
             if size > 0 {
                 buf.copy_from_slice(&stdout_buf[..size]);
@@ -145,7 +146,8 @@ impl LocalProc {
 
     pub async fn read_stderr(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.supports_stderr {
-            let stderr_buf = self.stderr_buf.lock().await;
+            let stderr_buf: Vec<u8> =
+                self.stderr_buf.lock().await.drain(..).collect();
             let size = std::cmp::min(buf.len(), stderr_buf.len());
             if size > 0 {
                 buf.copy_from_slice(&stderr_buf[..size]);
@@ -249,6 +251,11 @@ mod tests {
     }
 
     #[test]
+    fn test_read_stdout_should_not_return_content_returned_previously() {
+        unimplemented!();
+    }
+
+    #[test]
     fn test_read_stdout_should_write_content_to_buf_and_return_bytes_read() {
         unimplemented!();
     }
@@ -260,6 +267,11 @@ mod tests {
 
     #[test]
     fn test_read_stderr_should_yield_zero_size_if_no_content_available() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn test_read_stderr_should_not_return_content_returned_previously() {
         unimplemented!();
     }
 
