@@ -3,6 +3,7 @@ mod parsers;
 pub mod server;
 
 use clap::Clap;
+use log::info;
 use over_there_auth::NoopAuthenticator;
 use over_there_core::{Communicator, Transport};
 use over_there_crypto::NoopBicrypter;
@@ -37,6 +38,8 @@ pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
 }
 
 async fn run_server(cmd: server::ServerCommand) -> Result<(), Box<dyn Error>> {
+    info!("Launching server: {:?}", cmd);
+
     let server = Communicator::new(
         constants::DEFAULT_TTL,
         NoopAuthenticator,
@@ -58,6 +61,8 @@ async fn run_server(cmd: server::ServerCommand) -> Result<(), Box<dyn Error>> {
 }
 
 async fn run_client(cmd: client::ClientCommand) -> Result<(), Box<dyn Error>> {
+    info!("Launching client: {:?}", cmd);
+
     let mut client = Communicator::new(
         constants::DEFAULT_TTL,
         NoopAuthenticator,

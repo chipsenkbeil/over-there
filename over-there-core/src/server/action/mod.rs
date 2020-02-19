@@ -71,6 +71,7 @@ impl Executor<Vec<u8>> {
         let origin_sender = self.origin_sender;
 
         Self::execute_impl(state, msg, move |content: Content| {
+            trace!("Response: {:?}", content);
             Self::respond(content, header, origin_sender)
         })
         .await
@@ -110,6 +111,7 @@ impl Executor<(Vec<u8>, SocketAddr)> {
         let origin_sender = self.origin_sender;
 
         Self::execute_impl(state, msg, move |content: Content| {
+            trace!("Response: {:?}", content);
             Self::respond(content, header, origin_sender)
         })
         .await
@@ -141,7 +143,7 @@ impl<T> Executor<T> {
         F: FnOnce(Content) -> R,
         R: Future<Output = Result<(), ActionError>>,
     {
-        trace!("Received msg: {:?}", msg);
+        trace!("Executing msg: {:?}", msg);
 
         match &msg.content {
             Content::Heartbeat => {

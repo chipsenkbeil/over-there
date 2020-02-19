@@ -41,7 +41,7 @@ where
         .spawn()
     {
         Ok(child) => {
-            let local_proc = LocalProc::new(child);
+            let local_proc = LocalProc::new(child).spawn();
             let id = local_proc.id();
             state.procs.lock().await.insert(id, local_proc);
             respond(Content::ProcStarted(ProcStartedArgs { id })).await
@@ -164,6 +164,7 @@ where
         //       have the process clean up -- try_wait doesn't seem to work
         Some(local_proc) => match local_proc.kill_and_wait().await {
             Ok(output) => {
+                // TODO: Send stdout/stderr msgs for any remaining content
                 respond(Content::ProcStatus(ProcStatusArgs {
                     id: args.id,
                     is_alive: false,
@@ -263,7 +264,11 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.lock().await.insert(id, LocalProc::new(child));
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -318,7 +323,11 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.lock().await.insert(id, LocalProc::new(child));
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -382,7 +391,11 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.lock().await.insert(id, LocalProc::new(child));
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -415,7 +428,11 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.lock().await.insert(id, LocalProc::new(child));
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -468,7 +485,11 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.lock().await.insert(id, LocalProc::new(child));
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));
@@ -501,7 +522,11 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        state.procs.lock().await.insert(id, LocalProc::new(child));
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -554,7 +579,11 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.lock().await.insert(id, LocalProc::new(child));
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
         thread::sleep(Duration::from_millis(10));
@@ -591,7 +620,11 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        state.procs.lock().await.insert(id, LocalProc::new(child));
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
         thread::sleep(Duration::from_millis(10));

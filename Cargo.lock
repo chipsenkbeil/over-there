@@ -634,6 +634,7 @@ version = "0.1.0"
 dependencies = [
  "clap 3.0.0-beta.1 (git+https://github.com/clap-rs/clap.git)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "over-there-auth 0.1.0",
  "over-there-core 0.1.0",
  "over-there-crypto 0.1.0",

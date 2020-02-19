@@ -237,9 +237,9 @@ where
     match result {
         Ok((None, _)) => true,
         Ok((Some(data), addr)) => {
-            trace!("Incoming data of size {}", data.len());
+            trace!("Incoming data of size {} from {}", data.len(), addr);
             if let Ok(msg) = Msg::from_slice(&data) {
-                trace!("Forwarding {:?} using {:?}", msg, addr);
+                trace!("Valid msg {:?} from {}", msg, addr);
 
                 if let Err(x) = on_inbound_tx.send((msg, addr, sender)).await {
                     error!("Encountered error: {}", x);

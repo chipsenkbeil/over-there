@@ -32,6 +32,8 @@ multi-threaded = ["tokio/rt-threaded"]
 #       I'll ignore the problem and bring everything in to the library.
 [dependencies]
 clap = { version = "3.0.0-beta.1", git = "https://github.com/clap-rs/clap.git"}
+log = "0.4.8"
+env_logger = "0.7.1"
 over-there-auth = { path = "./over-there-auth" }
 over-there-crypto = { path = "./over-there-crypto" }
 over-there-core = { path = "./over-there-core" }
@@ -43,5 +45,4 @@ version = "0.2.11"
 default-features = false
 
 [dev-dependencies]
-env_logger = "0.7.1"
 tempfile = "3.1.0"
