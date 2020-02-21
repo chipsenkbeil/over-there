@@ -1,31 +1,17 @@
-pub mod client;
-mod parsers;
-pub mod server;
+mod opts;
+mod start;
 
-use clap::Clap;
 use log::info;
-use over_there_auth::NoopAuthenticator;
-use over_there_core::{Communicator, Transport};
-use over_there_crypto::NoopBicrypter;
-use over_there_wire::{self as wire, constants};
+use opts::{
+    client::{self, ClientCommand},
+    server::ServerCommand,
+    Command,
+};
+use over_there_wire::{self as wire};
 use std::error::Error;
 use std::io;
 
-#[derive(Clap, Debug)]
-pub enum Command {
-    #[clap(name = "client")]
-    Client(client::ClientCommand),
-
-    #[clap(name = "server")]
-    Server(server::ServerCommand),
-}
-
-#[derive(Clap, Debug)]
-#[clap(author, about, version)]
-pub struct Opts {
-    #[clap(subcommand)]
-    pub command: Command,
-}
+pub use opts::Opts;
 
 /// Primary entrypoint to run the executable based on input options
 pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
@@ -37,22 +23,41 @@ pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn run_server(cmd: server::ServerCommand) -> Result<(), Box<dyn Error>> {
+fn validate_opts(opts: &opts::CommonOpts) -> io::Result<()> {
+    if opts.encryption != opts::types::Encryption::None
+        && opts.encryption_key.is_none()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Wanted {:?} encryption, but did not provide a key!",
+                opts.encryption
+            ),
+        ));
+    }
+
+    if opts.authentication != opts::types::Authentication::None
+        && opts.authentication_key.is_none()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Wanted {:?} authentication, but did not provide a key!",
+                opts.authentication
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+async fn run_server(cmd: ServerCommand) -> Result<(), Box<dyn Error>> {
     info!("Launching server: {:?}", cmd);
 
-    let server = Communicator::new(
-        constants::DEFAULT_TTL,
-        NoopAuthenticator,
-        NoopBicrypter,
-    )
-    .listen(
-        Transport::Udp(wire::net::make_addr_list(
-            cmd.addr.ip(),
-            vec![cmd.addr.port()],
-        )),
-        cmd.internal_buffer_size,
-    )
-    .await?;
+    validate_opts(&cmd.opts)?;
+
+    let addrs = wire::net::make_addr_list(cmd.addr.ip(), vec![cmd.addr.port()]);
+    let server = start::start_server(&cmd.opts, addrs).await?;
 
     // Let server run to completion
     server.wait().await?;
@@ -60,17 +65,14 @@ async fn run_server(cmd: server::ServerCommand) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn run_client(cmd: client::ClientCommand) -> Result<(), Box<dyn Error>> {
+async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
     info!("Launching client: {:?}", cmd);
 
-    let mut client = Communicator::new(
-        constants::DEFAULT_TTL,
-        NoopAuthenticator,
-        NoopBicrypter,
-    )
-    .connect(Transport::Udp(vec![cmd.addr]), cmd.internal_buffer_size)
-    .await
-    .expect("Failed to connect with client");
+    validate_opts(&cmd.opts)?;
+
+    let mut client = start::start_client(&cmd.opts, cmd.addr)
+        .await
+        .expect("Failed to connect with client");
 
     match &cmd.command {
         client::Subcommand::Version(_) => {

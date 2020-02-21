@@ -34,6 +34,8 @@ multi-threaded = ["tokio/rt-threaded"]
 clap = { version = "3.0.0-beta.1", git = "https://github.com/clap-rs/clap.git"}
 log = "0.4.8"
 env_logger = "0.7.1"
+strum = "0.17.1"
+strum_macros = "0.17.1"
 over-there-auth = { path = "./over-there-auth" }
 over-there-crypto = { path = "./over-there-crypto" }
 over-there-core = { path = "./over-there-core" }

@@ -6,5 +6,7 @@ fn main() {
     let opts = over_there::Opts::parse();
 
     let mut rt = Runtime::new().expect("Failed to start runtime");
-    rt.block_on(over_there::run(opts)).unwrap();
+    if let Err(x) = rt.block_on(over_there::run(opts)) {
+        eprintln!("{}", x);
+    }
 }

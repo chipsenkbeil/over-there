@@ -18,9 +18,9 @@ pub enum Key {
 }
 
 impl Key {
-    /// Converts slice of bytes to a nonce if it is the right size,
+    /// Converts slice of bytes to a key if it is the right size,
     /// otherwise returns nothing
-    pub fn from_slice(&self, slice: &[u8]) -> Option<Self> {
+    pub fn from_slice(slice: &[u8]) -> Option<Self> {
         use std::convert::TryInto;
         if slice.len() == KeySize::Key128Bits.size_in_bytes() {
             slice.try_into().map(Self::Key128Bits).ok()
@@ -39,9 +39,17 @@ impl Key {
 
     pub fn as_slice(&self) -> &[u8] {
         match self {
-            Self::Key128Bits(nonce) => nonce,
-            Self::Key256Bits(nonce) => nonce,
-            Self::Key512Bits(nonce) => nonce,
+            Self::Key128Bits(key) => key,
+            Self::Key256Bits(key) => key,
+            Self::Key512Bits(key) => key,
+        }
+    }
+
+    pub fn key_size(&self) -> KeySize {
+        match self {
+            Self::Key128Bits(_) => KeySize::Key128Bits,
+            Self::Key256Bits(_) => KeySize::Key256Bits,
+            Self::Key512Bits(_) => KeySize::Key512Bits,
         }
     }
 }

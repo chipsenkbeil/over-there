@@ -32,6 +32,12 @@ impl Decrypter for NoopBicrypter {
     }
 }
 
+impl Default for NoopBicrypter {
+    fn default() -> Self {
+        Self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
