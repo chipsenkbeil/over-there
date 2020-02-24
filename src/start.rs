@@ -51,7 +51,7 @@ macro_rules! build_and_start_from_opts {
 
         let transport = match $opts.transport {
             types::Transport::Tcp => Transport::Tcp($addrs),
-            types::Transport::Udp => Transport::Tcp($addrs),
+            types::Transport::Udp => Transport::Udp($addrs),
         };
 
         match ($opts.encryption, $opts.authentication) {
@@ -232,7 +232,8 @@ pub async fn start_client(
     addr: SocketAddr,
 ) -> Result<Client, io::Error> {
     #![allow(clippy::cognitive_complexity)]
-    build_and_start_from_opts!(opts, vec![addr], connect)
+    let addrs = vec![addr];
+    build_and_start_from_opts!(opts, addrs, connect)
 }
 
 pub async fn start_server(

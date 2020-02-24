@@ -14,7 +14,6 @@ pub use msg::{
 };
 pub use server::{file::LocalFile, proc::LocalProc, Server};
 
-use derive_builder::Builder;
 use over_there_wire::{Authenticator, Bicrypter};
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -34,7 +33,6 @@ pub enum Transport {
 }
 
 /// Represents an generic communicator that can become a client or server
-#[derive(Builder)]
 pub struct Communicator<A, B>
 where
     A: Authenticator,

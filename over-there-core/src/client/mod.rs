@@ -17,7 +17,7 @@ use crate::{
 };
 use error::{AskError, ExecAskError, FileAskError, TellError};
 use file::RemoteFile;
-use log::{error, trace};
+use log::{error, trace, warn};
 use over_there_utils::Either;
 use over_there_wire::{
     self as wire, Authenticator, Bicrypter, NetTransmission, Wire,
@@ -57,10 +57,14 @@ where
                 let stream = {
                     let mut stream = None;
                     for addr in addrs.iter() {
-                        let result = TcpStream::connect(addr).await;
-                        if result.is_ok() {
-                            stream = result.ok();
-                            break;
+                        match TcpStream::connect(addr).await {
+                            Ok(s) => {
+                                stream = Some(s);
+                                break;
+                            }
+                            Err(x) => {
+                                warn!("Failed to connect to {}: {}", addr, x)
+                            }
                         }
                     }
                     stream.ok_or_else(|| {
@@ -102,10 +106,14 @@ where
                 let (socket, remote_addr) = {
                     let mut socket_and_addr = None;
                     for addr in addrs.iter() {
-                        let result = wire::net::udp::connect(*addr);
-                        if result.is_ok() {
-                            socket_and_addr = result.ok().map(|s| (s, *addr));
-                            break;
+                        match wire::net::udp::connect(*addr) {
+                            Ok(s) => {
+                                socket_and_addr = Some((s, *addr));
+                                break;
+                            }
+                            Err(x) => {
+                                warn!("Failed to connect to {}: {}", *addr, x)
+                            }
                         }
                     }
 

@@ -31,12 +31,6 @@ impl Verifier for NoopAuthenticator {
     }
 }
 
-impl Default for NoopAuthenticator {
-    fn default() -> Self {
-        Self
-    }
-}
-
 pub struct ClosureSigner<F>
 where
     F: Fn(&[u8]) -> Digest,
