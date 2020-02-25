@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn kill_and_wait_should_kill_and_return_process_result() {
+    async fn test_kill_and_wait_should_kill_and_return_process_result() {
         let child = Command::new("sleep")
             .arg("60")
             .stdin(Stdio::null())
