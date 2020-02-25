@@ -160,7 +160,11 @@ async fn do_write_file_impl(
 
     file.write_all(buf)
         .await
-        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "WriteAll: "))
+        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "WriteAll: "))?;
+
+    file.flush()
+        .await
+        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "Flush: "))
 }
 
 pub async fn do_list_dir_contents<F, R>(
