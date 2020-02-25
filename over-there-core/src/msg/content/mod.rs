@@ -95,7 +95,7 @@ pub enum Content {
 
     /// This will be sent to request the status of a running process on
     /// the server
-    DoGetProcStatus(io::proc::DoGetProcStatus),
+    DoGetProcStatus(io::proc::DoGetProcStatusArgs),
 
     /// This will be returned reporting the status of the process, indicating
     /// if still running or if has completed (and the exit code)

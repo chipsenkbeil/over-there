@@ -49,7 +49,7 @@ pub struct DoKillProcArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoGetProcStatus {
+pub struct DoGetProcStatusArgs {
     pub id: u32,
 }
 

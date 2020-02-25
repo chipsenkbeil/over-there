@@ -4,10 +4,18 @@ use std::process::Output;
 use std::sync::Arc;
 use tokio::{process::Child, runtime::Handle, sync::Mutex, task};
 
+#[derive(Copy, Clone, Debug)]
+pub struct ExitStatus {
+    pub id: u32,
+    pub is_success: bool,
+    pub exit_code: Option<i32>,
+}
+
 #[derive(Debug)]
 pub struct LocalProc {
     id: u32,
-    inner: Child,
+    inner: Arc<Child>,
+    exit_status: Arc<Mutex<Option<ExitStatus>>>,
 
     supports_stdin: bool,
     supports_stdout: bool,
@@ -27,10 +35,11 @@ impl LocalProc {
     pub fn new(child: Child) -> Self {
         Self {
             id: child.id(),
+            exit_status: Arc::new(Mutex::new(None)),
             supports_stdin: child.stdin.is_some(),
             supports_stdout: child.stdout.is_some(),
             supports_stderr: child.stderr.is_some(),
-            inner: child,
+            inner: Arc::new(child),
             io_handle: None,
             stdout_buf: Arc::new(Mutex::new(Vec::new())),
             stderr_buf: Arc::new(Mutex::new(Vec::new())),
@@ -45,6 +54,10 @@ impl LocalProc {
         &self.inner
     }
 
+    pub async fn exit_status(&self) -> Option<ExitStatus> {
+        *self.exit_status.lock().await
+    }
+
     /// Spawns io-processing task for stdout/stderr
     /// Will panic if not in tokio runtime
     pub fn spawn(mut self) -> Self {
@@ -53,7 +66,19 @@ impl LocalProc {
             return self;
         }
 
+        // TODO: Make child be Option<Child> so we can take it to move
+        //       into the exit status check below; or, to support the
+        //       kill and wait method, we need to use Arc<Mutex>>?
+        //       but awaiting would lock indefinitely, so maybe we
+        //       don't need the mutex? -- Arc doesn't seem to work on
+        //       first glance
+        //
+        // TODO: Add new field that is stdin of Option<ChildStdin> that
+        //       will be filled here via a take on the child so we don't
+        //       need to keep around the child directly
+
         let handle = Handle::current();
+        let id = self.id;
 
         let stdout = self.inner.stdout.take();
         let stderr = self.inner.stderr.take();
@@ -61,8 +86,18 @@ impl LocalProc {
         let stdout_buf = Arc::clone(&self.stdout_buf);
         let stderr_buf = Arc::clone(&self.stderr_buf);
 
+        let mut inner = Arc::clone(&self.inner);
+        let exit_status = Arc::clone(&self.exit_status);
         let io_handle = handle.spawn(async move {
             let _ = tokio::join!(
+                async {
+                    let status = inner.await;
+                    *exit_status.lock().await = Some(ExitStatus {
+                        id,
+                        is_success: status.is_ok(),
+                        exit_code: status.ok().and_then(|s| s.code()),
+                    });
+                },
                 async {
                     use tokio::io::AsyncReadExt;
 

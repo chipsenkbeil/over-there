@@ -137,6 +137,46 @@ where
     }
 }
 
+pub async fn do_get_proc_status<F, R>(
+    state: Arc<ServerState>,
+    args: &DoGetProcStatusArgs,
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
+    debug!("do_get_proc_status: {:?}", args);
+
+    match state.procs.lock().await.get_mut(&args.id) {
+        // NOTE: We are killing and then WAITING for the process to die, which
+        //       would block, but seems to be required in order to properly
+        //       have the process clean up -- try_wait doesn't seem to work
+        Some(local_proc) => match local_proc.exit_status().await {
+            Some(exit_status) => {
+                respond(Content::ProcStatus(ProcStatusArgs {
+                    id: args.id,
+                    is_alive: false,
+                    exit_code: exit_status.exit_code,
+                }))
+                .await
+            }
+            None => {
+                respond(Content::ProcStatus(ProcStatusArgs {
+                    id: args.id,
+                    is_alive: true,
+                    exit_code: None,
+                }))
+                .await
+            }
+        },
+        None => {
+            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
+                .await
+        }
+    }
+}
+
 pub async fn do_kill_proc<F, R>(
     state: Arc<ServerState>,
     args: &DoKillProcArgs,
@@ -557,6 +597,99 @@ mod tests {
         match content.unwrap() {
             Content::IoError(IoErrorArgs { error_kind, .. }) => {
                 assert_eq!(error_kind, io::ErrorKind::InvalidInput);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn do_get_proc_status_should_send_status_if_process_still_alive() {
+        let state = Arc::new(ServerState::default());
+        let mut content: Option<Content> = None;
+
+        let id = 999;
+        let child = Command::new("sleep")
+            .arg("10")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
+
+        // Give process some time to start
+        delay_for(Duration::from_millis(10)).await;
+
+        do_get_proc_status(
+            Arc::clone(&state),
+            &DoGetProcStatusArgs { id },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+
+        match content.unwrap() {
+            Content::ProcStatus(ProcStatusArgs {
+                id: status_id,
+                is_alive,
+                exit_code,
+            }) => {
+                assert_eq!(status_id, id);
+                assert!(is_alive);
+                assert_eq!(exit_code, None);
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn do_get_proc_status_should_send_exit_status_if_process_exited() {
+        let state = Arc::new(ServerState::default());
+        let mut content: Option<Content> = None;
+
+        let id = 999;
+        let child = Command::new("echo")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        state
+            .procs
+            .lock()
+            .await
+            .insert(id, LocalProc::new(child).spawn());
+
+        // Give process some time to start
+        delay_for(Duration::from_millis(10)).await;
+
+        do_get_proc_status(
+            Arc::clone(&state),
+            &DoGetProcStatusArgs { id },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+
+        match content.unwrap() {
+            Content::ProcStatus(ProcStatusArgs {
+                id: exit_id,
+                is_alive,
+                exit_code,
+            }) => {
+                assert_eq!(exit_id, id);
+                assert!(!is_alive);
+                assert_eq!(exit_code, Some(0));
             }
             x => panic!("Bad content: {:?}", x),
         }
