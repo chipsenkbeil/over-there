@@ -1,5 +1,6 @@
 use log::error;
 use std::io;
+use std::pin::Pin;
 use std::process::Output;
 use std::sync::Arc;
 use tokio::{process::Child, runtime::Handle, sync::Mutex, task};
@@ -14,8 +15,8 @@ pub struct ExitStatus {
 #[derive(Debug)]
 pub struct LocalProc {
     id: u32,
-    inner: Arc<Child>,
-    exit_status: Arc<Mutex<Option<ExitStatus>>>,
+    inner: Child,
+    exit_status: Option<ExitStatus>,
 
     supports_stdin: bool,
     supports_stdout: bool,
@@ -35,11 +36,11 @@ impl LocalProc {
     pub fn new(child: Child) -> Self {
         Self {
             id: child.id(),
-            exit_status: Arc::new(Mutex::new(None)),
+            exit_status: None,
             supports_stdin: child.stdin.is_some(),
             supports_stdout: child.stdout.is_some(),
             supports_stderr: child.stderr.is_some(),
-            inner: Arc::new(child),
+            inner: child,
             io_handle: None,
             stdout_buf: Arc::new(Mutex::new(Vec::new())),
             stderr_buf: Arc::new(Mutex::new(Vec::new())),
@@ -54,8 +55,31 @@ impl LocalProc {
         &self.inner
     }
 
-    pub async fn exit_status(&self) -> Option<ExitStatus> {
-        *self.exit_status.lock().await
+    pub async fn exit_status(&mut self) -> Option<ExitStatus> {
+        use futures::future::{poll_fn, Future};
+        use std::task::Poll;
+
+        match self.exit_status {
+            None => {
+                let exit_status =
+                    poll_fn(|ctx| match Pin::new(&mut self.inner).poll(ctx) {
+                        Poll::Ready(res) => Poll::Ready(Some(res)),
+                        Poll::Pending => Poll::Ready(None),
+                    })
+                    .await;
+
+                if let Some(status) = exit_status {
+                    self.exit_status = Some(ExitStatus {
+                        id: self.id,
+                        is_success: status.is_ok(),
+                        exit_code: status.ok().and_then(|s| s.code()),
+                    });
+                }
+
+                self.exit_status
+            }
+            x => x,
+        }
     }
 
     /// Spawns io-processing task for stdout/stderr
@@ -66,19 +90,7 @@ impl LocalProc {
             return self;
         }
 
-        // TODO: Make child be Option<Child> so we can take it to move
-        //       into the exit status check below; or, to support the
-        //       kill and wait method, we need to use Arc<Mutex>>?
-        //       but awaiting would lock indefinitely, so maybe we
-        //       don't need the mutex? -- Arc doesn't seem to work on
-        //       first glance
-        //
-        // TODO: Add new field that is stdin of Option<ChildStdin> that
-        //       will be filled here via a take on the child so we don't
-        //       need to keep around the child directly
-
         let handle = Handle::current();
-        let id = self.id;
 
         let stdout = self.inner.stdout.take();
         let stderr = self.inner.stderr.take();
@@ -86,18 +98,8 @@ impl LocalProc {
         let stdout_buf = Arc::clone(&self.stdout_buf);
         let stderr_buf = Arc::clone(&self.stderr_buf);
 
-        let mut inner = Arc::clone(&self.inner);
-        let exit_status = Arc::clone(&self.exit_status);
         let io_handle = handle.spawn(async move {
             let _ = tokio::join!(
-                async {
-                    let status = inner.await;
-                    *exit_status.lock().await = Some(ExitStatus {
-                        id,
-                        is_success: status.is_ok(),
-                        exit_code: status.ok().and_then(|s| s.code()),
-                    });
-                },
                 async {
                     use tokio::io::AsyncReadExt;
 
@@ -205,7 +207,7 @@ mod tests {
     use std::process::Stdio;
     use std::time::Duration;
     use tokio::process::Command;
-    use tokio::time::timeout;
+    use tokio::time::{delay_for, timeout};
     use tokio::{fs, io};
 
     #[tokio::test]
@@ -509,6 +511,62 @@ mod tests {
         .unwrap();
 
         assert!(buf.len() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_exit_status_should_return_none_if_not_exited() {
+        let child = Command::new("sleep")
+            .arg("60")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut local_proc = LocalProc::new(child).spawn();
+        match local_proc.exit_status().await {
+            None => (),
+            Some(x) => panic!("Unexpected content: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_exit_status_should_return_some_status_if_exited() {
+        let child = Command::new("echo")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let id = child.id();
+        let mut local_proc = LocalProc::new(child).spawn();
+
+        // Give process some time to run and complete
+        delay_for(Duration::from_millis(10)).await;
+
+        match local_proc.exit_status().await {
+            Some(status) => assert_eq!(status.id, id),
+            None => panic!("Unexpectedly got no result"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_exit_status_should_support_being_called_multiple_times_after_exit(
+    ) {
+        let child = Command::new("echo")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let mut local_proc = LocalProc::new(child).spawn();
+
+        // Give process some time to run and complete
+        delay_for(Duration::from_millis(10)).await;
+
+        assert!(local_proc.exit_status().await.is_some());
+        assert!(local_proc.exit_status().await.is_some());
     }
 
     #[tokio::test]

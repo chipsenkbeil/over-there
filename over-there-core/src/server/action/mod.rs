@@ -180,6 +180,9 @@ impl<T> Executor<T> {
             Content::DoGetStderr(args) => {
                 handler::proc::do_get_stderr(state, args, do_respond).await
             }
+            Content::DoGetProcStatus(args) => {
+                handler::proc::do_get_proc_status(state, args, do_respond).await
+            }
             Content::DoKillProc(args) => {
                 handler::proc::do_kill_proc(state, args, do_respond).await
             }
