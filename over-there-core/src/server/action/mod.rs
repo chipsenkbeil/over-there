@@ -9,6 +9,7 @@ use over_there_derive::Error;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Error)]
@@ -69,8 +70,9 @@ impl Executor<Vec<u8>> {
     ) -> Result<(), ActionError> {
         let header = msg.header.clone();
         let origin_sender = self.origin_sender;
+        let addr = origin_sender.addr;
 
-        Self::execute_impl(state, msg, move |content: Content| {
+        Self::execute_impl(state, msg, addr, move |content: Content| {
             trace!("Response: {:?}", content);
             Self::respond(content, header, origin_sender)
         })
@@ -109,8 +111,9 @@ impl Executor<(Vec<u8>, SocketAddr)> {
     ) -> Result<(), ActionError> {
         let header = msg.header.clone();
         let origin_sender = self.origin_sender;
+        let addr = origin_sender.addr;
 
-        Self::execute_impl(state, msg, move |content: Content| {
+        Self::execute_impl(state, msg, addr, move |content: Content| {
             trace!("Response: {:?}", content);
             Self::respond(content, header, origin_sender)
         })
@@ -137,6 +140,7 @@ impl<T> Executor<T> {
     async fn execute_impl<F, R>(
         state: Arc<ServerState>,
         msg: Msg,
+        origin: SocketAddr,
         do_respond: F,
     ) -> Result<(), ActionError>
     where
@@ -144,6 +148,11 @@ impl<T> Executor<T> {
         R: Future<Output = Result<(), ActionError>>,
     {
         trace!("Executing msg: {:?}", msg);
+
+        // Update last time we received a message from the connection
+        if let Some(conn) = state.conns.lock().await.get_mut(&origin) {
+            *conn = Instant::now();
+        }
 
         match &msg.content {
             Content::Heartbeat => {
