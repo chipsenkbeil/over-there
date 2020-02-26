@@ -6,6 +6,7 @@ use crate::{
 };
 use log::trace;
 use over_there_derive::Error;
+use std::collections::hash_map::Entry;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -136,6 +137,18 @@ impl Executor<(Vec<u8>, SocketAddr)> {
 }
 
 impl<T> Executor<T> {
+    /// Update last time we received a message from the connection
+    fn update_origin_last_touched(origin: SocketAddr) {
+        match state.conns.lock().await.entry(origin) {
+            Entry::Occupied(mut e) => {
+                e.insert(Instant::now());
+            }
+            Entry::Vacant(e) => {
+                e.insert(Instant::now());
+            }
+        }
+    }
+
     /// Evaluate a message's content and potentially respond using the provided responder
     async fn execute_impl<F, R>(
         state: Arc<ServerState>,
@@ -148,11 +161,7 @@ impl<T> Executor<T> {
         R: Future<Output = Result<(), ActionError>>,
     {
         trace!("Executing msg: {:?}", msg);
-
-        // Update last time we received a message from the connection
-        if let Some(conn) = state.conns.lock().await.get_mut(&origin) {
-            *conn = Instant::now();
-        }
+        Self::update_origin_last_touched(origin);
 
         match &msg.content {
             Content::Heartbeat => {
@@ -197,5 +206,16 @@ impl<T> Executor<T> {
             }
             _ => Err(ActionError::Unknown),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_executor_update_origin_last_touched_should_create_a_new_entry_if_missing(
+    ) {
+        unimplemented!();
     }
 }
