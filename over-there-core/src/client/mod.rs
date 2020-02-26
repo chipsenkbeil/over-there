@@ -22,7 +22,7 @@ use over_there_utils::Either;
 use over_there_wire::{
     self as wire, Authenticator, Bicrypter, NetTransmission, Wire,
 };
-use proc::RemoteProc;
+use proc::{RemoteProc, RemoteProcStatus};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -533,10 +533,31 @@ impl Client {
     }
 
     /// Requests to kill a remote process on the server
+    pub async fn ask_proc_status(
+        &mut self,
+        proc: &RemoteProc,
+    ) -> Result<RemoteProcStatus, ExecAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoGetProcStatus(DoGetProcStatusArgs {
+                id: proc.id,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::ProcStatus(args) => Ok(From::from(args)),
+            x => Err(make_exec_ask_error(x)),
+        }
+    }
+
+    /// Requests to kill a remote process on the server
     pub async fn ask_proc_kill(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<(), ExecAskError> {
+    ) -> Result<RemoteProcStatus, ExecAskError> {
         let result = self
             .ask(Msg::from(Content::DoKillProc(DoKillProcArgs {
                 id: proc.id,
@@ -551,7 +572,7 @@ impl Client {
             Content::ProcStatus(args) if args.is_alive => {
                 Err(ExecAskError::FailedToKill)
             }
-            Content::ProcStatus(_) => Ok(()),
+            Content::ProcStatus(x) => Ok(From::from(x)),
             x => Err(make_exec_ask_error(x)),
         }
     }

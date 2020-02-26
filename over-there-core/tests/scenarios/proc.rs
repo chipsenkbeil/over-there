@@ -1,4 +1,4 @@
-use over_there_core::{Client, RemoteProc};
+use over_there_core::{Client, ExecAskError, RemoteProc};
 use std::time::{Duration, Instant};
 
 const OUTPUT_TIMEOUT: Duration = Duration::from_millis(2500);
@@ -24,6 +24,15 @@ pub async fn async_test(mut client: Client) {
         wait_for_nonempty_output(&mut client, &proc, OUTPUT_TIMEOUT).await;
     assert_eq!(output, "test\n");
 
+    // Check the status of the proc, which should still be alive
+    let status = client.ask_proc_status(&proc).await.unwrap();
+    assert_eq!(status.id, proc.id(), "Wrong proc id returned with status");
+    assert!(status.is_alive, "Proc reported dead when shouldn't be");
+    assert!(
+        status.exit_code.is_none(),
+        "Got exit code for a running proc"
+    );
+
     // Write again to proc to prove that it hasn't closed input
     client
         .ask_write_stdin(&proc, b"another test\n")
@@ -33,6 +42,22 @@ pub async fn async_test(mut client: Client) {
     let output =
         wait_for_nonempty_output(&mut client, &proc, OUTPUT_TIMEOUT).await;
     assert_eq!(output, "another test\n");
+
+    // Kill our proc and verify it's dead
+    let status = client.ask_proc_kill(&proc).await.unwrap();
+    assert_eq!(status.id, proc.id(), "Wrong proc id returned with status");
+    assert!(
+        !status.is_alive,
+        "Proc reported running when should be dead"
+    );
+
+    // Should not be able to get status of proc because it's been removed
+    match client.ask_proc_status(&proc).await.unwrap_err() {
+        ExecAskError::IoError(x) => {
+            assert_eq!(x.kind(), std::io::ErrorKind::InvalidInput)
+        }
+        x => panic!("Unexpected error: {:?}", x),
+    }
 }
 
 async fn wait_for_nonempty_output(
