@@ -178,6 +178,15 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                 if !contents.is_empty() {
                     eprintln!("{}", String::from_utf8_lossy(&contents));
                 }
+
+                // Exit the loop if the proc has exited
+                let status = client
+                    .ask_proc_status(&proc)
+                    .await
+                    .expect("Failed to get proc status");
+                if !status.is_alive {
+                    break;
+                }
             }
         }
         client::Subcommand::ReattachExec(_c) => unimplemented!(),
