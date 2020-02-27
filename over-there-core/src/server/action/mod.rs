@@ -137,18 +137,6 @@ impl Executor<(Vec<u8>, SocketAddr)> {
 }
 
 impl<T> Executor<T> {
-    /// Update last time we received a message from the connection
-    fn update_origin_last_touched(origin: SocketAddr) {
-        match state.conns.lock().await.entry(origin) {
-            Entry::Occupied(mut e) => {
-                e.insert(Instant::now());
-            }
-            Entry::Vacant(e) => {
-                e.insert(Instant::now());
-            }
-        }
-    }
-
     /// Evaluate a message's content and potentially respond using the provided responder
     async fn execute_impl<F, R>(
         state: Arc<ServerState>,
@@ -161,7 +149,7 @@ impl<T> Executor<T> {
         R: Future<Output = Result<(), ActionError>>,
     {
         trace!("Executing msg: {:?}", msg);
-        Self::update_origin_last_touched(origin);
+        update_origin_last_touched(Arc::clone(&state), origin).await;
 
         match &msg.content {
             Content::Heartbeat => {
@@ -209,13 +197,62 @@ impl<T> Executor<T> {
     }
 }
 
+/// Update last time we received a message from the connection
+async fn update_origin_last_touched(
+    state: Arc<ServerState>,
+    origin: SocketAddr,
+) -> Option<Instant> {
+    match state.conns.lock().await.entry(origin) {
+        Entry::Occupied(mut e) => Some(e.insert(Instant::now())),
+        Entry::Vacant(e) => {
+            e.insert(Instant::now());
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_executor_update_origin_last_touched_should_create_a_new_entry_if_missing(
-    ) {
-        unimplemented!();
+    #[tokio::test]
+    async fn update_origin_last_touched_should_create_a_new_entry_if_missing() {
+        let state = Arc::new(ServerState::default());
+        let origin: SocketAddr = "127.0.0.1:60123".parse().unwrap();
+
+        let now = Instant::now();
+        let state_2 = Arc::clone(&state);
+        update_origin_last_touched(state_2, origin).await;
+
+        let new_touched = *state
+            .conns
+            .lock()
+            .await
+            .get(&origin)
+            .expect("No entry was made");
+        assert!(new_touched >= now, "Inserted time was in the past");
+    }
+
+    #[tokio::test]
+    async fn update_origin_last_touched_should_update_existing_entry() {
+        let state = Arc::new(ServerState::default());
+        let origin: SocketAddr = "127.0.0.1:60123".parse().unwrap();
+
+        let now = Instant::now();
+        state.conns.lock().await.insert(origin, now);
+
+        let state_2 = Arc::clone(&state);
+        let old_touched = update_origin_last_touched(state_2, origin).await;
+
+        let new_touched = *state
+            .conns
+            .lock()
+            .await
+            .get(&origin)
+            .expect("No entry was made");
+        assert!(
+            new_touched >= old_touched.expect("Old entry was not returned"),
+            "Inserted time was in the past"
+        );
     }
 }
