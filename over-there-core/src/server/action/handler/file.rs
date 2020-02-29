@@ -3,14 +3,20 @@ use crate::{
         io::{file::*, IoErrorArgs},
         Content,
     },
-    server::{action::ActionError, file::LocalFile, state::ServerState},
+    server::{
+        action::ActionError,
+        file::{
+            LocalFile, LocalFileReadError, LocalFileReadIoError,
+            LocalFileWriteError, LocalFileWriteIoError,
+        },
+        state::ServerState,
+    },
 };
 use log::debug;
-use rand::{rngs::OsRng, RngCore};
 use std::future::Future;
 use std::io;
 use std::sync::Arc;
-use tokio::fs::{self, OpenOptions};
+use tokio::fs;
 
 pub async fn do_open_file<F, R>(
     state: Arc<ServerState>,
@@ -23,24 +29,26 @@ where
 {
     debug!("do_open_file: {:?}", args);
 
-    match OpenOptions::new()
-        .create(args.create_if_missing)
-        .write(args.write_access)
-        .read(true)
-        .open(&args.path)
-        .await
+    // TODO: Check if file is already open based on canonical
+    //       path, and return it if it is, otherwise open it
+    //
+    //       Also, should check that the open we are doing
+    //       matches permissions for read/write access, otherwise
+    //       we want to yield an error
+    match LocalFile::open(
+        &args.path,
+        args.create_if_missing,
+        args.write_access,
+        args.read_access,
+    )
+    .await
     {
-        Ok(file) => {
-            let id = OsRng.next_u32();
-            let sig = OsRng.next_u32();
+        Ok(local_file) => {
+            let id = local_file.id();
+            let sig = local_file.sig();
 
             // Store the opened file so we can operate on it later
-            state
-                .files
-                .lock()
-                .await
-                .insert(id, LocalFile { id, sig, file });
-
+            state.files.lock().await.insert(id, local_file);
             respond(Content::FileOpened(FileOpenedArgs { id, sig })).await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,
@@ -59,47 +67,33 @@ where
     debug!("do_read_file: {:?}", args);
 
     match state.files.lock().await.get_mut(&args.id) {
-        Some(local_file) => {
-            if local_file.sig == args.sig {
-                match do_read_file_impl(&mut local_file.file).await {
-                    Ok(data) => {
-                        respond(Content::FileContents(FileContentsArgs {
-                            data,
-                        }))
-                        .await
-                    }
-                    Err(x) => respond(Content::IoError(x)).await,
-                }
-            } else {
+        Some(local_file) => match local_file.read_all(args.sig).await {
+            Ok(data) => {
+                respond(Content::FileContents(FileContentsArgs { data })).await
+            }
+            Err(LocalFileReadError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
                     sig: local_file.sig,
                 }))
                 .await
             }
-        }
+            Err(LocalFileReadError::IoError(x)) => {
+                respond(Content::IoError(match x {
+                    LocalFileReadIoError::SeekError(x) => {
+                        IoErrorArgs::from_error_with_prefix(x, "Seek(0): ")
+                    }
+                    LocalFileReadIoError::ReadToEndError(x) => {
+                        IoErrorArgs::from_error_with_prefix(x, "ReadToEnd: ")
+                    }
+                }))
+                .await
+            }
+        },
         None => {
             respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id)))
                 .await
         }
     }
-}
-
-async fn do_read_file_impl(
-    file: &mut fs::File,
-) -> Result<Vec<u8>, IoErrorArgs> {
-    use std::io::SeekFrom;
-    use tokio::io::AsyncReadExt;
-    let mut buf = Vec::new();
-
-    file.seek(SeekFrom::Start(0))
-        .await
-        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
-
-    file.read_to_end(&mut buf)
-        .await
-        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "ReadToEnd: "))?;
-
-    Ok(buf)
 }
 
 pub async fn do_write_file<F, R>(
@@ -115,25 +109,39 @@ where
 
     match state.files.lock().await.get_mut(&args.id) {
         Some(local_file) => {
-            if local_file.sig == args.sig {
-                match do_write_file_impl(&mut local_file.file, &args.data).await
-                {
-                    Ok(_) => {
-                        let new_sig = OsRng.next_u32();
-                        local_file.sig = new_sig;
-
-                        respond(Content::FileWritten(FileWrittenArgs {
-                            sig: new_sig,
-                        }))
-                        .await
-                    }
-                    Err(x) => respond(Content::IoError(x)).await,
+            match local_file.write_all(args.sig, &args.data).await {
+                Ok(_) => {
+                    respond(Content::FileWritten(FileWrittenArgs {
+                        sig: local_file.sig,
+                    }))
+                    .await
                 }
-            } else {
-                respond(Content::FileSigChanged(FileSigChangedArgs {
-                    sig: local_file.sig,
-                }))
-                .await
+                Err(LocalFileWriteError::SigMismatch) => {
+                    respond(Content::FileSigChanged(FileSigChangedArgs {
+                        sig: local_file.sig,
+                    }))
+                    .await
+                }
+                Err(LocalFileWriteError::IoError(x)) => {
+                    respond(Content::IoError(match x {
+                        LocalFileWriteIoError::SeekError(x) => {
+                            IoErrorArgs::from_error_with_prefix(x, "Seek(0): ")
+                        }
+                        LocalFileWriteIoError::SetLenError(x) => {
+                            IoErrorArgs::from_error_with_prefix(
+                                x,
+                                "SetLen(0): ",
+                            )
+                        }
+                        LocalFileWriteIoError::WriteAllError(x) => {
+                            IoErrorArgs::from_error_with_prefix(x, "WriteAll: ")
+                        }
+                        LocalFileWriteIoError::FlushError(x) => {
+                            IoErrorArgs::from_error_with_prefix(x, "Flush: ")
+                        }
+                    }))
+                    .await
+                }
             }
         }
         None => {
@@ -141,30 +149,6 @@ where
                 .await
         }
     }
-}
-
-async fn do_write_file_impl(
-    file: &mut fs::File,
-    buf: &[u8],
-) -> Result<(), IoErrorArgs> {
-    use std::io::SeekFrom;
-    use tokio::io::AsyncWriteExt;
-
-    file.seek(SeekFrom::Start(0))
-        .await
-        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "Seek(0): "))?;
-
-    file.set_len(0)
-        .await
-        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "SetLen(0): "))?;
-
-    file.write_all(buf)
-        .await
-        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "WriteAll: "))?;
-
-    file.flush()
-        .await
-        .map_err(|e| IoErrorArgs::from_error_with_prefix(e, "Flush: "))
 }
 
 pub async fn do_list_dir_contents<F, R>(
@@ -340,6 +324,7 @@ mod tests {
                 id,
                 sig,
                 file: tokio::fs::File::from_std(file),
+                path: "".into(),
             },
         );
 
@@ -406,6 +391,7 @@ mod tests {
                 id,
                 sig,
                 file: tokio::fs::File::from_std(file),
+                path: "".into(),
             },
         );
 
@@ -439,6 +425,7 @@ mod tests {
                 id,
                 sig: cur_sig,
                 file: tokio::fs::File::from_std(file),
+                path: "".into(),
             },
         );
 
@@ -476,6 +463,7 @@ mod tests {
                 id,
                 sig,
                 file: tokio::fs::File::from_std(file.try_clone().unwrap()),
+                path: "".into(),
             },
         );
 
@@ -536,6 +524,7 @@ mod tests {
                 id,
                 sig,
                 file: tokio::fs::File::from_std(file),
+                path: "".into(),
             },
         );
 
@@ -574,6 +563,7 @@ mod tests {
                 id,
                 sig: cur_sig,
                 file: tokio::fs::File::from_std(file),
+                path: "".into(),
             },
         );
 
