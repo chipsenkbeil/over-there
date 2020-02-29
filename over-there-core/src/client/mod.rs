@@ -25,7 +25,7 @@ use over_there_wire::{
 use proc::{RemoteProc, RemoteProcStatus};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::{
     io,
     net::{TcpStream, UdpSocket},
@@ -171,6 +171,9 @@ async fn tcp_event_handler(
     mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<Vec<u8>>)>,
 ) {
     while let Some((msg, _, _)) = rx.recv().await {
+        // Update the last time we received a msg from the server
+        state.lock().await.last_contact = Instant::now();
+
         if let Some(header) = msg.parent_header.as_ref() {
             state
                 .lock()
@@ -190,6 +193,9 @@ async fn udp_event_handler(
     )>,
 ) {
     while let Some((msg, _, _)) = rx.recv().await {
+        // Update the last time we received a msg from the server
+        state.lock().await.last_contact = Instant::now();
+
         if let Some(header) = msg.parent_header.as_ref() {
             state
                 .lock()

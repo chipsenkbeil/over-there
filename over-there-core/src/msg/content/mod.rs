@@ -35,11 +35,18 @@ pub enum Content {
     /// at the provided path
     DirContentsList(io::file::DirContentsListArgs),
 
-    /// This will be sent to indicate the desire to read/write a file
+    /// This will be sent to indicate the desire to read/write a file,
+    /// and can also be used to retrieve an already-open file's id/sig
     DoOpenFile(io::file::DoOpenFileArgs),
 
     /// This will be returned upon a file being opened or refreshed
     FileOpened(io::file::FileOpenedArgs),
+
+    /// This will be sent to indicate the desire to close an open file
+    DoCloseFile(io::file::DoCloseFileArgs),
+
+    /// This will be returned upon a file being closed
+    FileClosed(io::file::FileClosedArgs),
 
     /// This will be sent to indicate the desire to read a file's contents
     DoReadFile(io::file::DoReadFileArgs),

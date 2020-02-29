@@ -4,8 +4,13 @@ mod msg;
 mod server;
 
 pub use client::{
-    error::AskError, error::ExecAskError, error::FileAskError,
-    error::TellError, file::RemoteFile, proc::RemoteProc, Client,
+    error::AskError,
+    error::ExecAskError,
+    error::FileAskError,
+    error::TellError,
+    file::RemoteFile,
+    proc::{RemoteProc, RemoteProcStatus},
+    Client,
 };
 pub use event::{AddrEventManager, EventManager};
 pub use msg::{
