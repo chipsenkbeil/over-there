@@ -53,6 +53,18 @@ impl Into<io::Error> for LocalFileReadIoError {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum LocalFileRenameError {
+    SigMismatch,
+    IoError(io::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum LocalFileRemoveError {
+    SigMismatch,
+    IoError(io::Error),
+}
+
 #[derive(Debug)]
 pub struct LocalFile {
     /// Represents a unique id with which to lookup the file
@@ -118,6 +130,47 @@ impl LocalFile {
         self.path.as_path()
     }
 
+    /// Renames a file (if possible) using its underlying path as the origin
+    pub async fn rename(
+        &mut self,
+        sig: u32,
+        to: impl AsRef<Path>,
+    ) -> Result<(), LocalFileRenameError> {
+        if self.sig != sig {
+            return Err(LocalFileRenameError::SigMismatch);
+        }
+
+        fs::rename(self.path.as_path(), to.as_ref())
+            .await
+            .map_err(LocalFileRenameError::IoError)?;
+
+        // Update signature to reflect the change and update our internal
+        // path so that we can continue to do renames/removals properly
+        self.sig = OsRng.next_u32();
+        self.path = to.as_ref().to_path_buf();
+
+        Ok(())
+    }
+
+    /// Removes the file (if possible) using its underlying path
+    pub async fn remove(
+        &mut self,
+        sig: u32,
+    ) -> Result<(), LocalFileRemoveError> {
+        if self.sig != sig {
+            return Err(LocalFileRemoveError::SigMismatch);
+        }
+
+        fs::remove_file(self.path.as_path())
+            .await
+            .map_err(LocalFileRemoveError::IoError)?;
+
+        // Update signature to reflect the change
+        self.sig = OsRng.next_u32();
+
+        Ok(())
+    }
+
     /// Reads all contents of file from beginning to end
     pub async fn read_all(
         &mut self,
@@ -154,10 +207,6 @@ impl LocalFile {
             return Err(LocalFileWriteError::SigMismatch);
         }
 
-        // Update our sig before we even touch the file so we guarantee
-        // that any modification (even partial) is reflected as a change
-        self.sig = OsRng.next_u32();
-
         self.file
             .seek(SeekFrom::Start(0))
             .await
@@ -169,6 +218,10 @@ impl LocalFile {
             .await
             .map_err(LocalFileWriteIoError::SetLenError)
             .map_err(LocalFileWriteError::IoError)?;
+
+        // Update our sig after we first touch the file so we guarantee
+        // that any modification (even partial) is reflected as a change
+        self.sig = OsRng.next_u32();
 
         self.file
             .write_all(buf)
@@ -187,54 +240,361 @@ impl LocalFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Seek, SeekFrom, Write};
 
-    #[test]
-    fn local_file_id_should_return_associated_id() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_open_should_yield_error_if_file_missing_and_create_false(
+    ) {
+        match LocalFile::open("missingfile", false, true, true).await {
+            Err(x) => assert_eq!(x.kind(), io::ErrorKind::NotFound),
+            Ok(f) => panic!("Unexpectedly opened missing file: {:?}", f.path()),
+        }
     }
 
-    #[test]
-    fn local_file_sig_should_return_associated_sig() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_open_should_return_new_local_file_with_canonical_path()
+    {
+        let (path, result) = async {
+            let f = tempfile::NamedTempFile::new().unwrap();
+            let path = f.path();
+            let result = LocalFile::open(path, false, true, true).await;
+            (path.to_owned(), result)
+        }
+        .await;
+
+        match result {
+            Ok(f) => assert_eq!(f.path(), path),
+            Err(x) => panic!("Failed to open file: {}", x),
+        }
     }
 
-    #[test]
-    fn local_file_path_should_return_associated_path() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_id_should_return_associated_id() {
+        let lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+
+        assert_eq!(lf.id, lf.id());
     }
 
-    #[test]
-    fn local_file_read_all_should_yield_error_if_provided_sig_is_different() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_sig_should_return_associated_sig() {
+        let lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+
+        assert_eq!(lf.sig, lf.sig());
     }
 
-    #[test]
-    fn local_file_read_all_should_yield_error_if_file_not_readable() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_path_should_return_associated_path() {
+        let path_str = "test_cheeseburger";
+        let lf = LocalFile::new(
+            File::from_std(tempfile::tempfile().unwrap()),
+            path_str,
+        );
+
+        assert_eq!(Path::new(path_str), lf.path());
     }
 
-    #[test]
-    fn local_file_read_all_should_return_empty_if_file_empty() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_read_all_should_yield_error_if_provided_sig_is_different(
+    ) {
+        let mut lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+
+        let sig = lf.sig();
+        match lf.read_all(sig + 1).await {
+            Err(LocalFileReadError::SigMismatch) => {
+                assert_eq!(lf.sig(), sig, "Signature changed after error");
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+            Ok(_) => panic!("Unexpectedly read file with bad sig"),
+        }
     }
 
-    #[test]
-    fn local_file_read_all_should_return_all_file_content_from_start() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_read_all_should_yield_error_if_file_not_readable() {
+        let result = async {
+            let f = tempfile::NamedTempFile::new().unwrap();
+            let path = f.path();
+            LocalFile::open(path, false, true, false).await
+        }
+        .await;
+
+        let mut lf = result.expect("Failed to open file");
+        let sig = lf.sig();
+
+        match lf.read_all(sig).await {
+            Err(LocalFileReadError::IoError(
+                LocalFileReadIoError::ReadToEndError(_),
+            )) => {
+                assert_eq!(
+                    sig,
+                    lf.sig(),
+                    "Signature was changed when no modification happened"
+                );
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+            Ok(_) => panic!("Read succeeded unexpectedly"),
+        }
     }
 
-    #[test]
-    fn local_file_write_allshould_yield_error_if_provided_sig_is_different() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_read_all_should_return_empty_if_file_empty() {
+        let mut lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let sig = lf.sig();
+
+        match lf.read_all(sig).await {
+            Ok(contents) => {
+                assert!(
+                    contents.is_empty(),
+                    "Got non-empty contents from empty file"
+                );
+                assert_eq!(
+                    sig,
+                    lf.sig(),
+                    "Signature was changed when no modification happened"
+                );
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+        }
     }
 
-    #[test]
-    fn local_file_write_all_should_yield_error_if_file_not_writeable() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_read_all_should_return_all_file_content_from_start() {
+        let contents = b"some contents";
+
+        let mut f = tempfile::tempfile().unwrap();
+        f.write_all(contents).unwrap();
+
+        let mut lf = LocalFile::new(File::from_std(f), "");
+        let sig = lf.sig();
+
+        match lf.read_all(sig).await {
+            Ok(read_contents) => {
+                assert_eq!(
+                    read_contents, contents,
+                    "Read contents was different than expected: {:?}",
+                    read_contents
+                );
+                assert_eq!(
+                    sig,
+                    lf.sig(),
+                    "Signature was changed when no modification happened"
+                );
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+        }
     }
 
-    #[test]
-    fn local_file_write_all_should_overwrite_file_with_new_contents() {
-        unimplemented!();
+    #[tokio::test]
+    async fn local_file_write_all_should_yield_error_if_provided_sig_is_different(
+    ) {
+        let mut lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+
+        let sig = lf.sig();
+        match lf.write_all(sig + 1, b"some contents").await {
+            Err(LocalFileWriteError::SigMismatch) => {
+                assert_eq!(lf.sig(), sig, "Signature changed after error");
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+            Ok(_) => panic!("Unexpectedly removed file with bad sig"),
+        }
+    }
+
+    #[tokio::test]
+    async fn local_file_write_all_should_yield_error_if_file_not_writeable() {
+        let result = async {
+            let f = tempfile::NamedTempFile::new().unwrap();
+            let path = f.path();
+            LocalFile::open(path, false, false, true).await
+        }
+        .await;
+
+        let mut lf = result.expect("Failed to open file");
+        let sig = lf.sig();
+
+        match lf.write_all(sig, b"some content").await {
+            Err(LocalFileWriteError::IoError(
+                LocalFileWriteIoError::SetLenError(_),
+            )) => {
+                assert_eq!(
+                    sig,
+                    lf.sig(),
+                    "Signature was changed when no modification happened"
+                );
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+            Ok(_) => panic!("Write succeeded unexpectedly"),
+        }
+    }
+
+    #[tokio::test]
+    async fn local_file_write_all_should_overwrite_file_with_new_contents() {
+        let mut f = tempfile::tempfile().unwrap();
+        let mut buf = Vec::new();
+
+        // Load the file as a LocalFile
+        let mut lf = LocalFile::new(File::from_std(f.try_clone().unwrap()), "");
+        let data = vec![1, 2, 3];
+
+        // Put some arbitrary data into the file
+        f.write_all(b"some existing data").unwrap();
+
+        // Overwrite the existing data
+        let sig = lf.sig();
+        lf.write_all(sig, &data).await.unwrap();
+
+        // Verify the data we just wrote
+        f.seek(SeekFrom::Start(0)).unwrap();
+        f.read_to_end(&mut buf).unwrap();
+        assert_ne!(sig, lf.sig(), "Sig was not updated after write");
+        assert_eq!(buf, data);
+
+        // Overwrite the existing data (again)
+        let sig = lf.sig();
+        lf.write_all(sig, &data).await.unwrap();
+
+        // Verify the data we just wrote
+        f.seek(SeekFrom::Start(0)).unwrap();
+        buf.clear();
+        f.read_to_end(&mut buf).unwrap();
+        assert_ne!(sig, lf.sig(), "Sig was not updated after write");
+        assert_eq!(buf, data);
+    }
+
+    #[tokio::test]
+    async fn local_file_rename_should_yield_error_if_provided_sig_is_different()
+    {
+        let mut lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+
+        let sig = lf.sig();
+        match lf.rename(sig + 1, "something_else").await {
+            Err(LocalFileRenameError::SigMismatch) => {
+                assert_eq!(lf.sig(), sig, "Signature changed after error");
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+            Ok(_) => panic!("Unexpectedly renamed file with bad sig"),
+        }
+    }
+
+    #[tokio::test]
+    async fn local_file_rename_should_yield_error_if_underlying_path_is_missing(
+    ) {
+        let mut lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+
+        let sig = lf.sig();
+        match lf.rename(sig, "something_else").await {
+            Err(LocalFileRenameError::IoError(_)) => {
+                assert_eq!(lf.sig(), sig, "Signature changed after error")
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+            Ok(_) => panic!("Unexpectedly renamed file with bad path"),
+        }
+    }
+
+    #[tokio::test]
+    async fn local_file_rename_should_yield_error_if_new_name_on_different_mount_point(
+    ) {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let path = f.path();
+
+        let mut lf = LocalFile::new(
+            File::from_std(f.as_file().try_clone().unwrap()),
+            path,
+        );
+
+        // NOTE: Renaming when using temp file seems to trigger this, so using
+        //       it as a test case
+        let sig = lf.sig();
+        match lf.rename(sig, "renamed_file").await {
+            Err(_) => {
+                assert_eq!(lf.sig(), sig, "Signature changed after error")
+            }
+            Ok(_) => panic!("Unexpectedly suceeded in rename: {:?}", lf.path()),
+        }
+    }
+
+    #[tokio::test]
+    async fn local_file_rename_should_move_file_to_another_location_by_path() {
+        let mut lf = LocalFile::open("file_to_rename", true, true, true)
+            .await
+            .expect("Failed to open");
+        let sig = lf.sig();
+
+        // Do rename and verify that the file at the new path exists
+        assert!(
+            fs::read("renamed_file").await.is_err(),
+            "File already exists at rename path"
+        );
+        lf.rename(sig, "renamed_file")
+            .await
+            .expect("Failed to rename");
+        assert!(
+            fs::read("renamed_file").await.is_ok(),
+            "File did not get renamed to new path"
+        );
+        fs::remove_file("renamed_file")
+            .await
+            .expect("Failed to clean up file");
+
+        // Verify signature changed
+        assert_ne!(lf.sig(), sig);
+    }
+
+    #[tokio::test]
+    async fn local_file_remove_should_yield_error_if_provided_sig_is_different()
+    {
+        let mut lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+
+        let sig = lf.sig();
+        match lf.remove(sig + 1).await {
+            Err(LocalFileRemoveError::SigMismatch) => {
+                assert_eq!(lf.sig(), sig, "Signature changed after error");
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+            Ok(_) => panic!("Unexpectedly removed file with bad sig"),
+        }
+    }
+
+    #[tokio::test]
+    async fn local_file_remove_should_yield_error_if_underlying_path_is_missing(
+    ) {
+        let mut lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+
+        let sig = lf.sig();
+        match lf.remove(sig).await {
+            Err(LocalFileRemoveError::IoError(_)) => {
+                assert_eq!(lf.sig(), sig, "Signature changed after error");
+            }
+            Err(x) => panic!("Unexpected error: {}", x),
+            Ok(_) => panic!("Unexpectedly removed file with bad path"),
+        }
+    }
+
+    #[tokio::test]
+    async fn local_file_remove_should_remove_the_underlying_file_by_path() {
+        let f = tempfile::NamedTempFile::new().unwrap();
+        let path = f.path();
+
+        let mut lf = LocalFile::new(
+            File::from_std(f.as_file().try_clone().unwrap()),
+            path,
+        );
+
+        let sig = lf.sig();
+
+        // Do reomve and verify that the file at path is gone
+        assert!(fs::read(path).await.is_ok(), "File already missing at path");
+        lf.remove(sig).await.unwrap();
+        assert!(fs::read(path).await.is_err(), "File still exists at path");
+
+        // Verify signature changed
+        assert_ne!(lf.sig(), sig);
     }
 }
