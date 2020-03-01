@@ -72,7 +72,7 @@ pub struct LocalFile {
 }
 
 impl LocalFile {
-    pub fn new(file: File, path: PathBuf) -> Self {
+    pub(crate) fn new(file: File, path: PathBuf) -> Self {
         let id = OsRng.next_u32();
         let sig = OsRng.next_u32();
 
