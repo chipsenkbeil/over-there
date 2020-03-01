@@ -1,4 +1,5 @@
 mod action;
+pub mod dir;
 pub mod file;
 pub mod proc;
 pub mod state;

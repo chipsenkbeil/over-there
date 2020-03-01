@@ -17,7 +17,15 @@ pub use msg::{
     content::{self, Content},
     Msg, MsgError,
 };
-pub use server::{file::LocalFile, proc::LocalProc, Server};
+pub use server::{
+    dir::{LocalDir, LocalDirEntriesError, LocalDirEntry},
+    file::{
+        LocalFile, LocalFileReadError, LocalFileReadIoError,
+        LocalFileWriteError, LocalFileWriteIoError,
+    },
+    proc::{ExitStatus, LocalProc},
+    Server,
+};
 
 use over_there_wire::{Authenticator, Bicrypter};
 use std::net::SocketAddr;

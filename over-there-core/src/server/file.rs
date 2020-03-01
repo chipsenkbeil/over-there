@@ -43,6 +43,7 @@ pub enum LocalFileReadIoError {
     SeekError(io::Error),
     ReadToEndError(io::Error),
 }
+
 impl Into<io::Error> for LocalFileReadIoError {
     fn into(self: Self) -> io::Error {
         match self {
@@ -55,24 +56,24 @@ impl Into<io::Error> for LocalFileReadIoError {
 #[derive(Debug)]
 pub struct LocalFile {
     /// Represents a unique id with which to lookup the file
-    pub(crate) id: u32,
+    id: u32,
 
     /// Represents a unique signature that acts as a barrier to prevent
     /// unexpected operations on the file from a client with an outdated
     /// understanding of the file
-    pub(crate) sig: u32,
+    sig: u32,
 
     /// Represents an underlying file descriptor with which we can read,
     /// write, and perform other operations
-    pub(crate) file: File,
+    file: File,
 
     /// Represents the absolute path to the file; any movement
     /// of the file will result in changing the path
-    pub(crate) path: PathBuf,
+    path: PathBuf,
 }
 
 impl LocalFile {
-    pub(crate) fn new(file: File, path: PathBuf) -> Self {
+    pub(crate) fn new(file: File, path: impl AsRef<Path>) -> Self {
         let id = OsRng.next_u32();
         let sig = OsRng.next_u32();
 
@@ -80,7 +81,7 @@ impl LocalFile {
             id,
             sig,
             file,
-            path,
+            path: path.as_ref().to_path_buf(),
         }
     }
 
@@ -113,8 +114,8 @@ impl LocalFile {
         self.sig
     }
 
-    pub fn path(&self) -> &PathBuf {
-        &self.path
+    pub fn path(&self) -> &Path {
+        self.path.as_path()
     }
 
     /// Reads all contents of file from beginning to end
@@ -180,5 +181,60 @@ impl LocalFile {
             .await
             .map_err(LocalFileWriteIoError::FlushError)
             .map_err(LocalFileWriteError::IoError)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_file_id_should_return_associated_id() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn local_file_sig_should_return_associated_sig() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn local_file_path_should_return_associated_path() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn local_file_read_all_should_yield_error_if_provided_sig_is_different() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn local_file_read_all_should_yield_error_if_file_not_readable() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn local_file_read_all_should_return_empty_if_file_empty() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn local_file_read_all_should_return_all_file_content_from_start() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn local_file_write_allshould_yield_error_if_provided_sig_is_different() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn local_file_write_all_should_yield_error_if_file_not_writeable() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn local_file_write_all_should_overwrite_file_with_new_contents() {
+        unimplemented!();
     }
 }

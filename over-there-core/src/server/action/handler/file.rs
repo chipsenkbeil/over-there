@@ -5,6 +5,7 @@ use crate::{
     },
     server::{
         action::ActionError,
+        dir::{LocalDir, LocalDirEntry},
         file::{
             LocalFile, LocalFileReadError, LocalFileReadIoError,
             LocalFileWriteError, LocalFileWriteIoError,
@@ -13,10 +14,10 @@ use crate::{
     },
 };
 use log::debug;
+use std::convert::TryFrom;
 use std::future::Future;
 use std::io;
 use std::sync::Arc;
-use tokio::fs;
 
 pub async fn do_open_file<F, R>(
     state: Arc<ServerState>,
@@ -73,7 +74,7 @@ where
             }
             Err(LocalFileReadError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
-                    sig: local_file.sig,
+                    sig: local_file.sig(),
                 }))
                 .await
             }
@@ -112,13 +113,13 @@ where
             match local_file.write_all(args.sig, &args.data).await {
                 Ok(_) => {
                     respond(Content::FileWritten(FileWrittenArgs {
-                        sig: local_file.sig,
+                        sig: local_file.sig(),
                     }))
                     .await
                 }
                 Err(LocalFileWriteError::SigMismatch) => {
                     respond(Content::FileSigChanged(FileSigChangedArgs {
-                        sig: local_file.sig,
+                        sig: local_file.sig(),
                     }))
                     .await
                 }
@@ -162,39 +163,50 @@ where
 {
     debug!("do_list_dir_contents: {:?}", args);
 
-    match lookup_entries(&args.path).await {
-        Ok(entries) => {
-            respond(Content::DirContentsList(From::from(entries))).await
+    match LocalDir::lookup_entries(&args.path).await {
+        Ok(local_entries) => {
+            let entries: io::Result<Vec<DirEntry>> =
+                local_entries.into_iter().map(DirEntry::try_from).collect();
+            match entries {
+                Ok(entries) => {
+                    respond(Content::DirContentsList(From::from(entries))).await
+                }
+                Err(x) => respond(Content::IoError(From::from(x))).await,
+            }
         }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
+        Err(x) => {
+            let e: io::Error = x.into();
+            respond(Content::IoError(From::from(e))).await
+        }
     }
 }
 
-async fn lookup_entries(path: &str) -> Result<Vec<DirEntry>, io::Error> {
-    let mut entries = Vec::new();
-    let mut dir_stream = fs::read_dir(path).await?;
-    while let Some(entry) = dir_stream.next_entry().await? {
-        let file_type = entry.file_type().await?;
-        entries.push(DirEntry {
-            path: entry.path().into_os_string().into_string().map_err(
-                |_| {
+impl TryFrom<LocalDirEntry> for DirEntry {
+    type Error = io::Error;
+
+    fn try_from(local_dir_entry: LocalDirEntry) -> Result<Self, Self::Error> {
+        Ok(Self {
+            path: local_dir_entry
+                .path
+                .into_os_string()
+                .into_string()
+                .map_err(|_| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
                         "OS String does not contain valid unicode",
                     )
-                },
-            )?,
-            is_file: file_type.is_file(),
-            is_dir: file_type.is_dir(),
-            is_symlink: file_type.is_symlink(),
-        });
+                })?,
+            is_file: local_dir_entry.is_file,
+            is_dir: local_dir_entry.is_dir,
+            is_symlink: local_dir_entry.is_symlink,
+        })
     }
-    Ok(entries)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
 
     #[tokio::test]
     async fn do_open_file_should_send_success_if_create_flag_set_and_opening_new_file(
@@ -228,7 +240,7 @@ mod tests {
             Content::FileOpened(args) => {
                 let x = state.files.lock().await;
                 let local_file = x.get(&args.id).unwrap();
-                assert_eq!(args.sig, local_file.sig);
+                assert_eq!(args.sig, local_file.sig());
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -262,7 +274,7 @@ mod tests {
             Content::FileOpened(args) => {
                 let x = state.files.lock().await;
                 let local_file = x.get(&args.id).unwrap();
-                assert_eq!(args.sig, local_file.sig);
+                assert_eq!(args.sig, local_file.sig());
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -310,23 +322,17 @@ mod tests {
         let mut content: Option<Content> = None;
         let file_data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let id = 999;
-        let sig = 12345;
         let mut file = tempfile::tempfile().unwrap();
 
         use std::io::Write;
         file.write_all(&file_data).unwrap();
         file.flush().unwrap();
 
-        state.files.lock().await.insert(
-            id,
-            LocalFile {
-                id,
-                sig,
-                file: tokio::fs::File::from_std(file),
-                path: "".into(),
-            },
-        );
+        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
+        let id = local_file.id();
+        let sig = local_file.sig();
+
+        state.files.lock().await.insert(id, local_file);
 
         do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
@@ -371,8 +377,6 @@ mod tests {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
-        let id = 999;
-        let sig = 12345;
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
 
         use std::io::Write;
@@ -385,15 +389,11 @@ mod tests {
         file.write_all(&vec![1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
         file.flush().unwrap();
 
-        state.files.lock().await.insert(
-            id,
-            LocalFile {
-                id,
-                sig,
-                file: tokio::fs::File::from_std(file),
-                path: "".into(),
-            },
-        );
+        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
+        let id = local_file.id();
+        let sig = local_file.sig();
+
+        state.files.lock().await.insert(id, local_file);
 
         do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
@@ -415,23 +415,17 @@ mod tests {
     async fn do_read_file_should_send_error_if_file_sig_has_changed() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
-
-        let id = 999;
-        let cur_sig = 12345;
         let file = tempfile::tempfile().unwrap();
-        state.files.lock().await.insert(
-            id,
-            LocalFile {
-                id,
-                sig: cur_sig,
-                file: tokio::fs::File::from_std(file),
-                path: "".into(),
-            },
-        );
+
+        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
+        let id = local_file.id();
+        let sig = local_file.sig();
+
+        state.files.lock().await.insert(id, local_file);
 
         do_read_file(
             Arc::clone(&state),
-            &DoReadFileArgs { id, sig: 99999 },
+            &DoReadFileArgs { id, sig: sig + 1 },
             |c| {
                 content = Some(c);
                 async { Ok(()) }
@@ -441,8 +435,8 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs { sig }) => {
-                assert_eq!(sig, cur_sig);
+            Content::FileSigChanged(FileSigChangedArgs { sig: cur_sig }) => {
+                assert_eq!(cur_sig, sig);
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -454,18 +448,16 @@ mod tests {
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let id = 999;
-        let sig = 12345;
         let mut file = tempfile::tempfile().unwrap();
-        state.files.lock().await.insert(
-            id,
-            LocalFile {
-                id,
-                sig,
-                file: tokio::fs::File::from_std(file.try_clone().unwrap()),
-                path: "".into(),
-            },
+
+        let local_file = LocalFile::new(
+            tokio::fs::File::from_std(file.try_clone().unwrap()),
+            "",
         );
+        let id = local_file.id();
+        let sig = local_file.sig();
+
+        state.files.lock().await.insert(id, local_file);
 
         do_write_file(
             Arc::clone(&state),
@@ -506,9 +498,6 @@ mod tests {
     async fn do_write_file_should_send_error_if_not_writeable() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
-
-        let id = 999;
-        let sig = 12345;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
@@ -518,15 +507,12 @@ mod tests {
             .create(false)
             .open(tmp_file.path())
             .unwrap();
-        state.files.lock().await.insert(
-            id,
-            LocalFile {
-                id,
-                sig,
-                file: tokio::fs::File::from_std(file),
-                path: "".into(),
-            },
-        );
+
+        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
+        let id = local_file.id();
+        let sig = local_file.sig();
+
+        state.files.lock().await.insert(id, local_file);
 
         do_write_file(
             Arc::clone(&state),
@@ -554,24 +540,19 @@ mod tests {
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let id = 999;
-        let cur_sig = 12345;
         let file = tempfile::tempfile().unwrap();
-        state.files.lock().await.insert(
-            id,
-            LocalFile {
-                id,
-                sig: cur_sig,
-                file: tokio::fs::File::from_std(file),
-                path: "".into(),
-            },
-        );
+
+        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
+        let id = local_file.id();
+        let sig = local_file.sig();
+
+        state.files.lock().await.insert(id, local_file);
 
         do_write_file(
             Arc::clone(&state),
             &DoWriteFileArgs {
                 id,
-                sig: 99999,
+                sig: sig + 1,
                 data: data.clone(),
             },
             |c| {
@@ -583,8 +564,8 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs { sig }) => {
-                assert_eq!(sig, cur_sig);
+            Content::FileSigChanged(FileSigChangedArgs { sig: cur_sig }) => {
+                assert_eq!(cur_sig, sig);
             }
             x => panic!("Bad content: {:?}", x),
         }
