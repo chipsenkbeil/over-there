@@ -5,7 +5,7 @@ use crate::{
     },
     server::{
         action::ActionError,
-        dir::{LocalDir, LocalDirEntry},
+        dir::{self, LocalDirEntry},
         file::{
             LocalFile, LocalFileReadError, LocalFileReadIoError,
             LocalFileWriteError, LocalFileWriteIoError,
@@ -163,7 +163,7 @@ where
 {
     debug!("do_list_dir_contents: {:?}", args);
 
-    match LocalDir::lookup_entries(&args.path).await {
+    match dir::entries(&args.path).await {
         Ok(local_entries) => {
             let entries: io::Result<Vec<DirEntry>> =
                 local_entries.into_iter().map(DirEntry::try_from).collect();
