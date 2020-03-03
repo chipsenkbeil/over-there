@@ -3,9 +3,8 @@ pub mod file;
 
 use dir::LocalDirRenameError;
 use file::LocalFile;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io;
-use std::net::SocketAddr;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -17,14 +16,12 @@ struct LocalFilePermissions {
 #[derive(Debug)]
 pub struct FileSystemManager {
     files: HashMap<u32, (LocalFile, LocalFilePermissions)>,
-    conns: HashMap<SocketAddr, HashSet<u32>>,
 }
 
 impl Default for FileSystemManager {
     fn default() -> Self {
         Self {
             files: HashMap::new(),
-            conns: HashMap::new(),
         }
     }
 }
@@ -41,12 +38,12 @@ impl FileSystemManager {
         from: impl AsRef<Path>,
         to: impl AsRef<Path>,
     ) -> Result<(), LocalDirRenameError> {
-        dir::rename(from, to).await?;
+        dir::rename(from.as_ref(), to.as_ref()).await?;
 
         // TODO: Perform more optimal renames by filtering down open files
         //       using a path tree?
         for f in self.files.values_mut() {
-            f.0.apply_path_changed(from, to);
+            f.0.apply_path_changed(from.as_ref(), to.as_ref());
         }
 
         Ok(())
@@ -62,7 +59,6 @@ impl FileSystemManager {
     /// the new permissions where existing and requested permissions align.
     pub async fn open_file(
         &mut self,
-        addr: SocketAddr,
         path: impl AsRef<Path>,
         create: bool,
         write: bool,
@@ -88,7 +84,6 @@ impl FileSystemManager {
             // We already have read permission or are not asking for it and
             // we already have write permission or are not asking for it
             if (permissions.read || !read) && (permissions.write || !write) {
-                self.conns.entry(addr).or_default().insert(id);
                 return Ok((id, sig));
             } else {
                 // Otherwise, we now need to open a new file pointer with the
@@ -121,24 +116,52 @@ impl FileSystemManager {
         let id = new_file.id();
         let sig = new_file.sig();
         self.files.insert(id, (new_file, new_permissions));
-        self.conns.entry(addr).or_default().insert(id);
 
         Ok((id, sig))
     }
 
-    /// Closes an open file by id, although the file will not be fully closed
-    /// unless all individual connections close the file (or all connections
-    /// time out with the open file)
-    pub async fn close_file(
+    /// Closes an open file by `id`, returning whether or not there was a file
+    /// to close with the specified `id`
+    pub async fn close_file(&mut self, id: u32) -> bool {
+        self.files.remove(&id).is_some()
+    }
+
+    /// Adds the already-created `local_file`, specifying what permissions
+    /// it current has for `write` and `read`.
+    ///
+    /// NOTE: These permissions MUST match what was specified when opening
+    ///       the local file.
+    ///
+    /// TODO: This is a method only used for testing and should be removed
+    ///       when we clean up this interface.
+    pub(crate) fn add_existing_file(
         &mut self,
-        addr: SocketAddr,
-        id: u32,
-    ) -> io::Result<()> {
-        Err(io::Error::from(io::ErrorKind::NotFound))
+        local_file: LocalFile,
+        write: bool,
+        read: bool,
+    ) -> (u32, u32) {
+        let id = local_file.id();
+        let sig = local_file.sig();
+
+        let permissions = LocalFilePermissions { read, write };
+        self.files.insert(id, (local_file, permissions));
+
+        (id, sig)
     }
 
     /// Looks up an open file by its associated `id`
     pub fn get_mut(&mut self, id: &u32) -> Option<&mut LocalFile> {
-        self.files.get_mut(id).map(|f| f.0).as_mut()
+        match self.files.get_mut(id) {
+            Some((file, _)) => Some(file),
+            None => None,
+        }
+    }
+
+    /// Looks up an open file by its associated `id`
+    pub fn get(&self, id: &u32) -> Option<&LocalFile> {
+        match self.files.get(id) {
+            Some((file, _)) => Some(file),
+            None => None,
+        }
     }
 }

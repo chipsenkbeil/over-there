@@ -18,10 +18,12 @@ pub use msg::{
     Msg, MsgError,
 };
 pub use server::{
-    dir::{LocalDir, LocalDirEntriesError, LocalDirEntry},
-    file::{
-        LocalFile, LocalFileReadError, LocalFileReadIoError,
-        LocalFileWriteError, LocalFileWriteIoError,
+    fs::{
+        dir::{LocalDirEntriesError, LocalDirEntry},
+        file::{
+            LocalFile, LocalFileReadError, LocalFileReadIoError,
+            LocalFileWriteError, LocalFileWriteIoError,
+        },
     },
     proc::{ExitStatus, LocalProc},
     Server,

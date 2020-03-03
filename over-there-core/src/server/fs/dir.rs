@@ -65,7 +65,7 @@ pub async fn rename(
     from: impl AsRef<Path>,
     to: impl AsRef<Path>,
 ) -> Result<(), LocalDirRenameError> {
-    let metadata = fs::metadata(from)
+    let metadata = fs::metadata(from.as_ref())
         .await
         .map_err(LocalDirRenameError::FailedToGetMetadata)?;
 
@@ -90,13 +90,172 @@ pub async fn remove(path: impl AsRef<Path>, non_empty: bool) -> io::Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn local_dir_entries_should_yield_error_if_unable_to_read_dir() {
-        unimplemented!();
+    #[tokio::test]
+    async fn entries_should_yield_error_if_not_a_directory() {
+        let result = {
+            let file = tempfile::NamedTempFile::new().unwrap();
+            entries(file.as_ref()).await
+        };
+
+        match result {
+            Err(LocalDirEntriesError::ReadDirError(_)) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
-    #[test]
-    fn local_dir_entries_should_return_immediate_entries_within_dir() {
-        unimplemented!();
+    #[tokio::test]
+    async fn entries_should_return_immediate_entries_within_dir() {
+        let (dir_path, result) = {
+            let dir = tempfile::tempdir().unwrap();
+
+            fs::File::create(dir.as_ref().join("test-file"))
+                .await
+                .expect("Failed to create file");
+
+            fs::create_dir(dir.as_ref().join("test-dir"))
+                .await
+                .expect("Failed to create dir");
+
+            let result = entries(dir.as_ref()).await;
+
+            (dir.into_path(), result)
+        };
+
+        match result {
+            Ok(entries) => {
+                assert_eq!(entries.len(), 2, "Unexpected number of entries");
+
+                assert!(
+                    entries.contains(&LocalDirEntry {
+                        path: dir_path.join("test-file"),
+                        is_file: true,
+                        is_dir: false,
+                        is_symlink: false,
+                    }),
+                    "No test-file found"
+                );
+
+                assert!(
+                    entries.contains(&LocalDirEntry {
+                        path: dir_path.join("test-dir"),
+                        is_file: false,
+                        is_dir: true,
+                        is_symlink: false,
+                    }),
+                    "No test-dir found"
+                );
+            }
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_should_yield_error_if_not_a_directory() {
+        let result = {
+            let from_file = tempfile::NamedTempFile::new().unwrap();
+            let from = from_file.as_ref();
+            let to_dir = tempfile::tempdir().unwrap();
+            let to = to_dir.as_ref();
+
+            rename(from, to).await
+        };
+
+        match result {
+            Err(LocalDirRenameError::NotADirectory) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_should_return_success_if_able_to_rename_directory() {
+        let result = {
+            let from_dir = tempfile::tempdir().unwrap();
+            let from = from_dir.as_ref();
+            let to_dir = tempfile::tempdir().unwrap();
+            let to = to_dir.as_ref();
+
+            rename(from, to).await
+        };
+
+        match result {
+            Ok(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_should_yield_error_if_not_a_directory() {
+        let result = {
+            let file = tempfile::NamedTempFile::new().unwrap();
+            remove(file.as_ref(), false).await
+        };
+
+        match result {
+            Err(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_should_return_success_if_able_to_remove_empty_directory() {
+        // Remove an empty directory with non-empty flag not set
+        let result = {
+            let dir = tempfile::tempdir().unwrap();
+            remove(dir.as_ref(), false).await
+        };
+
+        match result {
+            Ok(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+
+        // Remove an empty directory with non-empty flag set
+        let result = {
+            let dir = tempfile::tempdir().unwrap();
+            remove(dir.as_ref(), true).await
+        };
+
+        match result {
+            Ok(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_should_yield_error_if_removing_nonempty_directory_and_flag_not_set(
+    ) {
+        let result = {
+            let dir = tempfile::tempdir().unwrap();
+
+            fs::File::create(dir.as_ref().join("test-file"))
+                .await
+                .expect("Failed to create file");
+
+            remove(dir.as_ref(), false).await
+        };
+
+        match result {
+            Err(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_should_return_success_if_able_to_remove_nonempty_directory_if_flag_set(
+    ) {
+        let result = {
+            let dir = tempfile::tempdir().unwrap();
+
+            fs::File::create(dir.as_ref().join("test-file"))
+                .await
+                .expect("Failed to create file");
+
+            remove(dir.as_ref(), true).await
+        };
+
+        match result {
+            Ok(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 }

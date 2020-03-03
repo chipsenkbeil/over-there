@@ -674,7 +674,7 @@ mod tests {
 
         let mut lf = LocalFile::new(
             File::from_std(tempfile::tempfile().unwrap()),
-            from_file_path,
+            from_file_path.as_path(),
         );
 
         assert_eq!(
@@ -683,7 +683,7 @@ mod tests {
             "LocalFile path not set at proper initial location"
         );
 
-        lf.apply_path_changed(from_file_path, to_file_path);
+        lf.apply_path_changed(from_file_path, to_file_path.as_path());
 
         assert_eq!(
             lf.path(),

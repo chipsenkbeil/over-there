@@ -5,10 +5,12 @@ use crate::{
     },
     server::{
         action::ActionError,
-        dir::{self, LocalDirEntry},
-        file::{
-            LocalFile, LocalFileReadError, LocalFileReadIoError,
-            LocalFileWriteError, LocalFileWriteIoError,
+        fs::{
+            dir::{self, LocalDirEntry},
+            file::{
+                LocalFileReadError, LocalFileReadIoError, LocalFileWriteError,
+                LocalFileWriteIoError,
+            },
         },
         state::ServerState,
     },
@@ -41,7 +43,6 @@ where
         .lock()
         .await
         .open_file(
-            "127.0.0.1:60123".parse().unwrap(),
             &args.path,
             args.create_if_missing,
             args.write_access,
@@ -206,6 +207,7 @@ impl TryFrom<LocalDirEntry> for DirEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server::fs::file::LocalFile;
     use std::io;
 
     #[tokio::test]
@@ -239,7 +241,7 @@ mod tests {
         match content.unwrap() {
             Content::FileOpened(args) => {
                 let x = state.fs_manager.lock().await;
-                let local_file = x.get_mut(&args.id).unwrap();
+                let local_file = x.get(&args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig());
             }
             x => panic!("Bad content: {:?}", x),
@@ -273,7 +275,7 @@ mod tests {
         match content.unwrap() {
             Content::FileOpened(args) => {
                 let x = state.fs_manager.lock().await;
-                let local_file = x.get_mut(&args.id).unwrap();
+                let local_file = x.get(&args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig());
             }
             x => panic!("Bad content: {:?}", x),
@@ -332,7 +334,11 @@ mod tests {
         let id = local_file.id();
         let sig = local_file.sig();
 
-        state.files.lock().await.insert(id, local_file);
+        state
+            .fs_manager
+            .lock()
+            .await
+            .add_existing_file(local_file, true, true);
 
         do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
@@ -393,7 +399,11 @@ mod tests {
         let id = local_file.id();
         let sig = local_file.sig();
 
-        state.files.lock().await.insert(id, local_file);
+        state
+            .fs_manager
+            .lock()
+            .await
+            .add_existing_file(local_file, true, true);
 
         do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
@@ -421,7 +431,11 @@ mod tests {
         let id = local_file.id();
         let sig = local_file.sig();
 
-        state.files.lock().await.insert(id, local_file);
+        state
+            .fs_manager
+            .lock()
+            .await
+            .add_existing_file(local_file, true, true);
 
         do_read_file(
             Arc::clone(&state),
@@ -457,7 +471,11 @@ mod tests {
         let id = local_file.id();
         let sig = local_file.sig();
 
-        state.files.lock().await.insert(id, local_file);
+        state
+            .fs_manager
+            .lock()
+            .await
+            .add_existing_file(local_file, true, true);
 
         do_write_file(
             Arc::clone(&state),
@@ -512,7 +530,11 @@ mod tests {
         let id = local_file.id();
         let sig = local_file.sig();
 
-        state.files.lock().await.insert(id, local_file);
+        state
+            .fs_manager
+            .lock()
+            .await
+            .add_existing_file(local_file, false, true);
 
         do_write_file(
             Arc::clone(&state),
@@ -546,7 +568,11 @@ mod tests {
         let id = local_file.id();
         let sig = local_file.sig();
 
-        state.files.lock().await.insert(id, local_file);
+        state
+            .fs_manager
+            .lock()
+            .await
+            .add_existing_file(local_file, true, true);
 
         do_write_file(
             Arc::clone(&state),
