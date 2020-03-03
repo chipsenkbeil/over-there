@@ -4,6 +4,13 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 #[derive(Debug, Error)]
+pub enum LocalDirRenameError {
+    NotADirectory,
+    FailedToGetMetadata(io::Error),
+    IoError(io::Error),
+}
+
+#[derive(Debug, Error)]
 pub enum LocalDirEntriesError {
     ReadDirError(io::Error),
     NextEntryError(io::Error),
@@ -20,55 +27,12 @@ impl Into<io::Error> for LocalDirEntriesError {
     }
 }
 
-#[derive(Debug, Error)]
-pub struct LocalDirRemoveError {
-    local_dir: LocalDir,
-    error: io::Error,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalDirEntry {
     pub path: PathBuf,
     pub is_file: bool,
     pub is_dir: bool,
     pub is_symlink: bool,
-}
-
-#[derive(Debug)]
-pub struct LocalDir {
-    path: PathBuf,
-}
-
-impl LocalDir {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
-    }
-
-    pub fn path(&self) -> &Path {
-        self.path.as_path()
-    }
-
-    /// Remove directory, including all contents if `non_empty` is true
-    pub async fn remove(
-        self,
-        non_empty: bool,
-    ) -> Result<(), LocalDirRemoveError> {
-        let path = self.path.as_path();
-
-        let result = remove(path, non_empty).await;
-
-        result.map_err(move |x| LocalDirRemoveError {
-            error: x,
-            local_dir: self,
-        })
-    }
-
-    /// Retrieve all files, directories, and symlinks within the directory,
-    pub async fn entries(
-        &self,
-    ) -> Result<Vec<LocalDirEntry>, LocalDirEntriesError> {
-        entries(self.path.as_path()).await
-    }
 }
 
 pub async fn entries(
@@ -95,6 +59,23 @@ pub async fn entries(
         });
     }
     Ok(entries)
+}
+
+pub async fn rename(
+    from: impl AsRef<Path>,
+    to: impl AsRef<Path>,
+) -> Result<(), LocalDirRenameError> {
+    let metadata = fs::metadata(from)
+        .await
+        .map_err(LocalDirRenameError::FailedToGetMetadata)?;
+
+    if metadata.is_dir() {
+        fs::rename(from, to)
+            .await
+            .map_err(LocalDirRenameError::IoError)
+    } else {
+        Err(LocalDirRenameError::NotADirectory)
+    }
 }
 
 pub async fn remove(path: impl AsRef<Path>, non_empty: bool) -> io::Result<()> {

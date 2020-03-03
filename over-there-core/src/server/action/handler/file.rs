@@ -36,20 +36,20 @@ where
     //       Also, should check that the open we are doing
     //       matches permissions for read/write access, otherwise
     //       we want to yield an error
-    match LocalFile::open(
-        &args.path,
-        args.create_if_missing,
-        args.write_access,
-        args.read_access,
-    )
-    .await
+    match state
+        .fs_manager
+        .lock()
+        .await
+        .open_file(
+            "127.0.0.1:60123".parse().unwrap(),
+            &args.path,
+            args.create_if_missing,
+            args.write_access,
+            args.read_access,
+        )
+        .await
     {
-        Ok(local_file) => {
-            let id = local_file.id();
-            let sig = local_file.sig();
-
-            // Store the opened file so we can operate on it later
-            state.files.lock().await.insert(id, local_file);
+        Ok((id, sig)) => {
             respond(Content::FileOpened(FileOpenedArgs { id, sig })).await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,
@@ -67,7 +67,7 @@ where
 {
     debug!("do_read_file: {:?}", args);
 
-    match state.files.lock().await.get_mut(&args.id) {
+    match state.fs_manager.lock().await.get_mut(&args.id) {
         Some(local_file) => match local_file.read_all(args.sig).await {
             Ok(data) => {
                 respond(Content::FileContents(FileContentsArgs { data })).await
@@ -108,7 +108,7 @@ where
 {
     debug!("do_write_file: {:?}", args);
 
-    match state.files.lock().await.get_mut(&args.id) {
+    match state.fs_manager.lock().await.get_mut(&args.id) {
         Some(local_file) => {
             match local_file.write_all(args.sig, &args.data).await {
                 Ok(_) => {
@@ -238,8 +238,8 @@ mod tests {
 
         match content.unwrap() {
             Content::FileOpened(args) => {
-                let x = state.files.lock().await;
-                let local_file = x.get(&args.id).unwrap();
+                let x = state.fs_manager.lock().await;
+                let local_file = x.get_mut(&args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig());
             }
             x => panic!("Bad content: {:?}", x),
@@ -272,8 +272,8 @@ mod tests {
 
         match content.unwrap() {
             Content::FileOpened(args) => {
-                let x = state.files.lock().await;
-                let local_file = x.get(&args.id).unwrap();
+                let x = state.fs_manager.lock().await;
+                let local_file = x.get_mut(&args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig());
             }
             x => panic!("Bad content: {:?}", x),

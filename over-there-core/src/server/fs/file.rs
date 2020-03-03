@@ -61,19 +61,19 @@ pub enum LocalFileRenameError {
 
 #[derive(Debug, Error)]
 pub enum LocalFileRemoveError {
-    SigMismatch,
-    IoError(io::Error),
+    SigMismatch(LocalFile),
+    IoError(io::Error, LocalFile),
 }
 
 #[derive(Debug)]
 pub struct LocalFile {
     /// Represents a unique id with which to lookup the file
-    id: u32,
+    pub(super) id: u32,
 
     /// Represents a unique signature that acts as a barrier to prevent
     /// unexpected operations on the file from a client with an outdated
     /// understanding of the file
-    sig: u32,
+    pub(super) sig: u32,
 
     /// Represents an underlying file descriptor with which we can read,
     /// write, and perform other operations
@@ -130,6 +130,23 @@ impl LocalFile {
         self.path.as_path()
     }
 
+    /// Only to be invoked when a path was changed elsewhere such that this
+    /// file can update its internal path reference.
+    ///
+    /// Note that this does not require a sig to apply the change and will
+    /// also not update the associated file's sig as this is considered a
+    /// background change that should not affect the file descriptor in
+    /// any way.
+    pub(crate) fn apply_path_changed(
+        &mut self,
+        from: impl AsRef<Path>,
+        to: impl AsRef<Path>,
+    ) {
+        if let Ok(path) = self.path.strip_prefix(from) {
+            self.path = to.as_ref().join(path);
+        }
+    }
+
     /// Renames a file (if possible) using its underlying path as the origin
     pub async fn rename(
         &mut self,
@@ -153,20 +170,14 @@ impl LocalFile {
     }
 
     /// Removes the file (if possible) using its underlying path
-    pub async fn remove(
-        &mut self,
-        sig: u32,
-    ) -> Result<(), LocalFileRemoveError> {
+    pub async fn remove(self, sig: u32) -> Result<(), LocalFileRemoveError> {
         if self.sig != sig {
-            return Err(LocalFileRemoveError::SigMismatch);
+            return Err(LocalFileRemoveError::SigMismatch(self));
         }
 
         fs::remove_file(self.path.as_path())
             .await
-            .map_err(LocalFileRemoveError::IoError)?;
-
-        // Update signature to reflect the change
-        self.sig = OsRng.next_u32();
+            .map_err(|x| LocalFileRemoveError::IoError(x, self))?;
 
         Ok(())
     }
@@ -548,12 +559,12 @@ mod tests {
     #[tokio::test]
     async fn local_file_remove_should_yield_error_if_provided_sig_is_different()
     {
-        let mut lf =
+        let lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
         let sig = lf.sig();
         match lf.remove(sig + 1).await {
-            Err(LocalFileRemoveError::SigMismatch) => {
+            Err(LocalFileRemoveError::SigMismatch(lf)) => {
                 assert_eq!(lf.sig(), sig, "Signature changed after error");
             }
             Err(x) => panic!("Unexpected error: {}", x),
@@ -564,12 +575,12 @@ mod tests {
     #[tokio::test]
     async fn local_file_remove_should_yield_error_if_underlying_path_is_missing(
     ) {
-        let mut lf =
+        let lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
         let sig = lf.sig();
         match lf.remove(sig).await {
-            Err(LocalFileRemoveError::IoError(_)) => {
+            Err(LocalFileRemoveError::IoError(_, lf)) => {
                 assert_eq!(lf.sig(), sig, "Signature changed after error");
             }
             Err(x) => panic!("Unexpected error: {}", x),
@@ -582,7 +593,7 @@ mod tests {
         let f = tempfile::NamedTempFile::new().unwrap();
         let path = f.path();
 
-        let mut lf = LocalFile::new(
+        let lf = LocalFile::new(
             File::from_std(f.as_file().try_clone().unwrap()),
             path,
         );
@@ -593,8 +604,91 @@ mod tests {
         assert!(fs::read(path).await.is_ok(), "File already missing at path");
         lf.remove(sig).await.unwrap();
         assert!(fs::read(path).await.is_err(), "File still exists at path");
+    }
 
-        // Verify signature changed
-        assert_ne!(lf.sig(), sig);
+    #[test]
+    fn local_file_apply_path_changed_should_update_path_if_contains_local_file_path(
+    ) {
+        let from_dir_path = Path::new("/from/path");
+        let to_dir_path = Path::new("/to/path");
+
+        let file_path = Path::new("file");
+        let from_file_path = from_dir_path.join(file_path);
+        let mut lf = LocalFile::new(
+            File::from_std(tempfile::tempfile().unwrap()),
+            from_file_path,
+        );
+
+        assert_eq!(
+            lf.path(),
+            from_dir_path.join(file_path),
+            "LocalFile path not set at proper initial location"
+        );
+
+        lf.apply_path_changed(from_dir_path, to_dir_path);
+
+        assert_eq!(
+            lf.path(),
+            to_dir_path.join(file_path),
+            "LocalFile path not updated to new location"
+        );
+    }
+
+    #[test]
+    fn local_file_apply_path_changed_should_not_update_path_if_not_contains_local_file_path(
+    ) {
+        let from_dir_path = Path::new("/from/path");
+        let to_dir_path = Path::new("/to/path");
+
+        let file_path = Path::new("file");
+        let from_file_path = from_dir_path.join(file_path);
+        let mut lf = LocalFile::new(
+            File::from_std(tempfile::tempfile().unwrap()),
+            from_file_path,
+        );
+
+        assert_eq!(
+            lf.path(),
+            from_dir_path.join(file_path),
+            "LocalFile path not set at proper initial location"
+        );
+
+        lf.apply_path_changed("/some/other/path", to_dir_path);
+
+        assert_eq!(
+            lf.path(),
+            from_dir_path.join(file_path),
+            "LocalFile path unexpectedly updated to new location"
+        );
+    }
+
+    #[test]
+    fn local_file_apply_path_changed_should_update_path_if_is_local_file_path()
+    {
+        let from_dir_path = Path::new("/from/path");
+        let to_dir_path = Path::new("/to/path");
+
+        let file_path = Path::new("file");
+        let from_file_path = from_dir_path.join(file_path);
+        let to_file_path = to_dir_path.join(file_path);
+
+        let mut lf = LocalFile::new(
+            File::from_std(tempfile::tempfile().unwrap()),
+            from_file_path,
+        );
+
+        assert_eq!(
+            lf.path(),
+            from_file_path,
+            "LocalFile path not set at proper initial location"
+        );
+
+        lf.apply_path_changed(from_file_path, to_file_path);
+
+        assert_eq!(
+            lf.path(),
+            to_file_path,
+            "LocalFile path not updated to new location"
+        );
     }
 }

@@ -1,6 +1,5 @@
 mod action;
-pub mod dir;
-pub mod file;
+pub mod fs;
 pub mod proc;
 pub mod state;
 

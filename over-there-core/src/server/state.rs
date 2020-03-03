@@ -1,4 +1,4 @@
-use super::{file::LocalFile, proc::LocalProc};
+use super::{fs::FileSystemManager, proc::LocalProc};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::Instant;
@@ -11,7 +11,7 @@ pub struct ServerState {
     pub conns: Mutex<HashMap<SocketAddr, Instant>>,
 
     /// Mapping of file id -> file on same machine as server
-    pub files: Mutex<HashMap<u32, LocalFile>>,
+    pub fs_manager: Mutex<FileSystemManager>,
     pub conn_files: Mutex<HashMap<SocketAddr, Vec<u32>>>,
 
     /// Mapping of proc id -> proc on same machine as server
@@ -23,7 +23,7 @@ impl Default for ServerState {
     fn default() -> Self {
         Self {
             conns: Mutex::new(HashMap::default()),
-            files: Mutex::new(HashMap::default()),
+            fs_manager: Mutex::new(FileSystemManager::default()),
             conn_files: Mutex::new(HashMap::default()),
             procs: Mutex::new(HashMap::default()),
             conn_procs: Mutex::new(HashMap::default()),
