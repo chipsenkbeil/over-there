@@ -78,6 +78,17 @@ pub async fn rename(
     }
 }
 
+pub async fn create(
+    path: impl AsRef<Path>,
+    create_components: bool,
+) -> io::Result<()> {
+    if create_components {
+        fs::create_dir_all(path).await
+    } else {
+        fs::create_dir(path).await
+    }
+}
+
 pub async fn remove(path: impl AsRef<Path>, non_empty: bool) -> io::Result<()> {
     if non_empty {
         fs::remove_dir_all(path).await
@@ -181,6 +192,57 @@ mod tests {
             Ok(_) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
+    }
+
+    #[tokio::test]
+    async fn create_should_return_success_if_able_to_make_an_empty_directory() {
+        let result = {
+            let parent_dir = tempfile::tempdir().unwrap();
+
+            create(parent_dir.as_ref().join("test-dir"), false).await
+        };
+
+        assert!(result.is_ok(), "Failed unexpectedly: {:?}", result);
+
+        let result = {
+            let parent_dir = tempfile::tempdir().unwrap();
+
+            create(parent_dir.as_ref().join("test-dir"), true).await
+        };
+
+        assert!(result.is_ok(), "Failed unexpectedly: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn create_should_yield_error_if_some_components_dont_exist_and_flag_not_set(
+    ) {
+        let result = {
+            let parent_dir = tempfile::tempdir().unwrap();
+            let new_dir = parent_dir.as_ref().join(
+                ["does", "not", "exist"]
+                    .iter()
+                    .collect::<PathBuf>()
+                    .as_path(),
+            );
+
+            create(new_dir, false).await
+        };
+
+        assert!(result.is_err(), "Unexpectedly succeeded: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn create_should_return_success_if_able_to_make_nested_empty_directory(
+    ) {
+        let parent_dir = tempfile::tempdir().unwrap();
+
+        create(parent_dir.as_ref().join("test-dir"), false)
+            .await
+            .expect("Failed to create directory");
+
+        create(parent_dir.as_ref().join("test-dir"), true)
+            .await
+            .expect("Failed to create directory");
     }
 
     #[tokio::test]

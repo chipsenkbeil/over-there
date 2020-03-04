@@ -1,11 +1,12 @@
-pub mod dir;
+mod dir;
 pub mod file;
 
 use dir::LocalDirRenameError;
 use file::LocalFile;
 use std::collections::HashMap;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use tokio::fs;
 
 #[derive(Debug)]
 struct LocalFilePermissions {
@@ -15,18 +16,48 @@ struct LocalFilePermissions {
 
 #[derive(Debug)]
 pub struct FileSystemManager {
+    root: Option<PathBuf>,
     files: HashMap<u32, (LocalFile, LocalFilePermissions)>,
 }
 
 impl Default for FileSystemManager {
     fn default() -> Self {
-        Self {
-            files: HashMap::new(),
-        }
+        Self::new()
     }
 }
 
 impl FileSystemManager {
+    /// Creates new instance where operations are allowed anywhere
+    pub fn new() -> Self {
+        Self {
+            root: None,
+            files: HashMap::new(),
+        }
+    }
+
+    /// Creates new instance where operations are only allowed within `root`
+    ///
+    /// Canonicalizes `root`, so can potentially fail
+    pub async fn with_root(root: PathBuf) -> io::Result<Self> {
+        let canonicalized_root = fs::canonicalize(root).await?;
+
+        Ok(Self {
+            root: Some(canonicalized_root),
+            files: HashMap::new(),
+        })
+    }
+
+    /// Creates a new directory
+    pub async fn create_dir(
+        &self,
+        path: impl AsRef<Path>,
+        create_components: bool,
+    ) -> io::Result<()> {
+        self.validate_path(path.as_ref())?;
+
+        dir::create(path, create_components).await
+    }
+
     /// Attempts to rename an entire directory, checking through all open
     /// files to see if their paths also need to be renamed.
     ///
@@ -38,6 +69,9 @@ impl FileSystemManager {
         from: impl AsRef<Path>,
         to: impl AsRef<Path>,
     ) -> Result<(), LocalDirRenameError> {
+        self.validate_path(from.as_ref())
+            .map_err(LocalDirRenameError::IoError)?;
+
         dir::rename(from.as_ref(), to.as_ref()).await?;
 
         // TODO: Perform more optimal renames by filtering down open files
@@ -47,6 +81,30 @@ impl FileSystemManager {
         }
 
         Ok(())
+    }
+
+    /// Attempts to remove an entire directory, failing if any file is
+    /// currently open within the directory.
+    pub async fn remove_dir(
+        &mut self,
+        path: impl AsRef<Path>,
+        non_empty: bool,
+    ) -> io::Result<()> {
+        self.validate_path(path.as_ref())?;
+
+        // TODO: Perform more optimal removal check by filtering down open
+        //       files using a path tree?
+        for f in self.files.values() {
+            if f.0.path().starts_with(path.as_ref()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Directory contains open files",
+                ));
+            }
+        }
+
+        // No open file is within this directory, so good to attempt to remove
+        dir::remove(path, non_empty).await
     }
 
     /// Opens a file, creating it if `create` true, using `write` and `read`
@@ -64,6 +122,8 @@ impl FileSystemManager {
         write: bool,
         read: bool,
     ) -> io::Result<(u32, u32)> {
+        self.validate_path(path.as_ref())?;
+
         let mut new_permissions = LocalFilePermissions { read, write };
         let mut maybe_id_and_sig = None;
 
@@ -163,5 +223,42 @@ impl FileSystemManager {
             Some((file, _)) => Some(file),
             None => None,
         }
+    }
+
+    /// Checks `path` to see if is okay by
+    /// 1. Seeing if we have a `root`, if not then this function returns ok
+    /// 2. Seeing if `path` is in `root`, if so, then this function returns ok
+    /// 3. Otherwise we have a bad path and this function returns an error
+    fn validate_path(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        let is_ok = self
+            .root
+            .map(|r| path.as_ref().starts_with(r))
+            .unwrap_or(true);
+
+        if is_ok {
+            Ok(())
+        } else {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rename_dir_should_yield_error_if_unable_to_rename() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn rename_dir_should_update_paths_of_open_files_in_directory() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn rename_dir_should_properly_rename_directory() {
+        unimplemented!();
     }
 }
