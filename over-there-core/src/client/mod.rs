@@ -8,7 +8,7 @@ use crate::{
     msg::{
         content::{
             capabilities::Capability,
-            io::{file::*, proc::*},
+            io::{fs::*, proc::*},
             Content,
         },
         Msg,

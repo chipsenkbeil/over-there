@@ -44,7 +44,7 @@ impl FileSystemManager {
     /// Creates new instance where operations are only allowed within `root`
     ///
     /// Canonicalizes `root`, so can potentially fail
-    pub async fn with_root(root: PathBuf) -> io::Result<Self> {
+    pub async fn with_root(root: impl AsRef<Path>) -> io::Result<Self> {
         let canonicalized_root = fs::canonicalize(root).await?;
 
         Ok(Self {
@@ -148,7 +148,7 @@ impl FileSystemManager {
         create: bool,
         write: bool,
         read: bool,
-    ) -> io::Result<(u32, u32)> {
+    ) -> io::Result<LocalFileHandle> {
         self.validate_path(path.as_ref())?;
 
         let mut new_permissions = LocalFilePermissions { read, write };
@@ -171,7 +171,7 @@ impl FileSystemManager {
             // We already have read permission or are not asking for it and
             // we already have write permission or are not asking for it
             if (permissions.read || !read) && (permissions.write || !write) {
-                return Ok((id, sig));
+                return Ok(file.handle());
             } else {
                 // Otherwise, we now need to open a new file pointer with the
                 // proper permissions to support both cases and, if successful,
@@ -200,11 +200,11 @@ impl FileSystemManager {
 
         // Insert the file & permissions, overwriting the
         // existing file/permissions
-        let id = new_file.id();
-        let sig = new_file.sig();
-        self.files.insert(id, (new_file, new_permissions));
+        let handle = new_file.handle();
+        self.files
+            .insert(new_file.id(), (new_file, new_permissions));
 
-        Ok((id, sig))
+        Ok(handle)
     }
 
     /// Closes an open file by `id`, returning whether or not there was a file
@@ -226,14 +226,11 @@ impl FileSystemManager {
         local_file: LocalFile,
         write: bool,
         read: bool,
-    ) -> (u32, u32) {
-        let id = local_file.id();
-        let sig = local_file.sig();
-
+    ) -> LocalFileHandle {
+        let handle = local_file.handle();
         let permissions = LocalFilePermissions { read, write };
-        self.files.insert(id, (local_file, permissions));
-
-        (id, sig)
+        self.files.insert(handle.id, (local_file, permissions));
+        handle
     }
 
     /// Looks up an open file by its associated `id`
@@ -277,7 +274,10 @@ mod tests {
 
     #[tokio::test]
     async fn create_dir_should_yield_error_if_path_not_in_root() {
-        unimplemented!();
+        let fsm = FileSystemManager::with_root("/some/path").await.unwrap();
+
+        let result = fsm.create_dir("some/dir", true).await;
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
     }
 
     #[tokio::test]

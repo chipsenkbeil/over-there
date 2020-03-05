@@ -1,13 +1,13 @@
 use crate::{
     msg::content::{
-        io::{file::*, IoErrorArgs},
+        io::{fs::*, IoErrorArgs},
         Content,
     },
     server::{
         action::ActionError,
         fs::{
-            LocalDirEntry, LocalFileReadError, LocalFileReadIoError,
-            LocalFileWriteError, LocalFileWriteIoError,
+            LocalDirEntry, LocalFileHandle, LocalFileReadError,
+            LocalFileReadIoError, LocalFileWriteError, LocalFileWriteIoError,
         },
         state::ServerState,
     },
@@ -47,7 +47,7 @@ where
         )
         .await
     {
-        Ok((id, sig)) => {
+        Ok(LocalFileHandle { id, sig }) => {
             respond(Content::FileOpened(FileOpenedArgs { id, sig })).await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,

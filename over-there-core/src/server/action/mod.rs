@@ -162,17 +162,16 @@ impl<T> Executor<T> {
                 handler::capabilities::do_get_capabilities(do_respond).await
             }
             Content::DoOpenFile(args) => {
-                handler::file::do_open_file(state, args, do_respond).await
+                handler::fs::do_open_file(state, args, do_respond).await
             }
             Content::DoReadFile(args) => {
-                handler::file::do_read_file(state, args, do_respond).await
+                handler::fs::do_read_file(state, args, do_respond).await
             }
             Content::DoWriteFile(args) => {
-                handler::file::do_write_file(state, args, do_respond).await
+                handler::fs::do_write_file(state, args, do_respond).await
             }
             Content::DoListDirContents(args) => {
-                handler::file::do_list_dir_contents(state, args, do_respond)
-                    .await
+                handler::fs::do_list_dir_contents(state, args, do_respond).await
             }
             Content::DoExecProc(args) => {
                 handler::proc::do_exec_proc(state, args, do_respond).await

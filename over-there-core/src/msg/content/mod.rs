@@ -29,41 +29,41 @@ pub enum Content {
     // File-based operations such as reading and writing
     /// This will be sent to indicate the desire to list all files/directories
     /// at the provided path
-    DoListDirContents(io::file::DoListDirContentsArgs),
+    DoListDirContents(io::fs::DoListDirContentsArgs),
 
     /// This will be returned upon collecting the list of files and directories
     /// at the provided path
-    DirContentsList(io::file::DirContentsListArgs),
+    DirContentsList(io::fs::DirContentsListArgs),
 
     /// This will be sent to indicate the desire to read/write a file,
     /// and can also be used to retrieve an already-open file's id/sig
-    DoOpenFile(io::file::DoOpenFileArgs),
+    DoOpenFile(io::fs::DoOpenFileArgs),
 
     /// This will be returned upon a file being opened or refreshed
-    FileOpened(io::file::FileOpenedArgs),
+    FileOpened(io::fs::FileOpenedArgs),
 
     /// This will be sent to indicate the desire to close an open file
-    DoCloseFile(io::file::DoCloseFileArgs),
+    DoCloseFile(io::fs::DoCloseFileArgs),
 
     /// This will be returned upon a file being closed
-    FileClosed(io::file::FileClosedArgs),
+    FileClosed(io::fs::FileClosedArgs),
 
     /// This will be sent to indicate the desire to read a file's contents
-    DoReadFile(io::file::DoReadFileArgs),
+    DoReadFile(io::fs::DoReadFileArgs),
 
     /// This will be returned upon reading a file's contents
-    FileContents(io::file::FileContentsArgs),
+    FileContents(io::fs::FileContentsArgs),
 
     /// This will be sent to indicate the desire to write a file's contents
-    DoWriteFile(io::file::DoWriteFileArgs),
+    DoWriteFile(io::fs::DoWriteFileArgs),
 
     /// This will be returned upon writing a file's contents
     /// Contains the updated signature for the file
-    FileWritten(io::file::FileWrittenArgs),
+    FileWritten(io::fs::FileWrittenArgs),
 
     /// If a file operation fails due to the signature changing,
     /// this will be returned
-    FileSigChanged(io::file::FileSigChangedArgs),
+    FileSigChanged(io::fs::FileSigChangedArgs),
 
     // ------------------------------------------------------------------------
     // Program execution operations such as running and streaming
