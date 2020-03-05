@@ -65,6 +65,12 @@ pub enum LocalFileRemoveError {
     IoError(io::Error, LocalFile),
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct LocalFileHandle {
+    pub id: u32,
+    pub sig: u32,
+}
+
 #[derive(Debug)]
 pub struct LocalFile {
     /// Represents a unique id with which to lookup the file
@@ -124,6 +130,13 @@ impl LocalFile {
 
     pub fn sig(&self) -> u32 {
         self.sig
+    }
+
+    pub fn handle(&self) -> LocalFileHandle {
+        LocalFileHandle {
+            id: self.id,
+            sig: self.sig,
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -254,8 +267,7 @@ mod tests {
     use std::io::{Read, Seek, SeekFrom, Write};
 
     #[tokio::test]
-    async fn local_file_open_should_yield_error_if_file_missing_and_create_false(
-    ) {
+    async fn open_should_yield_error_if_file_missing_and_create_false() {
         match LocalFile::open("missingfile", false, true, true).await {
             Err(x) => assert_eq!(x.kind(), io::ErrorKind::NotFound),
             Ok(f) => panic!("Unexpectedly opened missing file: {:?}", f.path()),
@@ -263,8 +275,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_open_should_return_new_local_file_with_canonical_path()
-    {
+    async fn open_should_return_new_local_file_with_canonical_path() {
         let (path, result) = async {
             let f = tempfile::NamedTempFile::new().unwrap();
             let path = f.path();
@@ -280,7 +291,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_id_should_return_associated_id() {
+    async fn id_should_return_associated_id() {
         let lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
@@ -288,7 +299,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_sig_should_return_associated_sig() {
+    async fn sig_should_return_associated_sig() {
         let lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
@@ -296,7 +307,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_path_should_return_associated_path() {
+    async fn handle_should_return_associated_handle_with_id_and_sig() {
+        let lf =
+            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let LocalFileHandle { id, sig } = lf.handle();
+
+        assert_eq!(id, lf.id());
+        assert_eq!(sig, lf.sig());
+    }
+
+    #[tokio::test]
+    async fn path_should_return_associated_path() {
         let path_str = "test_cheeseburger";
         let lf = LocalFile::new(
             File::from_std(tempfile::tempfile().unwrap()),
@@ -307,8 +328,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_read_all_should_yield_error_if_provided_sig_is_different(
-    ) {
+    async fn read_all_should_yield_error_if_provided_sig_is_different() {
         let mut lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
@@ -323,7 +343,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_read_all_should_yield_error_if_file_not_readable() {
+    async fn read_all_should_yield_error_if_file_not_readable() {
         let result = async {
             let f = tempfile::NamedTempFile::new().unwrap();
             let path = f.path();
@@ -350,7 +370,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_read_all_should_return_empty_if_file_empty() {
+    async fn read_all_should_return_empty_if_file_empty() {
         let mut lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
         let sig = lf.sig();
@@ -372,7 +392,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_read_all_should_return_all_file_content_from_start() {
+    async fn read_all_should_return_all_file_content_from_start() {
         let contents = b"some contents";
 
         let mut f = tempfile::tempfile().unwrap();
@@ -399,8 +419,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_write_all_should_yield_error_if_provided_sig_is_different(
-    ) {
+    async fn write_all_should_yield_error_if_provided_sig_is_different() {
         let mut lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
@@ -415,7 +434,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_write_all_should_yield_error_if_file_not_writeable() {
+    async fn write_all_should_yield_error_if_file_not_writeable() {
         let result = async {
             let f = tempfile::NamedTempFile::new().unwrap();
             let path = f.path();
@@ -442,7 +461,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_write_all_should_overwrite_file_with_new_contents() {
+    async fn write_all_should_overwrite_file_with_new_contents() {
         let mut f = tempfile::tempfile().unwrap();
         let mut buf = Vec::new();
 
@@ -476,8 +495,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_rename_should_yield_error_if_provided_sig_is_different()
-    {
+    async fn rename_should_yield_error_if_provided_sig_is_different() {
         let mut lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
@@ -492,8 +510,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_rename_should_yield_error_if_underlying_path_is_missing(
-    ) {
+    async fn rename_should_yield_error_if_underlying_path_is_missing() {
         let mut lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
@@ -508,8 +525,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_rename_should_yield_error_if_new_name_on_different_mount_point(
-    ) {
+    async fn rename_should_yield_error_if_new_name_on_different_mount_point() {
         let f = tempfile::NamedTempFile::new().unwrap();
         let path = f.path();
 
@@ -530,7 +546,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_rename_should_move_file_to_another_location_by_path() {
+    async fn rename_should_move_file_to_another_location_by_path() {
         let mut lf = LocalFile::open("file_to_rename", true, true, true)
             .await
             .expect("Failed to open");
@@ -557,8 +573,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_remove_should_yield_error_if_provided_sig_is_different()
-    {
+    async fn remove_should_yield_error_if_provided_sig_is_different() {
         let lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
@@ -573,8 +588,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_remove_should_yield_error_if_underlying_path_is_missing(
-    ) {
+    async fn remove_should_yield_error_if_underlying_path_is_missing() {
         let lf =
             LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
 
@@ -589,7 +603,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_file_remove_should_remove_the_underlying_file_by_path() {
+    async fn remove_should_remove_the_underlying_file_by_path() {
         let f = tempfile::NamedTempFile::new().unwrap();
         let path = f.path();
 
@@ -607,8 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn local_file_apply_path_changed_should_update_path_if_contains_local_file_path(
-    ) {
+    fn apply_path_changed_should_update_path_if_contains_local_file_path() {
         let from_dir_path = Path::new("/from/path");
         let to_dir_path = Path::new("/to/path");
 
@@ -635,7 +648,7 @@ mod tests {
     }
 
     #[test]
-    fn local_file_apply_path_changed_should_not_update_path_if_not_contains_local_file_path(
+    fn apply_path_changed_should_not_update_path_if_not_contains_local_file_path(
     ) {
         let from_dir_path = Path::new("/from/path");
         let to_dir_path = Path::new("/to/path");
@@ -663,8 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn local_file_apply_path_changed_should_update_path_if_is_local_file_path()
-    {
+    fn apply_path_changed_should_update_path_if_is_local_file_path() {
         let from_dir_path = Path::new("/from/path");
         let to_dir_path = Path::new("/to/path");
 

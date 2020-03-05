@@ -6,11 +6,8 @@ use crate::{
     server::{
         action::ActionError,
         fs::{
-            dir::{self, LocalDirEntry},
-            file::{
-                LocalFileReadError, LocalFileReadIoError, LocalFileWriteError,
-                LocalFileWriteIoError,
-            },
+            LocalDirEntry, LocalFileReadError, LocalFileReadIoError,
+            LocalFileWriteError, LocalFileWriteIoError,
         },
         state::ServerState,
     },
@@ -154,7 +151,7 @@ where
 }
 
 pub async fn do_list_dir_contents<F, R>(
-    _state: Arc<ServerState>,
+    state: Arc<ServerState>,
     args: &DoListDirContentsArgs,
     respond: F,
 ) -> Result<(), ActionError>
@@ -164,7 +161,7 @@ where
 {
     debug!("do_list_dir_contents: {:?}", args);
 
-    match dir::entries(&args.path).await {
+    match state.fs_manager.lock().await.dir_entries(&args.path).await {
         Ok(local_entries) => {
             let entries: io::Result<Vec<DirEntry>> =
                 local_entries.into_iter().map(DirEntry::try_from).collect();
@@ -207,7 +204,7 @@ impl TryFrom<LocalDirEntry> for DirEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::fs::file::LocalFile;
+    use crate::server::fs::LocalFile;
     use std::io;
 
     #[tokio::test]

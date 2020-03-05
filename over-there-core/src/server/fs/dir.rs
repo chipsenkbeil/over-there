@@ -35,6 +35,12 @@ pub struct LocalDirEntry {
     pub is_symlink: bool,
 }
 
+impl LocalDirEntry {
+    pub fn path_to_string(&self) -> String {
+        self.path.to_string_lossy().to_string()
+    }
+}
+
 pub async fn entries(
     path: impl AsRef<Path>,
 ) -> Result<Vec<LocalDirEntry>, LocalDirEntriesError> {

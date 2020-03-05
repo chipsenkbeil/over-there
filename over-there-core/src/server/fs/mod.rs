@@ -1,8 +1,14 @@
 mod dir;
-pub mod file;
+mod file;
 
-use dir::LocalDirRenameError;
-use file::LocalFile;
+pub use dir::{LocalDirEntriesError, LocalDirEntry, LocalDirRenameError};
+
+pub use file::{
+    LocalFile, LocalFileHandle, LocalFileReadError, LocalFileReadIoError,
+    LocalFileRemoveError, LocalFileRenameError, LocalFileWriteError,
+    LocalFileWriteIoError,
+};
+
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -71,6 +77,8 @@ impl FileSystemManager {
     ) -> Result<(), LocalDirRenameError> {
         self.validate_path(from.as_ref())
             .map_err(LocalDirRenameError::IoError)?;
+        self.validate_path(to.as_ref())
+            .map_err(LocalDirRenameError::IoError)?;
 
         dir::rename(from.as_ref(), to.as_ref()).await?;
 
@@ -105,6 +113,25 @@ impl FileSystemManager {
 
         // No open file is within this directory, so good to attempt to remove
         dir::remove(path, non_empty).await
+    }
+
+    /// Retrieves all entries within the directory `path`.
+    ///
+    /// This is a non-recursive operation, meaning that it will only yield
+    /// the immediate directory entires and not walk through subdirectories
+    /// or follow symlinks.
+    ///
+    /// Will yield an error if the path is not within the specified `root`,
+    /// or if there are complications with reading the directory and its
+    /// entries.
+    pub async fn dir_entries(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<Vec<LocalDirEntry>, LocalDirEntriesError> {
+        self.validate_path(path.as_ref())
+            .map_err(LocalDirEntriesError::ReadDirError)?;
+
+        dir::entries(path).await
     }
 
     /// Opens a file, creating it if `create` true, using `write` and `read`
@@ -232,6 +259,7 @@ impl FileSystemManager {
     fn validate_path(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let is_ok = self
             .root
+            .as_ref()
             .map(|r| path.as_ref().starts_with(r))
             .unwrap_or(true);
 
@@ -248,7 +276,38 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn rename_dir_should_yield_error_if_unable_to_rename() {
+    async fn create_dir_should_yield_error_if_path_not_in_root() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn create_dir_should_yield_error_if_parent_dirs_missing_and_flag_not_set(
+    ) {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn create_dir_should_return_success_if_created_the_path() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn rename_dir_should_yield_error_if_origin_path_not_in_root() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn rename_dir_should_yield_error_if_destination_path_not_in_root() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn rename_dir_should_yield_error_if_origin_path_is_not_a_directory() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn rename_dir_should_yield_error_if_unable_to_rename_directory() {
         unimplemented!();
     }
 
@@ -258,7 +317,71 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rename_dir_should_properly_rename_directory() {
+    async fn rename_dir_should_return_success_if_renamed_directory() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn dir_entries_should_yield_error_if_path_not_in_root() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn dir_entries_should_yield_error_if_path_not_a_file() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn dir_entries_should_return_a_list_of_immediate_entries_in_a_directory(
+    ) {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn remove_dir_should_yield_error_if_path_not_in_root() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn remove_dir_should_yield_error_if_directory_not_empty_and_flag_not_set(
+    ) {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn remove_dir_should_yield_error_if_open_files_exist_in_directory() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn remove_dir_should_return_success_if_removed_directory() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn open_file_should_yield_error_if_path_not_in_root() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn open_file_should_yield_error_if_underlying_open_fails() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn open_file_should_return_existing_open_file_if_permissions_allow() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn open_file_should_reopen_an_open_file_if_permissions_need_merging()
+    {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn open_file_should_return_a_newly_opened_file_if_none_already_open()
+    {
         unimplemented!();
     }
 }

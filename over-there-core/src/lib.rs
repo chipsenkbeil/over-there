@@ -19,11 +19,10 @@ pub use msg::{
 };
 pub use server::{
     fs::{
-        dir::{LocalDirEntriesError, LocalDirEntry},
-        file::{
-            LocalFile, LocalFileReadError, LocalFileReadIoError,
-            LocalFileWriteError, LocalFileWriteIoError,
-        },
+        FileSystemManager, LocalDirEntriesError, LocalDirEntry,
+        LocalDirRenameError, LocalFile, LocalFileHandle, LocalFileReadError,
+        LocalFileReadIoError, LocalFileRemoveError, LocalFileRenameError,
+        LocalFileWriteError, LocalFileWriteIoError,
     },
     proc::{ExitStatus, LocalProc},
     Server,
