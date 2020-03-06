@@ -42,15 +42,11 @@ impl FileSystemManager {
     }
 
     /// Creates new instance where operations are only allowed within `root`
-    ///
-    /// Canonicalizes `root`, so can potentially fail
-    pub async fn with_root(root: impl AsRef<Path>) -> io::Result<Self> {
-        let canonicalized_root = fs::canonicalize(root).await?;
-
-        Ok(Self {
-            root: Some(canonicalized_root),
+    pub fn with_root(root: impl AsRef<Path>) -> Self {
+        Self {
+            root: Some(root.as_ref().to_path_buf()),
             files: HashMap::new(),
-        })
+        }
     }
 
     /// Creates a new directory
@@ -274,7 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn create_dir_should_yield_error_if_path_not_in_root() {
-        let fsm = FileSystemManager::with_root("/some/path").await.unwrap();
+        let fsm = FileSystemManager::with_root("/some/path");
 
         let result = fsm.create_dir("some/dir", true).await;
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
