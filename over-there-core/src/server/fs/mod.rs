@@ -41,6 +41,12 @@ impl FileSystemManager {
         }
     }
 
+    /// Creates new instance where operations are only allowed within
+    /// the current directory as defined by `std::env::current_dir`
+    pub fn with_current_dir() -> io::Result<Self> {
+        Ok(Self::with_root(std::env::current_dir()?))
+    }
+
     /// Creates new instance where operations are only allowed within `root`
     pub fn with_root(root: impl AsRef<Path>) -> Self {
         Self {
@@ -55,8 +61,7 @@ impl FileSystemManager {
         path: impl AsRef<Path>,
         create_components: bool,
     ) -> io::Result<()> {
-        self.validate_path(path.as_ref())?;
-
+        let path = self.validate_path(path.as_ref()).await?;
         dir::create(path, create_components).await
     }
 
@@ -71,17 +76,21 @@ impl FileSystemManager {
         from: impl AsRef<Path>,
         to: impl AsRef<Path>,
     ) -> Result<(), LocalDirRenameError> {
-        self.validate_path(from.as_ref())
+        let from = self
+            .validate_path(from.as_ref())
+            .await
             .map_err(LocalDirRenameError::IoError)?;
-        self.validate_path(to.as_ref())
+        let to = self
+            .validate_path(to.as_ref())
+            .await
             .map_err(LocalDirRenameError::IoError)?;
 
-        dir::rename(from.as_ref(), to.as_ref()).await?;
+        dir::rename(from.as_path(), to.as_path()).await?;
 
         // TODO: Perform more optimal renames by filtering down open files
         //       using a path tree?
         for f in self.files.values_mut() {
-            f.0.apply_path_changed(from.as_ref(), to.as_ref());
+            f.0.apply_path_changed(from.as_path(), to.as_path());
         }
 
         Ok(())
@@ -94,12 +103,12 @@ impl FileSystemManager {
         path: impl AsRef<Path>,
         non_empty: bool,
     ) -> io::Result<()> {
-        self.validate_path(path.as_ref())?;
+        let path = self.validate_path(path.as_ref()).await?;
 
         // TODO: Perform more optimal removal check by filtering down open
         //       files using a path tree?
         for f in self.files.values() {
-            if f.0.path().starts_with(path.as_ref()) {
+            if f.0.path().starts_with(path.as_path()) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "Directory contains open files",
@@ -124,7 +133,9 @@ impl FileSystemManager {
         &self,
         path: impl AsRef<Path>,
     ) -> Result<Vec<LocalDirEntry>, LocalDirEntriesError> {
-        self.validate_path(path.as_ref())
+        let path = self
+            .validate_path(path.as_ref())
+            .await
             .map_err(LocalDirEntriesError::ReadDirError)?;
 
         dir::entries(path).await
@@ -145,7 +156,7 @@ impl FileSystemManager {
         write: bool,
         read: bool,
     ) -> io::Result<LocalFileHandle> {
-        self.validate_path(path.as_ref())?;
+        let path = self.validate_path(path.as_ref()).await?;
 
         let mut new_permissions = LocalFilePermissions { read, write };
         let mut maybe_id_and_sig = None;
@@ -155,7 +166,7 @@ impl FileSystemManager {
         let search = self
             .files
             .values_mut()
-            .find(|f| f.0.path() == path.as_ref());
+            .find(|f| f.0.path() == path.as_path());
 
         // If we found a match, check the permissions to see if we can return
         // it or if we need to open a new copy with the proper merged
@@ -230,26 +241,31 @@ impl FileSystemManager {
     }
 
     /// Looks up an open file by its associated `id`
-    pub fn get_mut(&mut self, id: &u32) -> Option<&mut LocalFile> {
-        match self.files.get_mut(id) {
+    pub fn get_mut(&mut self, id: u32) -> Option<&mut LocalFile> {
+        match self.files.get_mut(&id) {
             Some((file, _)) => Some(file),
             None => None,
         }
     }
 
     /// Looks up an open file by its associated `id`
-    pub fn get(&self, id: &u32) -> Option<&LocalFile> {
-        match self.files.get(id) {
+    pub fn get(&self, id: u32) -> Option<&LocalFile> {
+        match self.files.get(&id) {
             Some((file, _)) => Some(file),
             None => None,
         }
     }
 
-    /// Checks `path` to see if is okay by
-    /// 1. Seeing if we have a `root`, if not then this function returns ok
-    /// 2. Seeing if `path` is in `root`, if so, then this function returns ok
+    /// Checks `path` to see if is okay, returning the fully-realized path.
+    ///
+    /// If `path` is relative, it is placed within the root of the manager.
+    /// If `path` is absolute, check if `path` is in `root`
+    /// 1. If so, then this function returns ok with the `path`
     /// 3. Otherwise we have a bad path and this function returns an error
-    fn validate_path(&self, path: impl AsRef<Path>) -> io::Result<()> {
+    async fn validate_path(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> io::Result<PathBuf> {
         let is_ok = self
             .root
             .as_ref()
@@ -257,7 +273,7 @@ impl FileSystemManager {
             .unwrap_or(true);
 
         if is_ok {
-            Ok(())
+            fs::canonicalize(path).await
         } else {
             Err(io::Error::from(io::ErrorKind::PermissionDenied))
         }
@@ -272,14 +288,17 @@ mod tests {
     async fn create_dir_should_yield_error_if_path_not_in_root() {
         let fsm = FileSystemManager::with_root("/some/path");
 
-        let result = fsm.create_dir("some/dir", true).await;
+        let result = fsm.create_dir("/some/dir", true).await;
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
     }
 
     #[tokio::test]
     async fn create_dir_should_yield_error_if_parent_dirs_missing_and_flag_not_set(
     ) {
-        unimplemented!();
+        let fsm = FileSystemManager::new();
+
+        let result = fsm.create_dir("some/dir", false).await;
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
     }
 
     #[tokio::test]

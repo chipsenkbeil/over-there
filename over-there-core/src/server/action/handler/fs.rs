@@ -65,7 +65,7 @@ where
 {
     debug!("do_read_file: {:?}", args);
 
-    match state.fs_manager.lock().await.get_mut(&args.id) {
+    match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.read_all(args.sig).await {
             Ok(data) => {
                 respond(Content::FileContents(FileContentsArgs { data })).await
@@ -106,7 +106,7 @@ where
 {
     debug!("do_write_file: {:?}", args);
 
-    match state.fs_manager.lock().await.get_mut(&args.id) {
+    match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => {
             match local_file.write_all(args.sig, &args.data).await {
                 Ok(_) => {
@@ -238,7 +238,7 @@ mod tests {
         match content.unwrap() {
             Content::FileOpened(args) => {
                 let x = state.fs_manager.lock().await;
-                let local_file = x.get(&args.id).unwrap();
+                let local_file = x.get(args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig());
             }
             x => panic!("Bad content: {:?}", x),
@@ -272,7 +272,7 @@ mod tests {
         match content.unwrap() {
             Content::FileOpened(args) => {
                 let x = state.fs_manager.lock().await;
-                let local_file = x.get(&args.id).unwrap();
+                let local_file = x.get(args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig());
             }
             x => panic!("Bad content: {:?}", x),
