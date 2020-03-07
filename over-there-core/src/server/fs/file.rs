@@ -78,6 +78,12 @@ impl Into<u32> for LocalFileHandle {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct LocalFilePermissions {
+    pub write: bool,
+    pub read: bool,
+}
+
 #[derive(Debug)]
 pub struct LocalFile {
     /// Represents a unique id with which to lookup the file
@@ -92,13 +98,20 @@ pub struct LocalFile {
     /// write, and perform other operations
     file: File,
 
+    /// Represents the permissions associated with the file when it was opened
+    permissions: LocalFilePermissions,
+
     /// Represents the absolute path to the file; any movement
     /// of the file will result in changing the path
     path: PathBuf,
 }
 
 impl LocalFile {
-    pub(crate) fn new(file: File, path: impl AsRef<Path>) -> Self {
+    pub(crate) fn new(
+        file: File,
+        permissions: LocalFilePermissions,
+        path: impl AsRef<Path>,
+    ) -> Self {
         let id = OsRng.next_u32();
         let sig = OsRng.next_u32();
 
@@ -106,6 +119,7 @@ impl LocalFile {
             id,
             sig,
             file,
+            permissions,
             path: path.as_ref().to_path_buf(),
         }
     }
@@ -125,7 +139,8 @@ impl LocalFile {
         {
             Ok(file) => {
                 let cpath = fs::canonicalize(path).await?;
-                Ok(Self::new(file, cpath))
+                let permissions = LocalFilePermissions { write, read };
+                Ok(Self::new(file, permissions, cpath))
             }
             Err(x) => Err(x),
         }
@@ -144,6 +159,10 @@ impl LocalFile {
             id: self.id,
             sig: self.sig,
         }
+    }
+
+    pub fn permissions(&self) -> LocalFilePermissions {
+        self.permissions
     }
 
     pub fn path(&self) -> &Path {
@@ -273,6 +292,20 @@ mod tests {
     use super::*;
     use std::io::{Read, Seek, SeekFrom, Write};
 
+    fn create_test_local_file(
+        file: std::fs::File,
+        path: impl AsRef<Path>,
+    ) -> LocalFile {
+        LocalFile::new(
+            File::from_std(file),
+            LocalFilePermissions {
+                read: true,
+                write: true,
+            },
+            path,
+        )
+    }
+
     #[tokio::test]
     async fn open_should_yield_error_if_file_missing_and_create_false() {
         match LocalFile::open("missingfile", false, true, true).await {
@@ -299,24 +332,21 @@ mod tests {
 
     #[tokio::test]
     async fn id_should_return_associated_id() {
-        let lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         assert_eq!(lf.id, lf.id());
     }
 
     #[tokio::test]
     async fn sig_should_return_associated_sig() {
-        let lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         assert_eq!(lf.sig, lf.sig());
     }
 
     #[tokio::test]
     async fn handle_should_return_associated_handle_with_id_and_sig() {
-        let lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
         let LocalFileHandle { id, sig } = lf.handle();
 
         assert_eq!(id, lf.id());
@@ -326,18 +356,15 @@ mod tests {
     #[tokio::test]
     async fn path_should_return_associated_path() {
         let path_str = "test_cheeseburger";
-        let lf = LocalFile::new(
-            File::from_std(tempfile::tempfile().unwrap()),
-            path_str,
-        );
+        let lf =
+            create_test_local_file(tempfile::tempfile().unwrap(), path_str);
 
         assert_eq!(Path::new(path_str), lf.path());
     }
 
     #[tokio::test]
     async fn read_all_should_yield_error_if_provided_sig_is_different() {
-        let mut lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let mut lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         let sig = lf.sig();
         match lf.read_all(sig + 1).await {
@@ -378,8 +405,7 @@ mod tests {
 
     #[tokio::test]
     async fn read_all_should_return_empty_if_file_empty() {
-        let mut lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let mut lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
         let sig = lf.sig();
 
         match lf.read_all(sig).await {
@@ -405,7 +431,7 @@ mod tests {
         let mut f = tempfile::tempfile().unwrap();
         f.write_all(contents).unwrap();
 
-        let mut lf = LocalFile::new(File::from_std(f), "");
+        let mut lf = create_test_local_file(f, "");
         let sig = lf.sig();
 
         match lf.read_all(sig).await {
@@ -427,8 +453,7 @@ mod tests {
 
     #[tokio::test]
     async fn write_all_should_yield_error_if_provided_sig_is_different() {
-        let mut lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let mut lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         let sig = lf.sig();
         match lf.write_all(sig + 1, b"some contents").await {
@@ -473,7 +498,7 @@ mod tests {
         let mut buf = Vec::new();
 
         // Load the file as a LocalFile
-        let mut lf = LocalFile::new(File::from_std(f.try_clone().unwrap()), "");
+        let mut lf = create_test_local_file(f.try_clone().unwrap(), "");
         let data = vec![1, 2, 3];
 
         // Put some arbitrary data into the file
@@ -503,8 +528,7 @@ mod tests {
 
     #[tokio::test]
     async fn rename_should_yield_error_if_provided_sig_is_different() {
-        let mut lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let mut lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         let sig = lf.sig();
         match lf.rename(sig + 1, "something_else").await {
@@ -518,8 +542,7 @@ mod tests {
 
     #[tokio::test]
     async fn rename_should_yield_error_if_underlying_path_is_missing() {
-        let mut lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let mut lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         let sig = lf.sig();
         match lf.rename(sig, "something_else").await {
@@ -536,10 +559,8 @@ mod tests {
         let f = tempfile::NamedTempFile::new().unwrap();
         let path = f.path();
 
-        let mut lf = LocalFile::new(
-            File::from_std(f.as_file().try_clone().unwrap()),
-            path,
-        );
+        let mut lf =
+            create_test_local_file(f.as_file().try_clone().unwrap(), path);
 
         // NOTE: Renaming when using temp file seems to trigger this, so using
         //       it as a test case
@@ -581,8 +602,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_should_yield_error_if_provided_sig_is_different() {
-        let lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         let sig = lf.sig();
         match lf.remove(sig + 1).await {
@@ -596,8 +616,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_should_yield_error_if_underlying_path_is_missing() {
-        let lf =
-            LocalFile::new(File::from_std(tempfile::tempfile().unwrap()), "");
+        let lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         let sig = lf.sig();
         match lf.remove(sig).await {
@@ -614,16 +633,13 @@ mod tests {
         let f = tempfile::NamedTempFile::new().unwrap();
         let path = f.path();
 
-        let lf = LocalFile::new(
-            File::from_std(f.as_file().try_clone().unwrap()),
-            path,
-        );
+        let lf = create_test_local_file(f.as_file().try_clone().unwrap(), path);
 
         let sig = lf.sig();
 
         // Do reomve and verify that the file at path is gone
         assert!(fs::read(path).await.is_ok(), "File already missing at path");
-        lf.remove(sig).await.unwrap();
+        lf.remove(sig).await.expect("Failed to remove file");
         assert!(fs::read(path).await.is_err(), "File still exists at path");
     }
 
@@ -634,8 +650,8 @@ mod tests {
 
         let file_path = Path::new("file");
         let from_file_path = from_dir_path.join(file_path);
-        let mut lf = LocalFile::new(
-            File::from_std(tempfile::tempfile().unwrap()),
+        let mut lf = create_test_local_file(
+            tempfile::tempfile().unwrap(),
             from_file_path,
         );
 
@@ -662,8 +678,8 @@ mod tests {
 
         let file_path = Path::new("file");
         let from_file_path = from_dir_path.join(file_path);
-        let mut lf = LocalFile::new(
-            File::from_std(tempfile::tempfile().unwrap()),
+        let mut lf = create_test_local_file(
+            tempfile::tempfile().unwrap(),
             from_file_path,
         );
 
@@ -691,14 +707,14 @@ mod tests {
         let from_file_path = from_dir_path.join(file_path);
         let to_file_path = to_dir_path.join(file_path);
 
-        let mut lf = LocalFile::new(
-            File::from_std(tempfile::tempfile().unwrap()),
+        let mut lf = create_test_local_file(
+            tempfile::tempfile().unwrap(),
             from_file_path.as_path(),
         );
 
         assert_eq!(
             lf.path(),
-            from_file_path,
+            from_file_path.as_path(),
             "LocalFile path not set at proper initial location"
         );
 

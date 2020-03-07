@@ -204,7 +204,6 @@ impl TryFrom<LocalDirEntry> for DirEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::fs::LocalFile;
     use std::io;
 
     #[tokio::test]
@@ -321,21 +320,21 @@ mod tests {
         let mut content: Option<Content> = None;
         let file_data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let mut file = tempfile::tempfile().unwrap();
+        let mut file = tempfile::NamedTempFile::new().unwrap();
 
         use std::io::Write;
         file.write_all(&file_data).unwrap();
         file.flush().unwrap();
 
-        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
-        let id = local_file.id();
-        let sig = local_file.sig();
-
-        state
+        let handle = state
             .fs_manager
             .lock()
             .await
-            .add_existing_file(local_file, true, true);
+            .open_file(file.as_ref(), true, true, true)
+            .await
+            .expect("Unable to open file");
+        let id = handle.id;
+        let sig = handle.sig;
 
         do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
@@ -392,15 +391,15 @@ mod tests {
         file.write_all(&vec![1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
         file.flush().unwrap();
 
-        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
-        let id = local_file.id();
-        let sig = local_file.sig();
-
-        state
+        let handle = state
             .fs_manager
             .lock()
             .await
-            .add_existing_file(local_file, true, true);
+            .open_file(tmp_file.as_ref(), true, true, false)
+            .await
+            .expect("Unable to open file");
+        let id = handle.id;
+        let sig = handle.sig;
 
         do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
             content = Some(c);
@@ -422,17 +421,17 @@ mod tests {
     async fn do_read_file_should_send_error_if_file_sig_has_changed() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
-        let file = tempfile::tempfile().unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
 
-        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
-        let id = local_file.id();
-        let sig = local_file.sig();
-
-        state
+        let handle = state
             .fs_manager
             .lock()
             .await
-            .add_existing_file(local_file, true, true);
+            .open_file(file.as_ref(), true, true, true)
+            .await
+            .expect("Unable to open file");
+        let id = handle.id;
+        let sig = handle.sig;
 
         do_read_file(
             Arc::clone(&state),
@@ -459,20 +458,17 @@ mod tests {
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let mut file = tempfile::tempfile().unwrap();
+        let mut file = tempfile::NamedTempFile::new().unwrap();
 
-        let local_file = LocalFile::new(
-            tokio::fs::File::from_std(file.try_clone().unwrap()),
-            "",
-        );
-        let id = local_file.id();
-        let sig = local_file.sig();
-
-        state
+        let handle = state
             .fs_manager
             .lock()
             .await
-            .add_existing_file(local_file, true, true);
+            .open_file(file.as_ref(), true, true, true)
+            .await
+            .expect("Unable to open file");
+        let id = handle.id;
+        let sig = handle.sig;
 
         do_write_file(
             Arc::clone(&state),
@@ -515,23 +511,17 @@ mod tests {
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let tmp_file = tempfile::NamedTempFile::new().unwrap();
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(tmp_file.path())
-            .unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
 
-        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
-        let id = local_file.id();
-        let sig = local_file.sig();
-
-        state
+        let handle = state
             .fs_manager
             .lock()
             .await
-            .add_existing_file(local_file, false, true);
+            .open_file(file.as_ref(), false, false, true)
+            .await
+            .expect("Unable to open file");
+        let id = handle.id;
+        let sig = handle.sig;
 
         do_write_file(
             Arc::clone(&state),
@@ -559,17 +549,17 @@ mod tests {
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-        let file = tempfile::tempfile().unwrap();
+        let file = tempfile::NamedTempFile::new().unwrap();
 
-        let local_file = LocalFile::new(tokio::fs::File::from_std(file), "");
-        let id = local_file.id();
-        let sig = local_file.sig();
-
-        state
+        let handle = state
             .fs_manager
             .lock()
             .await
-            .add_existing_file(local_file, true, true);
+            .open_file(file.as_ref(), true, true, true)
+            .await
+            .expect("Unable to open file");
+        let id = handle.id;
+        let sig = handle.sig;
 
         do_write_file(
             Arc::clone(&state),
