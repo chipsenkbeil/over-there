@@ -12,7 +12,6 @@ pub use file::{
 use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use tokio::fs;
 
 #[derive(Debug)]
 struct LocalFilePermissions {
@@ -55,13 +54,19 @@ impl FileSystemManager {
         }
     }
 
+    /// Represents the root that the file system abides by when managing
+    /// resources
+    pub fn root(&self) -> Option<&PathBuf> {
+        self.root.as_ref()
+    }
+
     /// Creates a new directory
     pub async fn create_dir(
         &self,
         path: impl AsRef<Path>,
         create_components: bool,
     ) -> io::Result<()> {
-        let path = self.validate_path(path.as_ref()).await?;
+        let path = self.validate_path(path.as_ref())?;
         dir::create(path, create_components).await
     }
 
@@ -78,11 +83,9 @@ impl FileSystemManager {
     ) -> Result<(), LocalDirRenameError> {
         let from = self
             .validate_path(from.as_ref())
-            .await
             .map_err(LocalDirRenameError::IoError)?;
         let to = self
             .validate_path(to.as_ref())
-            .await
             .map_err(LocalDirRenameError::IoError)?;
 
         dir::rename(from.as_path(), to.as_path()).await?;
@@ -103,7 +106,7 @@ impl FileSystemManager {
         path: impl AsRef<Path>,
         non_empty: bool,
     ) -> io::Result<()> {
-        let path = self.validate_path(path.as_ref()).await?;
+        let path = self.validate_path(path.as_ref())?;
 
         // TODO: Perform more optimal removal check by filtering down open
         //       files using a path tree?
@@ -135,7 +138,6 @@ impl FileSystemManager {
     ) -> Result<Vec<LocalDirEntry>, LocalDirEntriesError> {
         let path = self
             .validate_path(path.as_ref())
-            .await
             .map_err(LocalDirEntriesError::ReadDirError)?;
 
         dir::entries(path).await
@@ -156,7 +158,7 @@ impl FileSystemManager {
         write: bool,
         read: bool,
     ) -> io::Result<LocalFileHandle> {
-        let path = self.validate_path(path.as_ref()).await?;
+        let path = self.validate_path(path.as_ref())?;
 
         let mut new_permissions = LocalFilePermissions { read, write };
         let mut maybe_id_and_sig = None;
@@ -216,8 +218,8 @@ impl FileSystemManager {
 
     /// Closes an open file by `id`, returning whether or not there was a file
     /// to close with the specified `id`
-    pub async fn close_file(&mut self, id: u32) -> bool {
-        self.files.remove(&id).is_some()
+    pub async fn close_file(&mut self, id: impl Into<u32>) -> bool {
+        self.files.remove(&id.into()).is_some()
     }
 
     /// Adds the already-created `local_file`, specifying what permissions
@@ -241,16 +243,16 @@ impl FileSystemManager {
     }
 
     /// Looks up an open file by its associated `id`
-    pub fn get_mut(&mut self, id: u32) -> Option<&mut LocalFile> {
-        match self.files.get_mut(&id) {
+    pub fn get_mut(&mut self, id: impl Into<u32>) -> Option<&mut LocalFile> {
+        match self.files.get_mut(&id.into()) {
             Some((file, _)) => Some(file),
             None => None,
         }
     }
 
     /// Looks up an open file by its associated `id`
-    pub fn get(&self, id: u32) -> Option<&LocalFile> {
-        match self.files.get(&id) {
+    pub fn get(&self, id: impl Into<u32>) -> Option<&LocalFile> {
+        match self.files.get(&id.into()) {
             Some((file, _)) => Some(file),
             None => None,
         }
@@ -261,11 +263,8 @@ impl FileSystemManager {
     /// If `path` is relative, it is placed within the root of the manager.
     /// If `path` is absolute, check if `path` is in `root`
     /// 1. If so, then this function returns ok with the `path`
-    /// 3. Otherwise we have a bad path and this function returns an error
-    async fn validate_path(
-        &self,
-        path: impl AsRef<Path>,
-    ) -> io::Result<PathBuf> {
+    /// 2. Otherwise we have a bad path and this function returns an error
+    fn validate_path(&self, path: impl AsRef<Path>) -> io::Result<PathBuf> {
         let is_ok = self
             .root
             .as_ref()
@@ -273,7 +272,12 @@ impl FileSystemManager {
             .unwrap_or(true);
 
         if is_ok {
-            fs::canonicalize(path).await
+            // If we have a root, use it as prefix, otherwise just use path
+            Ok(self
+                .root
+                .as_ref()
+                .map(|root| root.join(path.as_ref()))
+                .unwrap_or_else(|| path.as_ref().to_path_buf()))
         } else {
             Err(io::Error::from(io::ErrorKind::PermissionDenied))
         }
@@ -283,10 +287,12 @@ impl FileSystemManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::fs;
 
     #[tokio::test]
     async fn create_dir_should_yield_error_if_path_not_in_root() {
-        let fsm = FileSystemManager::with_root("/some/path");
+        let root = tempfile::tempdir().unwrap();
+        let fsm = FileSystemManager::with_root(root);
 
         let result = fsm.create_dir("/some/dir", true).await;
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
@@ -295,7 +301,8 @@ mod tests {
     #[tokio::test]
     async fn create_dir_should_yield_error_if_parent_dirs_missing_and_flag_not_set(
     ) {
-        let fsm = FileSystemManager::new();
+        let root = tempfile::tempdir().unwrap();
+        let fsm = FileSystemManager::with_root(root);
 
         let result = fsm.create_dir("some/dir", false).await;
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
@@ -303,37 +310,152 @@ mod tests {
 
     #[tokio::test]
     async fn create_dir_should_return_success_if_created_the_path() {
-        unimplemented!();
+        let root = tempfile::tempdir().unwrap();
+        let fsm = FileSystemManager::with_root(root.as_ref());
+
+        let path = root.as_ref().join("test-dir");
+        let result = fsm.create_dir("test-dir", false).await;
+        assert!(result.is_ok(), "Unexpectedly failed to create dir");
+        assert!(fs::metadata(path).await.is_ok(), "Directory missing");
+
+        let path = root.as_ref().join("some/test-dir");
+        let result = fsm.create_dir("some/test-dir", false).await;
+        assert!(result.is_ok(), "Unexpectedly failed to create dir");
+        assert!(fs::metadata(path).await.is_ok(), "Directory missing");
     }
 
     #[tokio::test]
     async fn rename_dir_should_yield_error_if_origin_path_not_in_root() {
-        unimplemented!();
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let other_root = tempfile::tempdir().unwrap();
+
+        let origin = other_root.as_ref().join("origin");
+        fs::create_dir(origin.as_path()).await.unwrap();
+
+        let destination = root.as_ref().join("destination");
+
+        match fsm.rename_dir(origin, destination).await {
+            Err(LocalDirRenameError::IoError(x))
+                if x.kind() == io::ErrorKind::PermissionDenied =>
+            {
+                ()
+            }
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[tokio::test]
     async fn rename_dir_should_yield_error_if_destination_path_not_in_root() {
-        unimplemented!();
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let other_root = tempfile::tempdir().unwrap();
+
+        let origin = root.as_ref().join("origin");
+        fs::create_dir(origin.as_path()).await.unwrap();
+
+        let destination = other_root.as_ref().join("destination");
+
+        match fsm.rename_dir(origin, destination).await {
+            Err(LocalDirRenameError::IoError(x))
+                if x.kind() == io::ErrorKind::PermissionDenied =>
+            {
+                ()
+            }
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_dir_should_yield_error_if_origin_path_does_not_exist() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let origin = root.as_ref().join("origin");
+        let destination = root.as_ref().join("destination");
+
+        match fsm.rename_dir(origin, destination).await {
+            Err(LocalDirRenameError::FailedToGetMetadata(x)) => {
+                assert_eq!(x.kind(), io::ErrorKind::NotFound)
+            }
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[tokio::test]
     async fn rename_dir_should_yield_error_if_origin_path_is_not_a_directory() {
-        unimplemented!();
-    }
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
 
-    #[tokio::test]
-    async fn rename_dir_should_yield_error_if_unable_to_rename_directory() {
-        unimplemented!();
+        // Make origin a file instead of directory
+        let origin = root.as_ref().join("origin");
+        fs::write(origin.as_path(), b"some content").await.unwrap();
+
+        let destination = root.as_ref().join("destination");
+
+        match fsm.rename_dir(origin, destination).await {
+            Err(LocalDirRenameError::NotADirectory) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[tokio::test]
     async fn rename_dir_should_update_paths_of_open_files_in_directory() {
-        unimplemented!();
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let origin = root.as_ref().join("origin");
+        fs::create_dir(origin.as_path()).await.unwrap();
+
+        // Create a couple of files, some in origin
+        let file1 = fsm
+            .open_file(root.as_ref().join("file1"), true, true, true)
+            .await
+            .unwrap();
+        let file2 = fsm
+            .open_file(origin.as_path().join("file2"), true, true, true)
+            .await
+            .unwrap();
+
+        let destination = root.as_ref().join("destination");
+
+        match fsm
+            .rename_dir(origin.as_path(), destination.as_path())
+            .await
+        {
+            Ok(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+
+        // Validate that only the file within origin was updated
+        assert_eq!(
+            fsm.get(file1).unwrap().path(),
+            root.as_ref().join("file1"),
+            "File1 unexpectedly moved"
+        );
+        assert_eq!(
+            fsm.get(file2).unwrap().path(),
+            destination.as_path().join("file2"),
+            "File2 unexpectedly did not move"
+        );
     }
 
     #[tokio::test]
     async fn rename_dir_should_return_success_if_renamed_directory() {
-        unimplemented!();
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let origin = root.as_ref().join("origin");
+        fs::create_dir(origin.as_path()).await.unwrap();
+
+        let destination = root.as_ref().join("destination");
+
+        match fsm.rename_dir(origin, destination).await {
+            Ok(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[tokio::test]

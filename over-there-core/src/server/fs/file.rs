@@ -71,6 +71,13 @@ pub struct LocalFileHandle {
     pub sig: u32,
 }
 
+/// Converts handle into its id
+impl Into<u32> for LocalFileHandle {
+    fn into(self) -> u32 {
+        self.id
+    }
+}
+
 #[derive(Debug)]
 pub struct LocalFile {
     /// Represents a unique id with which to lookup the file
