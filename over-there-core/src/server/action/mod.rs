@@ -179,6 +179,15 @@ impl<T> Executor<T> {
             Content::DoWriteFile(args) => {
                 handler::fs::do_write_file(state, args, do_respond).await
             }
+            Content::DoCreateDir(args) => {
+                handler::fs::do_create_dir(state, args, do_respond).await
+            }
+            Content::DoRenameDir(args) => {
+                handler::fs::do_rename_dir(state, args, do_respond).await
+            }
+            Content::DoRemoveDir(args) => {
+                handler::fs::do_remove_dir(state, args, do_respond).await
+            }
             Content::DoListDirContents(args) => {
                 handler::fs::do_list_dir_contents(state, args, do_respond).await
             }

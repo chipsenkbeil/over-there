@@ -10,6 +10,18 @@ pub enum LocalDirRenameError {
     IoError(io::Error),
 }
 
+impl Into<io::Error> for LocalDirRenameError {
+    fn into(self) -> io::Error {
+        match self {
+            Self::NotADirectory => {
+                io::Error::new(io::ErrorKind::InvalidInput, "Not a directory")
+            }
+            Self::FailedToGetMetadata(x) => x,
+            Self::IoError(x) => x,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum LocalDirEntriesError {
     ReadDirError(io::Error),

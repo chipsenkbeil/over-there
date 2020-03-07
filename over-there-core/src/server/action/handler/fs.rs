@@ -212,6 +212,78 @@ where
     }
 }
 
+pub async fn do_create_dir<F, R>(
+    state: Arc<ServerState>,
+    args: &DoCreateDirArgs,
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
+    debug!("do_create_dir: {:?}", args);
+
+    match state
+        .fs_manager
+        .lock()
+        .await
+        .create_dir(&args.path, args.include_components)
+        .await
+    {
+        Ok(_) => respond(Content::DirCreated(DirCreatedArgs {})).await,
+        Err(x) => respond(Content::IoError(From::from(x))).await,
+    }
+}
+
+pub async fn do_rename_dir<F, R>(
+    state: Arc<ServerState>,
+    args: &DoRenameDirArgs,
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
+    debug!("do_rename_dir: {:?}", args);
+
+    match state
+        .fs_manager
+        .lock()
+        .await
+        .rename_dir(&args.from, &args.to)
+        .await
+    {
+        Ok(_) => respond(Content::DirRenamed(DirRenamedArgs {})).await,
+        Err(x) => {
+            let err: io::Error = x.into();
+            respond(Content::IoError(From::from(err))).await
+        }
+    }
+}
+
+pub async fn do_remove_dir<F, R>(
+    state: Arc<ServerState>,
+    args: &DoRemoveDirArgs,
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
+    debug!("do_remove_dir: {:?}", args);
+
+    match state
+        .fs_manager
+        .lock()
+        .await
+        .remove_dir(&args.path, args.non_empty)
+        .await
+    {
+        Ok(_) => respond(Content::DirRemoved(DirRemovedArgs {})).await,
+        Err(x) => respond(Content::IoError(From::from(x))).await,
+    }
+}
+
 pub async fn do_list_dir_contents<F, R>(
     state: Arc<ServerState>,
     args: &DoListDirContentsArgs,
@@ -679,6 +751,36 @@ mod tests {
             }
             x => panic!("Bad content: {:?}", x),
         }
+    }
+
+    #[tokio::test]
+    async fn do_create_dir_should_send_error_if_encounter_error() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_create_dir_should_send_confirmation_if_directory_created() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_rename_dir_should_send_error_if_a_file_open_in_directory() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_rename_dir_should_send_confirmation_if_directory_renamed() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_remove_dir_should_send_error_if_a_file_open_in_directory() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_remove_dir_should_send_confirmation_if_directory_removed() {
+        unimplemented!();
     }
 
     #[tokio::test]

@@ -27,6 +27,24 @@ pub enum Content {
 
     // ------------------------------------------------------------------------
     // Dir-based operations such as creating and listing entries
+    /// This will be sent to indicate the desire to create a new directory
+    DoCreateDir(io::fs::DoCreateDirArgs),
+
+    /// This will be returned upon creating a directory
+    DirCreated(io::fs::DirCreatedArgs),
+
+    /// This will be sent to indicate the desire to rename a directory
+    DoRenameDir(io::fs::DoRenameDirArgs),
+
+    /// This will be returned upon renaming a directory
+    DirRenamed(io::fs::DirRenamedArgs),
+
+    /// This will be sent to indicate the desire to remove a directory
+    DoRemoveDir(io::fs::DoRemoveDirArgs),
+
+    /// This will be returned upon removing a directory
+    DirRemoved(io::fs::DirRemovedArgs),
+
     /// This will be sent to indicate the desire to list all files/directories
     /// at the provided path
     DoListDirContents(io::fs::DoListDirContentsArgs),
