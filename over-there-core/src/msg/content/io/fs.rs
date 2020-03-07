@@ -55,9 +55,24 @@ pub struct DoCloseFileArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FileClosedArgs {
-    pub id: u32,
+pub struct FileClosedArgs {}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DoRenameFileArgs {
+    pub from: String,
+    pub to: String,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct FileRenamedArgs {}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DoRemoveFileArgs {
+    pub path: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct FileRemovedArgs {}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoReadFileArgs {

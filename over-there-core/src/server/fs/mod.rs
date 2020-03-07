@@ -64,12 +64,9 @@ impl FileSystemManager {
         dir::create(path, create_components).await
     }
 
-    /// Attempts to rename an entire directory, checking through all open
-    /// files to see if their paths also need to be renamed.
+    /// Attempts to rename an entire directory.
     ///
-    /// If any file is open, its sig will need to be included in the auth
-    /// section to ensure that it can be moved; otherwise, an error will
-    /// be returned
+    /// Will fail if there is an open file within the directory on any level.
     pub async fn rename_dir(
         &mut self,
         from: impl AsRef<Path>,
@@ -82,13 +79,11 @@ impl FileSystemManager {
             .validate_path(to.as_ref())
             .map_err(LocalDirRenameError::IoError)?;
 
-        dir::rename(from.as_path(), to.as_path()).await?;
+        self.check_no_open_files(from.as_path())
+            .map_err(LocalDirRenameError::IoError)?;
 
-        // TODO: Perform more optimal renames by filtering down open files
-        //       using a path tree?
-        for f in self.files.values_mut() {
-            f.apply_path_changed(from.as_path(), to.as_path());
-        }
+        // No open file is within this directory, so good to attempt to rename
+        dir::rename(from.as_path(), to.as_path()).await?;
 
         Ok(())
     }
@@ -102,16 +97,7 @@ impl FileSystemManager {
     ) -> io::Result<()> {
         let path = self.validate_path(path.as_ref())?;
 
-        // TODO: Perform more optimal removal check by filtering down open
-        //       files using a path tree?
-        for f in self.files.values() {
-            if f.path().starts_with(path.as_path()) {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Directory contains open files",
-                ));
-            }
-        }
+        self.check_no_open_files(path.as_path())?;
 
         // No open file is within this directory, so good to attempt to remove
         dir::remove(path, non_empty).await
@@ -214,6 +200,34 @@ impl FileSystemManager {
         self.files.remove(&id.into()).is_some()
     }
 
+    /// Attempts to rename a file at `from` into `to`.
+    ///
+    /// Will fail if file is open at `from`.
+    pub async fn rename_file(
+        &mut self,
+        from: impl AsRef<Path>,
+        to: impl AsRef<Path>,
+    ) -> io::Result<()> {
+        let from = self.validate_path(from.as_ref())?;
+        let to = self.validate_path(to.as_ref())?;
+
+        self.check_no_open_files(from.as_path())?;
+
+        file::rename(from.as_path(), to.as_path()).await
+    }
+
+    /// Attempts to remove a file, failing if the file is currently open.
+    pub async fn remove_file(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> io::Result<()> {
+        let path = self.validate_path(path.as_ref())?;
+
+        self.check_no_open_files(path.as_path())?;
+
+        file::remove(path).await
+    }
+
     /// Represents the total files that are open within the manager
     pub fn file_cnt(&self) -> usize {
         self.files.len()
@@ -233,6 +247,24 @@ impl FileSystemManager {
             Some(file) => Some(file),
             None => None,
         }
+    }
+
+    /// Checks that `path` is not an open file or (if dir) does not contain any
+    /// open files managed by the file system manager
+    fn check_no_open_files(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        for f in self.files.values() {
+            if f.path().starts_with(path.as_ref()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "File at {:?} is open and must be closed",
+                        f.path()
+                    ),
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     /// Checks `path` to see if is okay, returning the fully-realized path.
@@ -391,20 +423,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rename_dir_should_update_paths_of_open_files_in_directory() {
+    async fn rename_dir_should_yield_error_if_contains_open_files() {
         let root = tempfile::tempdir().unwrap();
         let mut fsm = FileSystemManager::with_root(root.as_ref());
 
         let origin = root.as_ref().join("origin");
         fs::create_dir(origin.as_path()).await.unwrap();
 
-        // Create a couple of files, some in origin
-        let file1 = fsm
-            .open_file(root.as_ref().join("file1"), true, true, true)
-            .await
-            .unwrap();
-        let file2 = fsm
-            .open_file(origin.as_path().join("file2"), true, true, true)
+        // Create a file in origin
+        let _file1 = fsm
+            .open_file(origin.as_path().join("file1"), true, true, true)
             .await
             .unwrap();
 
@@ -414,21 +442,11 @@ mod tests {
             .rename_dir(origin.as_path(), destination.as_path())
             .await
         {
-            Ok(_) => (),
+            Err(LocalDirRenameError::IoError(x)) => {
+                assert_eq!(x.kind(), io::ErrorKind::InvalidData)
+            }
             x => panic!("Unexpected result: {:?}", x),
         }
-
-        // Validate that only the file within origin was updated
-        assert_eq!(
-            fsm.get(file1).unwrap().path(),
-            root.as_ref().join("file1"),
-            "File1 unexpectedly moved"
-        );
-        assert_eq!(
-            fsm.get(file2).unwrap().path(),
-            destination.as_path().join("file2"),
-            "File2 unexpectedly did not move"
-        );
     }
 
     #[tokio::test]
@@ -770,5 +788,152 @@ mod tests {
         );
 
         assert_ne!(handle, handle_2, "Two open files have same handle");
+    }
+
+    #[tokio::test]
+    async fn rename_file_should_yield_error_if_origin_path_not_in_root() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let other_root = tempfile::tempdir().unwrap();
+
+        let origin =
+            tempfile::NamedTempFile::new_in(other_root.as_ref()).unwrap();
+
+        let destination = root.as_ref().join("destination");
+
+        match fsm.rename_file(origin, destination).await {
+            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_file_should_yield_error_if_destination_path_not_in_root() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let other_root = tempfile::tempdir().unwrap();
+
+        let origin = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
+
+        let destination = other_root.as_ref().join("destination");
+
+        match fsm.rename_file(origin, destination).await {
+            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_file_should_yield_error_if_origin_path_does_not_exist() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let origin = root.as_ref().join("origin");
+        let destination = root.as_ref().join("destination");
+
+        match fsm.rename_file(origin, destination).await {
+            Err(x) => assert_eq!(x.kind(), io::ErrorKind::NotFound),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_file_should_yield_error_if_origin_path_is_not_a_file() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        // Make origin a directory instead of file
+        let origin_dir = tempfile::tempdir_in(root.as_ref()).unwrap();
+
+        let destination = root.as_ref().join("destination");
+
+        match fsm.rename_file(origin_dir.as_ref(), destination).await {
+            Err(x) => assert_eq!(x.kind(), io::ErrorKind::Other),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_file_should_yield_error_if_file_is_open() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let origin = root.as_ref().join("file");
+        let _file = fsm
+            .open_file(origin.as_path(), true, true, true)
+            .await
+            .unwrap();
+
+        let destination = root.as_ref().join("destination");
+
+        match fsm
+            .rename_file(origin.as_path(), destination.as_path())
+            .await
+        {
+            Err(x) => assert_eq!(x.kind(), io::ErrorKind::InvalidData),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn rename_file_should_return_success_if_renamed_file() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let origin = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
+
+        let destination = root.as_ref().join("destination");
+
+        match fsm.rename_file(origin, destination).await {
+            Ok(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_file_should_yield_error_if_path_not_in_root() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let file_path = tempfile::NamedTempFile::new().unwrap();
+
+        match fsm.remove_file(file_path.as_ref()).await {
+            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_file_should_yield_error_if_file_open() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let path = root.as_ref().join("test-file");
+
+        fsm.open_file(path.as_path(), true, true, true)
+            .await
+            .expect("Failed to open file with manager");
+
+        // Even though we want to remove everything, still cannot do it because
+        // a local file is open
+        match fsm.remove_file(path.as_path()).await {
+            Err(x) if x.kind() == io::ErrorKind::InvalidData => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_file_should_return_success_if_removed_file() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let file = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
+
+        match fsm.remove_file(file.as_ref()).await {
+            Ok(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 }

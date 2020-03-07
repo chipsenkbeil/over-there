@@ -164,6 +164,15 @@ impl<T> Executor<T> {
             Content::DoOpenFile(args) => {
                 handler::fs::do_open_file(state, args, do_respond).await
             }
+            Content::DoCloseFile(args) => {
+                handler::fs::do_close_file(state, args, do_respond).await
+            }
+            Content::DoRenameFile(args) => {
+                handler::fs::do_rename_file(state, args, do_respond).await
+            }
+            Content::DoRemoveFile(args) => {
+                handler::fs::do_remove_file(state, args, do_respond).await
+            }
             Content::DoReadFile(args) => {
                 handler::fs::do_read_file(state, args, do_respond).await
             }

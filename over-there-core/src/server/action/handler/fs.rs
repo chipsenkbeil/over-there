@@ -54,6 +54,65 @@ where
     }
 }
 
+pub async fn do_close_file<F, R>(
+    state: Arc<ServerState>,
+    args: &DoCloseFileArgs,
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
+    debug!("do_close_file: {:?}", args);
+
+    // TODO: Add signature check
+    if state.fs_manager.lock().await.close_file(args.id).await {
+        respond(Content::FileClosed(FileClosedArgs {})).await
+    } else {
+        respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))).await
+    }
+}
+
+pub async fn do_rename_file<F, R>(
+    state: Arc<ServerState>,
+    args: &DoRenameFileArgs,
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
+    debug!("do_rename_file: {:?}", args);
+
+    match state
+        .fs_manager
+        .lock()
+        .await
+        .rename_file(&args.from, &args.to)
+        .await
+    {
+        Ok(_) => respond(Content::FileRenamed(FileRenamedArgs {})).await,
+        Err(x) => respond(Content::IoError(From::from(x))).await,
+    }
+}
+
+pub async fn do_remove_file<F, R>(
+    state: Arc<ServerState>,
+    args: &DoRemoveFileArgs,
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
+    debug!("do_remove_file: {:?}", args);
+
+    match state.fs_manager.lock().await.remove_file(&args.path).await {
+        Ok(_) => respond(Content::FileRemoved(FileRemovedArgs {})).await,
+        Err(x) => respond(Content::IoError(From::from(x))).await,
+    }
+}
+
 pub async fn do_read_file<F, R>(
     state: Arc<ServerState>,
     args: &DoReadFileArgs,

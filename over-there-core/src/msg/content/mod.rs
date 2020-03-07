@@ -26,7 +26,7 @@ pub enum Content {
     Capabilities(capabilities::CapabilitiesArgs),
 
     // ------------------------------------------------------------------------
-    // File-based operations such as reading and writing
+    // Dir-based operations such as creating and listing entries
     /// This will be sent to indicate the desire to list all files/directories
     /// at the provided path
     DoListDirContents(io::fs::DoListDirContentsArgs),
@@ -35,6 +35,8 @@ pub enum Content {
     /// at the provided path
     DirContentsList(io::fs::DirContentsListArgs),
 
+    // ------------------------------------------------------------------------
+    // File-based operations such as reading and writing
     /// This will be sent to indicate the desire to read/write a file,
     /// and can also be used to retrieve an already-open file's id/sig
     DoOpenFile(io::fs::DoOpenFileArgs),
@@ -47,6 +49,18 @@ pub enum Content {
 
     /// This will be returned upon a file being closed
     FileClosed(io::fs::FileClosedArgs),
+
+    /// This will be sent to indicate the desire to rename a file
+    DoRenameFile(io::fs::DoRenameFileArgs),
+
+    /// This will be returned upon renaming a file
+    FileRenamed(io::fs::FileRenamedArgs),
+
+    /// This will be sent to indicate the desire to remove a file
+    DoRemoveFile(io::fs::DoRemoveFileArgs),
+
+    /// This will be returned upon removing a file
+    FileRemoved(io::fs::FileRemovedArgs),
 
     /// This will be sent to indicate the desire to read a file's contents
     DoReadFile(io::fs::DoReadFileArgs),

@@ -191,12 +191,12 @@ impl LocalFile {
         &mut self,
         sig: u32,
         to: impl AsRef<Path>,
-    ) -> Result<(), LocalFileRenameError> {
+    ) -> Result<u32, LocalFileRenameError> {
         if self.sig != sig {
             return Err(LocalFileRenameError::SigMismatch);
         }
 
-        fs::rename(self.path.as_path(), to.as_ref())
+        rename(self.path.as_path(), to.as_ref())
             .await
             .map_err(LocalFileRenameError::IoError)?;
 
@@ -205,7 +205,7 @@ impl LocalFile {
         self.sig = OsRng.next_u32();
         self.path = to.as_ref().to_path_buf();
 
-        Ok(())
+        Ok(self.sig)
     }
 
     /// Removes the file (if possible) using its underlying path
@@ -214,7 +214,7 @@ impl LocalFile {
             return Err(LocalFileRemoveError::SigMismatch(self));
         }
 
-        fs::remove_file(self.path.as_path())
+        remove(self.path.as_path())
             .await
             .map_err(|x| LocalFileRemoveError::IoError(x, self))?;
 
@@ -285,6 +285,23 @@ impl LocalFile {
             .map_err(LocalFileWriteIoError::FlushError)
             .map_err(LocalFileWriteError::IoError)
     }
+}
+
+pub async fn rename(
+    from: impl AsRef<Path>,
+    to: impl AsRef<Path>,
+) -> io::Result<()> {
+    let metadata = fs::metadata(from.as_ref()).await?;
+
+    if metadata.is_file() {
+        fs::rename(from.as_ref(), to.as_ref()).await
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other, "Not a file"))
+    }
+}
+
+pub async fn remove(path: impl AsRef<Path>) -> io::Result<()> {
+    fs::remove_file(path.as_ref()).await
 }
 
 #[cfg(test)]
@@ -585,7 +602,8 @@ mod tests {
             fs::read("renamed_file").await.is_err(),
             "File already exists at rename path"
         );
-        lf.rename(sig, "renamed_file")
+        let new_sig = lf
+            .rename(sig, "renamed_file")
             .await
             .expect("Failed to rename");
         assert!(
@@ -597,7 +615,7 @@ mod tests {
             .expect("Failed to clean up file");
 
         // Verify signature changed
-        assert_ne!(lf.sig(), sig);
+        assert_ne!(new_sig, sig);
     }
 
     #[tokio::test]
