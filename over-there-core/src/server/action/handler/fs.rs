@@ -377,6 +377,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn do_close_file_should_send_error_if_file_not_open() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_close_file_should_send_error_if_signature_different() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_close_file_should_send_confirmation_if_successful() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_rename_file_should_send_error_if_file_open() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_rename_file_should_send_confirmation_if_file_renamed() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_remove_file_should_send_error_if_file_open() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn do_remove_file_should_send_confirmation_if_file_removed() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
     async fn do_read_file_should_send_contents_if_read_successful() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
