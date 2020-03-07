@@ -9,7 +9,7 @@ pub use file::{
     LocalFileWriteError, LocalFileWriteIoError,
 };
 
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -194,10 +194,28 @@ impl FileSystemManager {
         Ok(handle)
     }
 
-    /// Closes an open file by `id`, returning whether or not there was a file
-    /// to close with the specified `id`
-    pub async fn close_file(&mut self, id: impl Into<u32>) -> bool {
-        self.files.remove(&id.into()).is_some()
+    /// Closes an open file by `handle`.
+    ///
+    /// Will fail if no file with `handle` id is open, or if the signature
+    /// on the file is different than that of `handle`.
+    pub async fn close_file(
+        &mut self,
+        handle: LocalFileHandle,
+    ) -> io::Result<()> {
+        match self.files.entry(handle.id) {
+            Entry::Occupied(x) if x.get().sig == handle.sig => {
+                x.remove_entry();
+                Ok(())
+            }
+            Entry::Occupied(_) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Signature invalid for file with id {}", handle.id),
+            )),
+            Entry::Vacant(_) => Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("No open file with id {}", handle.id),
+            )),
+        }
     }
 
     /// Attempts to rename a file at `from` into `to`.
@@ -788,6 +806,66 @@ mod tests {
         );
 
         assert_ne!(handle, handle_2, "Two open files have same handle");
+    }
+
+    #[tokio::test]
+    async fn close_file_should_yield_error_if_no_file_open_with_id() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let handle = fsm
+            .open_file("test-file", true, true, true)
+            .await
+            .expect("Failed to create file");
+
+        match fsm
+            .close_file(LocalFileHandle {
+                id: handle.id + 1,
+                sig: handle.sig,
+            })
+            .await
+        {
+            Err(x) if x.kind() == io::ErrorKind::NotFound => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn close_file_should_yield_error_if_file_has_different_signature() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let handle = fsm
+            .open_file("test-file", true, true, true)
+            .await
+            .expect("Failed to create file");
+
+        match fsm
+            .close_file(LocalFileHandle {
+                id: handle.id,
+                sig: handle.sig + 1,
+            })
+            .await
+        {
+            Err(x) if x.kind() == io::ErrorKind::InvalidInput => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn close_fould_should_remove_file_from_manager_if_successful() {
+        let root = tempfile::tempdir().unwrap();
+        let mut fsm = FileSystemManager::with_root(root.as_ref());
+
+        let handle = fsm
+            .open_file("test-file", true, true, true)
+            .await
+            .expect("Failed to create file");
+
+        match fsm.close_file(handle).await {
+            Ok(_) => (),
+            x => panic!("Unexpected result: {:?}", x),
+        }
     }
 
     #[tokio::test]

@@ -52,6 +52,7 @@ pub struct FileOpenedArgs {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoCloseFileArgs {
     pub id: u32,
+    pub sig: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

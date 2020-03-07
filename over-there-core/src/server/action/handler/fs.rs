@@ -65,11 +65,14 @@ where
 {
     debug!("do_close_file: {:?}", args);
 
-    // TODO: Add signature check
-    if state.fs_manager.lock().await.close_file(args.id).await {
-        respond(Content::FileClosed(FileClosedArgs {})).await
-    } else {
-        respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id))).await
+    let handle = LocalFileHandle {
+        id: args.id,
+        sig: args.sig,
+    };
+
+    match state.fs_manager.lock().await.close_file(handle).await {
+        Ok(_) => respond(Content::FileClosed(FileClosedArgs {})).await,
+        Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
 
