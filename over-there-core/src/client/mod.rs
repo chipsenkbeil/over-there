@@ -455,7 +455,7 @@ impl Client {
         file: &RemoteFile,
     ) -> Result<(), FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoCloseOpenFile(DoCloseOpenFileArgs {
+            .ask(Msg::from(Content::DoCloseFile(DoCloseFileArgs {
                 id: file.id,
                 sig: file.sig,
             })))
@@ -466,7 +466,7 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::OpenFileClosed(_) => Ok(()),
+            Content::FileClosed(_) => Ok(()),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -478,7 +478,7 @@ impl Client {
         to: String,
     ) -> Result<(), FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRenameFile(DoRenameFileArgs {
+            .ask(Msg::from(Content::DoRenameUnopenedFile(DoRenameUnopenedFileArgs {
                 from,
                 to,
             })))
@@ -489,7 +489,7 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::FileRenamed(_) => Ok(()),
+            Content::UnopenedFileRenamed(_) => Ok(()),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -500,7 +500,7 @@ impl Client {
         path: String,
     ) -> Result<(), FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRemoveFile(DoRemoveFileArgs { path })))
+            .ask(Msg::from(Content::DoRemoveUnopenedFile(DoRemoveUnopenedFileArgs { path })))
             .await;
 
         if let Err(x) = result {
@@ -508,7 +508,7 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::FileRemoved(_) => Ok(()),
+            Content::UnopenedFileRemoved(_) => Ok(()),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -519,7 +519,7 @@ impl Client {
         file: &RemoteFile,
     ) -> Result<Vec<u8>, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoReadOpenFile(DoReadOpenFileArgs {
+            .ask(Msg::from(Content::DoReadFile(DoReadFileArgs {
                 id: file.id,
                 sig: file.sig,
             })))
@@ -530,7 +530,7 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::OpenFileContents(args) => Ok(args.data),
+            Content::FileContents(args) => Ok(args.data),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -542,7 +542,7 @@ impl Client {
         contents: &[u8],
     ) -> Result<(), FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoWriteOpenFile(DoWriteOpenFileArgs {
+            .ask(Msg::from(Content::DoWriteFile(DoWriteFileArgs {
                 id: file.id,
                 sig: file.sig,
                 data: contents.to_vec(),
@@ -554,7 +554,7 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::OpenFileWritten(args) => {
+            Content::FileWritten(args) => {
                 file.sig = args.sig;
                 Ok(())
             }

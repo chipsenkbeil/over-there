@@ -164,26 +164,28 @@ impl<T> Executor<T> {
             Content::DoOpenFile(args) => {
                 handler::fs::do_open_file(state, args, do_respond).await
             }
-            Content::DoCloseOpenFile(args) => {
-                handler::fs::do_close_open_file(state, args, do_respond).await
+            Content::DoCloseFile(args) => {
+                handler::fs::do_close_file(state, args, do_respond).await
+            }
+            Content::DoRenameUnopenedFile(args) => {
+                handler::fs::do_rename_unopened_file(state, args, do_respond)
+                    .await
             }
             Content::DoRenameFile(args) => {
                 handler::fs::do_rename_file(state, args, do_respond).await
             }
-            Content::DoRenameOpenFile(args) => {
-                handler::fs::do_rename_open_file(state, args, do_respond).await
+            Content::DoRemoveUnopenedFile(args) => {
+                handler::fs::do_remove_unopened_file(state, args, do_respond)
+                    .await
             }
             Content::DoRemoveFile(args) => {
                 handler::fs::do_remove_file(state, args, do_respond).await
             }
-            Content::DoRemoveOpenFile(args) => {
-                handler::fs::do_remove_open_file(state, args, do_respond).await
+            Content::DoReadFile(args) => {
+                handler::fs::do_read_file(state, args, do_respond).await
             }
-            Content::DoReadOpenFile(args) => {
-                handler::fs::do_read_open_file(state, args, do_respond).await
-            }
-            Content::DoWriteOpenFile(args) => {
-                handler::fs::do_write_open_file(state, args, do_respond).await
+            Content::DoWriteFile(args) => {
+                handler::fs::do_write_file(state, args, do_respond).await
             }
             Content::DoCreateDir(args) => {
                 handler::fs::do_create_dir(state, args, do_respond).await

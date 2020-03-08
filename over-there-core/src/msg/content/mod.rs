@@ -63,47 +63,47 @@ pub enum Content {
     FileOpened(io::fs::FileOpenedArgs),
 
     /// This will be sent to indicate the desire to close an open file
-    DoCloseOpenFile(io::fs::DoCloseOpenFileArgs),
+    DoCloseFile(io::fs::DoCloseFileArgs),
 
     /// This will be returned upon a file being closed
-    OpenFileClosed(io::fs::OpenFileClosedArgs),
+    FileClosed(io::fs::FileClosedArgs),
 
     /// This will be sent to indicate the desire to rename a file
-    DoRenameFile(io::fs::DoRenameFileArgs),
+    DoRenameUnopenedFile(io::fs::DoRenameUnopenedFileArgs),
 
     /// This will be returned upon renaming a file
-    FileRenamed(io::fs::FileRenamedArgs),
+    UnopenedFileRenamed(io::fs::UnopenedFileRenamedArgs),
 
     /// This will be sent to indicate the desire to rename an open file
-    DoRenameOpenFile(io::fs::DoRenameOpenFileArgs),
+    DoRenameFile(io::fs::DoRenameFileArgs),
 
     /// This will be returned upon renaming an open file
-    OpenFileRenamed(io::fs::OpenFileRenamedArgs),
+    FileRenamed(io::fs::FileRenamedArgs),
 
     /// This will be sent to indicate the desire to remove a file
-    DoRemoveFile(io::fs::DoRemoveFileArgs),
+    DoRemoveUnopenedFile(io::fs::DoRemoveUnopenedFileArgs),
 
     /// This will be returned upon removing a file
-    FileRemoved(io::fs::FileRemovedArgs),
+    UnopenedFileRemoved(io::fs::UnopenedFileRemovedArgs),
 
     /// This will be sent to indicate the desire to remove an open file
-    DoRemoveOpenFile(io::fs::DoRemoveOpenFileArgs),
+    DoRemoveFile(io::fs::DoRemoveFileArgs),
 
     /// This will be returned upon removing an open file
-    OpenFileRemoved(io::fs::OpenFileRemovedArgs),
+    FileRemoved(io::fs::FileRemovedArgs),
 
     /// This will be sent to indicate the desire to read a file's contents
-    DoReadOpenFile(io::fs::DoReadOpenFileArgs),
+    DoReadFile(io::fs::DoReadFileArgs),
 
     /// This will be returned upon reading a file's contents
-    OpenFileContents(io::fs::OpenFileContentsArgs),
+    FileContents(io::fs::FileContentsArgs),
 
     /// This will be sent to indicate the desire to write a file's contents
-    DoWriteOpenFile(io::fs::DoWriteOpenFileArgs),
+    DoWriteFile(io::fs::DoWriteFileArgs),
 
     /// This will be returned upon writing a file's contents
     /// Contains the updated signature for the file
-    OpenFileWritten(io::fs::OpenFileWrittenArgs),
+    FileWritten(io::fs::FileWrittenArgs),
 
     /// If a file operation fails due to the signature changing,
     /// this will be returned

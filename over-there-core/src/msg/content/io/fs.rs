@@ -77,17 +77,27 @@ pub struct FileOpenedArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoCloseOpenFileArgs {
+pub struct DoCloseFileArgs {
     pub id: u32,
     pub sig: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct OpenFileClosedArgs {}
+pub struct FileClosedArgs {}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DoRenameUnopenedFileArgs {
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct UnopenedFileRenamedArgs {}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoRenameFileArgs {
-    pub from: String,
+    pub id: u32,
+    pub sig: u32,
     pub to: String,
 }
 
@@ -95,52 +105,42 @@ pub struct DoRenameFileArgs {
 pub struct FileRenamedArgs {}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoRenameOpenFileArgs {
-    pub id: u32,
-    pub sig: u32,
-    pub to: String,
+pub struct DoRemoveUnopenedFileArgs {
+    pub path: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct OpenFileRenamedArgs {}
+pub struct UnopenedFileRemovedArgs {}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoRemoveFileArgs {
-    pub path: String,
+    pub id: u32,
+    pub sig: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FileRemovedArgs {}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoRemoveOpenFileArgs {
+pub struct DoReadFileArgs {
     pub id: u32,
     pub sig: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct OpenFileRemovedArgs {}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoReadOpenFileArgs {
-    pub id: u32,
-    pub sig: u32,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct OpenFileContentsArgs {
+pub struct FileContentsArgs {
     pub data: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DoWriteOpenFileArgs {
+pub struct DoWriteFileArgs {
     pub id: u32,
     pub sig: u32,
     pub data: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct OpenFileWrittenArgs {
+pub struct FileWrittenArgs {
     pub sig: u32,
 }
 
