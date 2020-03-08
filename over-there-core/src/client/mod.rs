@@ -455,7 +455,7 @@ impl Client {
         file: &RemoteFile,
     ) -> Result<(), FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoCloseFile(DoCloseFileArgs {
+            .ask(Msg::from(Content::DoCloseOpenFile(DoCloseOpenFileArgs {
                 id: file.id,
                 sig: file.sig,
             })))
@@ -466,7 +466,7 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::FileClosed(_) => Ok(()),
+            Content::OpenFileClosed(_) => Ok(()),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -519,7 +519,7 @@ impl Client {
         file: &RemoteFile,
     ) -> Result<Vec<u8>, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoReadFile(DoReadFileArgs {
+            .ask(Msg::from(Content::DoReadOpenFile(DoReadOpenFileArgs {
                 id: file.id,
                 sig: file.sig,
             })))
@@ -530,7 +530,7 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::FileContents(args) => Ok(args.data),
+            Content::OpenFileContents(args) => Ok(args.data),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -542,7 +542,7 @@ impl Client {
         contents: &[u8],
     ) -> Result<(), FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoWriteFile(DoWriteFileArgs {
+            .ask(Msg::from(Content::DoWriteOpenFile(DoWriteOpenFileArgs {
                 id: file.id,
                 sig: file.sig,
                 data: contents.to_vec(),
@@ -554,7 +554,7 @@ impl Client {
         }
 
         match result.unwrap().content {
-            Content::FileWritten(args) => {
+            Content::OpenFileWritten(args) => {
                 file.sig = args.sig;
                 Ok(())
             }

@@ -56,7 +56,7 @@ where
 
 pub async fn do_close_file<F, R>(
     state: Arc<ServerState>,
-    args: &DoCloseFileArgs,
+    args: &DoCloseOpenFileArgs,
     respond: F,
 ) -> Result<(), ActionError>
 where
@@ -71,7 +71,7 @@ where
     };
 
     match state.fs_manager.lock().await.close_file(handle).await {
-        Ok(_) => respond(Content::FileClosed(FileClosedArgs {})).await,
+        Ok(_) => respond(Content::OpenFileClosed(OpenFileClosedArgs {})).await,
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
@@ -118,7 +118,7 @@ where
 
 pub async fn do_read_file<F, R>(
     state: Arc<ServerState>,
-    args: &DoReadFileArgs,
+    args: &DoReadOpenFileArgs,
     respond: F,
 ) -> Result<(), ActionError>
 where
@@ -130,7 +130,10 @@ where
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.read_all(args.sig).await {
             Ok(data) => {
-                respond(Content::FileContents(FileContentsArgs { data })).await
+                respond(Content::OpenFileContents(OpenFileContentsArgs {
+                    data,
+                }))
+                .await
             }
             Err(LocalFileReadError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
@@ -159,7 +162,7 @@ where
 
 pub async fn do_write_file<F, R>(
     state: Arc<ServerState>,
-    args: &DoWriteFileArgs,
+    args: &DoWriteOpenFileArgs,
     respond: F,
 ) -> Result<(), ActionError>
 where
@@ -172,7 +175,7 @@ where
         Some(local_file) => {
             match local_file.write_all(args.sig, &args.data).await {
                 Ok(_) => {
-                    respond(Content::FileWritten(FileWrittenArgs {
+                    respond(Content::OpenFileWritten(OpenFileWrittenArgs {
                         sig: local_file.sig(),
                     }))
                     .await
@@ -466,10 +469,14 @@ mod tests {
         let id = handle.id + 1;
         let sig = handle.sig;
 
-        do_close_file(Arc::clone(&state), &DoCloseFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
+        do_close_file(
+            Arc::clone(&state),
+            &DoCloseOpenFileArgs { id, sig },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
         .await
         .unwrap();
 
@@ -498,10 +505,14 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig + 1;
 
-        do_close_file(Arc::clone(&state), &DoCloseFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
+        do_close_file(
+            Arc::clone(&state),
+            &DoCloseOpenFileArgs { id, sig },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
         .await
         .unwrap();
 
@@ -530,15 +541,19 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_close_file(Arc::clone(&state), &DoCloseFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
+        do_close_file(
+            Arc::clone(&state),
+            &DoCloseOpenFileArgs { id, sig },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
         .await
         .unwrap();
 
         match content.unwrap() {
-            Content::FileClosed(FileClosedArgs {}) => (),
+            Content::OpenFileClosed(OpenFileClosedArgs {}) => (),
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -710,15 +725,19 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
+        do_read_file(
+            Arc::clone(&state),
+            &DoReadOpenFileArgs { id, sig },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
         .await
         .unwrap();
 
         match content.unwrap() {
-            Content::FileContents(FileContentsArgs { data }) => {
+            Content::OpenFileContents(OpenFileContentsArgs { data }) => {
                 assert_eq!(data, file_data);
             }
             x => panic!("Bad content: {:?}", x),
@@ -731,7 +750,7 @@ mod tests {
 
         do_read_file(
             Arc::new(ServerState::default()),
-            &DoReadFileArgs { id: 0, sig: 0 },
+            &DoReadOpenFileArgs { id: 0, sig: 0 },
             |c| {
                 content = Some(c);
                 async { Ok(()) }
@@ -775,10 +794,14 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
+        do_read_file(
+            Arc::clone(&state),
+            &DoReadOpenFileArgs { id, sig },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
         .await
         .unwrap();
 
@@ -809,7 +832,7 @@ mod tests {
 
         do_read_file(
             Arc::clone(&state),
-            &DoReadFileArgs { id, sig: sig + 1 },
+            &DoReadOpenFileArgs { id, sig: sig + 1 },
             |c| {
                 content = Some(c);
                 async { Ok(()) }
@@ -846,7 +869,7 @@ mod tests {
 
         do_write_file(
             Arc::clone(&state),
-            &DoWriteFileArgs {
+            &DoWriteOpenFileArgs {
                 id,
                 sig,
                 data: data.clone(),
@@ -860,7 +883,7 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileWritten(FileWrittenArgs { sig: new_sig }) => {
+            Content::OpenFileWritten(OpenFileWrittenArgs { sig: new_sig }) => {
                 assert_ne!(new_sig, sig);
 
                 use std::io::{Seek, SeekFrom};
@@ -899,7 +922,7 @@ mod tests {
 
         do_write_file(
             Arc::clone(&state),
-            &DoWriteFileArgs { id, sig, data },
+            &DoWriteOpenFileArgs { id, sig, data },
             |c| {
                 content = Some(c);
                 async { Ok(()) }
@@ -937,7 +960,7 @@ mod tests {
 
         do_write_file(
             Arc::clone(&state),
-            &DoWriteFileArgs {
+            &DoWriteOpenFileArgs {
                 id,
                 sig: sig + 1,
                 data: data.clone(),

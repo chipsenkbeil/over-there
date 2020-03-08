@@ -63,10 +63,10 @@ pub enum Content {
     FileOpened(io::fs::FileOpenedArgs),
 
     /// This will be sent to indicate the desire to close an open file
-    DoCloseFile(io::fs::DoCloseFileArgs),
+    DoCloseOpenFile(io::fs::DoCloseOpenFileArgs),
 
     /// This will be returned upon a file being closed
-    FileClosed(io::fs::FileClosedArgs),
+    OpenFileClosed(io::fs::OpenFileClosedArgs),
 
     /// This will be sent to indicate the desire to rename a file
     DoRenameFile(io::fs::DoRenameFileArgs),
@@ -74,24 +74,36 @@ pub enum Content {
     /// This will be returned upon renaming a file
     FileRenamed(io::fs::FileRenamedArgs),
 
+    /// This will be sent to indicate the desire to rename an open file
+    DoRenameOpenFile(io::fs::DoRenameOpenFileArgs),
+
+    /// This will be returned upon renaming an open file
+    OpenFileRenamed(io::fs::OpenFileRenamedArgs),
+
     /// This will be sent to indicate the desire to remove a file
     DoRemoveFile(io::fs::DoRemoveFileArgs),
 
     /// This will be returned upon removing a file
     FileRemoved(io::fs::FileRemovedArgs),
 
+    /// This will be sent to indicate the desire to remove an open file
+    DoRemoveOpenFile(io::fs::DoRemoveOpenFileArgs),
+
+    /// This will be returned upon removing an open file
+    OpenFileRemoved(io::fs::OpenFileRemovedArgs),
+
     /// This will be sent to indicate the desire to read a file's contents
-    DoReadFile(io::fs::DoReadFileArgs),
+    DoReadOpenFile(io::fs::DoReadOpenFileArgs),
 
     /// This will be returned upon reading a file's contents
-    FileContents(io::fs::FileContentsArgs),
+    OpenFileContents(io::fs::OpenFileContentsArgs),
 
     /// This will be sent to indicate the desire to write a file's contents
-    DoWriteFile(io::fs::DoWriteFileArgs),
+    DoWriteOpenFile(io::fs::DoWriteOpenFileArgs),
 
     /// This will be returned upon writing a file's contents
     /// Contains the updated signature for the file
-    FileWritten(io::fs::FileWrittenArgs),
+    OpenFileWritten(io::fs::OpenFileWrittenArgs),
 
     /// If a file operation fails due to the signature changing,
     /// this will be returned
