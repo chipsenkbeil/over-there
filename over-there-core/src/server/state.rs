@@ -1,6 +1,7 @@
 use super::{fs::FileSystemManager, proc::LocalProc};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
@@ -17,6 +18,18 @@ pub struct ServerState {
     /// Mapping of proc id -> proc on same machine as server
     pub procs: Mutex<HashMap<u32, LocalProc>>,
     pub conn_procs: Mutex<HashMap<SocketAddr, Vec<u32>>>,
+}
+
+impl ServerState {
+    /// Produces new state where the server's fs-based operations are locked
+    /// to the specified `root`
+    pub fn new(root: impl AsRef<Path>) -> Self {
+        let mut state = Self::default();
+
+        state.fs_manager = Mutex::new(FileSystemManager::with_root(root));
+
+        state
+    }
 }
 
 impl Default for ServerState {

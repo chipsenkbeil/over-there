@@ -169,23 +169,6 @@ impl LocalFile {
         self.path.as_path()
     }
 
-    /// Only to be invoked when a path was changed elsewhere such that this
-    /// file can update its internal path reference.
-    ///
-    /// Note that this does not require a sig to apply the change and will
-    /// also not update the associated file's sig as this is considered a
-    /// background change that should not affect the file descriptor in
-    /// any way.
-    pub(crate) fn apply_path_changed(
-        &mut self,
-        from: impl AsRef<Path>,
-        to: impl AsRef<Path>,
-    ) {
-        if let Ok(path) = self.path.strip_prefix(from) {
-            self.path = to.as_ref().join(path);
-        }
-    }
-
     /// Renames a file (if possible) using its underlying path as the origin
     pub async fn rename(
         &mut self,
@@ -659,89 +642,5 @@ mod tests {
         assert!(fs::read(path).await.is_ok(), "File already missing at path");
         lf.remove(sig).await.expect("Failed to remove file");
         assert!(fs::read(path).await.is_err(), "File still exists at path");
-    }
-
-    #[test]
-    fn apply_path_changed_should_update_path_if_contains_local_file_path() {
-        let from_dir_path = Path::new("/from/path");
-        let to_dir_path = Path::new("/to/path");
-
-        let file_path = Path::new("file");
-        let from_file_path = from_dir_path.join(file_path);
-        let mut lf = create_test_local_file(
-            tempfile::tempfile().unwrap(),
-            from_file_path,
-        );
-
-        assert_eq!(
-            lf.path(),
-            from_dir_path.join(file_path),
-            "LocalFile path not set at proper initial location"
-        );
-
-        lf.apply_path_changed(from_dir_path, to_dir_path);
-
-        assert_eq!(
-            lf.path(),
-            to_dir_path.join(file_path),
-            "LocalFile path not updated to new location"
-        );
-    }
-
-    #[test]
-    fn apply_path_changed_should_not_update_path_if_not_contains_local_file_path(
-    ) {
-        let from_dir_path = Path::new("/from/path");
-        let to_dir_path = Path::new("/to/path");
-
-        let file_path = Path::new("file");
-        let from_file_path = from_dir_path.join(file_path);
-        let mut lf = create_test_local_file(
-            tempfile::tempfile().unwrap(),
-            from_file_path,
-        );
-
-        assert_eq!(
-            lf.path(),
-            from_dir_path.join(file_path),
-            "LocalFile path not set at proper initial location"
-        );
-
-        lf.apply_path_changed("/some/other/path", to_dir_path);
-
-        assert_eq!(
-            lf.path(),
-            from_dir_path.join(file_path),
-            "LocalFile path unexpectedly updated to new location"
-        );
-    }
-
-    #[test]
-    fn apply_path_changed_should_update_path_if_is_local_file_path() {
-        let from_dir_path = Path::new("/from/path");
-        let to_dir_path = Path::new("/to/path");
-
-        let file_path = Path::new("file");
-        let from_file_path = from_dir_path.join(file_path);
-        let to_file_path = to_dir_path.join(file_path);
-
-        let mut lf = create_test_local_file(
-            tempfile::tempfile().unwrap(),
-            from_file_path.as_path(),
-        );
-
-        assert_eq!(
-            lf.path(),
-            from_file_path.as_path(),
-            "LocalFile path not set at proper initial location"
-        );
-
-        lf.apply_path_changed(from_file_path, to_file_path.as_path());
-
-        assert_eq!(
-            lf.path(),
-            to_file_path,
-            "LocalFile path not updated to new location"
-        );
     }
 }
