@@ -201,12 +201,9 @@ impl FileSystemManager {
     pub async fn close_file(
         &mut self,
         handle: LocalFileHandle,
-    ) -> io::Result<()> {
+    ) -> io::Result<LocalFile> {
         match self.files.entry(handle.id) {
-            Entry::Occupied(x) if x.get().sig == handle.sig => {
-                x.remove_entry();
-                Ok(())
-            }
+            Entry::Occupied(x) if x.get().sig == handle.sig => Ok(x.remove()),
             Entry::Occupied(_) => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("Signature invalid for file with id {}", handle.id),

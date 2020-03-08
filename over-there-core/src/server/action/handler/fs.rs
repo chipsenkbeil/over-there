@@ -7,7 +7,8 @@ use crate::{
         action::ActionError,
         fs::{
             LocalDirEntry, LocalFileHandle, LocalFileReadError,
-            LocalFileReadIoError, LocalFileWriteError, LocalFileWriteIoError,
+            LocalFileReadIoError, LocalFileRemoveError, LocalFileRenameError,
+            LocalFileWriteError, LocalFileWriteIoError,
         },
         state::ServerState,
     },
@@ -29,12 +30,6 @@ where
 {
     debug!("do_open_file: {:?}", args);
 
-    // TODO: Check if file is already open based on canonical
-    //       path, and return it if it is, otherwise open it
-    //
-    //       Also, should check that the open we are doing
-    //       matches permissions for read/write access, otherwise
-    //       we want to yield an error
     match state
         .fs_manager
         .lock()
@@ -54,7 +49,7 @@ where
     }
 }
 
-pub async fn do_close_file<F, R>(
+pub async fn do_close_open_file<F, R>(
     state: Arc<ServerState>,
     args: &DoCloseOpenFileArgs,
     respond: F,
@@ -63,7 +58,7 @@ where
     F: FnOnce(Content) -> R,
     R: Future<Output = Result<(), ActionError>>,
 {
-    debug!("do_close_file: {:?}", args);
+    debug!("do_close_open_file: {:?}", args);
 
     let handle = LocalFileHandle {
         id: args.id,
@@ -99,6 +94,39 @@ where
     }
 }
 
+pub async fn do_rename_open_file<F, R>(
+    state: Arc<ServerState>,
+    args: &DoRenameOpenFileArgs,
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
+    debug!("do_rename_open_file: {:?}", args);
+
+    match state.fs_manager.lock().await.get_mut(args.id) {
+        Some(local_file) => match local_file.rename(args.sig, &args.to).await {
+            Ok(_) => {
+                respond(Content::OpenFileRenamed(OpenFileRenamedArgs {})).await
+            }
+            Err(LocalFileRenameError::SigMismatch) => {
+                respond(Content::FileSigChanged(FileSigChangedArgs {
+                    sig: local_file.sig(),
+                }))
+                .await
+            }
+            Err(LocalFileRenameError::IoError(x)) => {
+                respond(Content::IoError(From::from(x))).await
+            }
+        },
+        None => {
+            respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id)))
+                .await
+        }
+    }
+}
+
 pub async fn do_remove_file<F, R>(
     state: Arc<ServerState>,
     args: &DoRemoveFileArgs,
@@ -116,7 +144,48 @@ where
     }
 }
 
-pub async fn do_read_file<F, R>(
+pub async fn do_remove_open_file<F, R>(
+    state: Arc<ServerState>,
+    args: &DoRemoveOpenFileArgs,
+    respond: F,
+) -> Result<(), ActionError>
+where
+    F: FnOnce(Content) -> R,
+    R: Future<Output = Result<(), ActionError>>,
+{
+    debug!("do_remove_open_file: {:?}", args);
+
+    match state
+        .fs_manager
+        .lock()
+        .await
+        .close_file(LocalFileHandle {
+            id: args.id,
+            sig: args.sig,
+        })
+        .await
+    {
+        Ok(local_file) => {
+            let sig = local_file.sig();
+            match local_file.remove(args.sig).await {
+                Ok(_) => {
+                    respond(Content::OpenFileRemoved(OpenFileRemovedArgs {}))
+                        .await
+                }
+                Err(LocalFileRemoveError::SigMismatch(_)) => {
+                    respond(Content::FileSigChanged(FileSigChangedArgs { sig }))
+                        .await
+                }
+                Err(LocalFileRemoveError::IoError(x, _)) => {
+                    respond(Content::IoError(From::from(x))).await
+                }
+            }
+        }
+        Err(x) => respond(Content::IoError(From::from(x))).await,
+    }
+}
+
+pub async fn do_read_open_file<F, R>(
     state: Arc<ServerState>,
     args: &DoReadOpenFileArgs,
     respond: F,
@@ -125,7 +194,7 @@ where
     F: FnOnce(Content) -> R,
     R: Future<Output = Result<(), ActionError>>,
 {
-    debug!("do_read_file: {:?}", args);
+    debug!("do_read_open_file: {:?}", args);
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.read_all(args.sig).await {
@@ -160,7 +229,7 @@ where
     }
 }
 
-pub async fn do_write_file<F, R>(
+pub async fn do_write_open_file<F, R>(
     state: Arc<ServerState>,
     args: &DoWriteOpenFileArgs,
     respond: F,
@@ -169,7 +238,7 @@ where
     F: FnOnce(Content) -> R,
     R: Future<Output = Result<(), ActionError>>,
 {
-    debug!("do_write_file: {:?}", args);
+    debug!("do_write_open_file: {:?}", args);
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => {
@@ -453,7 +522,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_close_file_should_send_error_if_file_not_open() {
+    async fn do_close_open_file_should_send_error_if_file_not_open() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
@@ -469,7 +538,7 @@ mod tests {
         let id = handle.id + 1;
         let sig = handle.sig;
 
-        do_close_file(
+        do_close_open_file(
             Arc::clone(&state),
             &DoCloseOpenFileArgs { id, sig },
             |c| {
@@ -489,7 +558,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_close_file_should_send_error_if_signature_different() {
+    async fn do_close_open_file_should_send_error_if_signature_different() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
@@ -505,7 +574,7 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig + 1;
 
-        do_close_file(
+        do_close_open_file(
             Arc::clone(&state),
             &DoCloseOpenFileArgs { id, sig },
             |c| {
@@ -525,7 +594,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_close_file_should_send_confirmation_if_successful() {
+    async fn do_close_open_file_should_send_confirmation_if_successful() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
@@ -541,7 +610,7 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_close_file(
+        do_close_open_file(
             Arc::clone(&state),
             &DoCloseOpenFileArgs { id, sig },
             |c| {
@@ -633,6 +702,148 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn do_rename_open_file_should_send_error_if_file_not_open() {
+        let state = Arc::new(ServerState::default());
+        let mut content: Option<Content> = None;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let handle = state
+            .fs_manager
+            .lock()
+            .await
+            .open_file(file.as_ref(), false, false, true)
+            .await
+            .expect("Failed to open file");
+        let new_path_str = String::from("new-file-name");
+
+        do_rename_open_file(
+            Arc::clone(&state),
+            &DoRenameOpenFileArgs {
+                id: handle.id + 1,
+                sig: handle.sig,
+                to: new_path_str.clone(),
+            },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            fs::metadata(file.as_ref()).await.is_ok(),
+            "File missing when rename failed"
+        );
+
+        assert!(
+            fs::metadata(&new_path_str).await.is_err(),
+            "Renamed file exists"
+        );
+
+        match content.unwrap() {
+            Content::IoError(IoErrorArgs { error_kind, .. }) => {
+                assert_eq!(error_kind, io::ErrorKind::NotFound)
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn do_rename_open_file_should_send_error_if_signature_different() {
+        let state = Arc::new(ServerState::default());
+        let mut content: Option<Content> = None;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let handle = state
+            .fs_manager
+            .lock()
+            .await
+            .open_file(file.as_ref(), false, false, true)
+            .await
+            .expect("Failed to open file");
+        let new_path_str = String::from("new-file-name");
+
+        do_rename_open_file(
+            Arc::clone(&state),
+            &DoRenameOpenFileArgs {
+                id: handle.id,
+                sig: handle.sig + 1,
+                to: new_path_str.clone(),
+            },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            fs::metadata(file.as_ref()).await.is_ok(),
+            "File missing when rename failed"
+        );
+
+        assert!(
+            fs::metadata(&new_path_str).await.is_err(),
+            "Renamed file exists"
+        );
+
+        match content.unwrap() {
+            Content::FileSigChanged(FileSigChangedArgs { sig }) => {
+                assert_eq!(sig, handle.sig)
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn do_rename_open_file_should_send_confirmation_if_file_renamed() {
+        let state = Arc::new(ServerState::default());
+        let mut content: Option<Content> = None;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let handle = state
+            .fs_manager
+            .lock()
+            .await
+            .open_file(file.as_ref(), false, false, true)
+            .await
+            .expect("Failed to open file");
+        let new_path_str = String::from("new-file-name");
+
+        do_rename_open_file(
+            Arc::clone(&state),
+            &DoRenameOpenFileArgs {
+                id: handle.id,
+                sig: handle.sig,
+                to: new_path_str.clone(),
+            },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            fs::metadata(file.as_ref()).await.is_err(),
+            "Renamed file still exists at original location"
+        );
+
+        assert!(
+            fs::metadata(&new_path_str).await.is_ok(),
+            "Renamed file missing"
+        );
+
+        match content.unwrap() {
+            Content::OpenFileRenamed(OpenFileRenamedArgs {}) => (),
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
     async fn do_remove_file_should_send_error_if_file_open() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
@@ -704,7 +915,128 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_read_file_should_send_contents_if_read_successful() {
+    async fn do_remove_open_file_should_send_error_if_file_not_open() {
+        let state = Arc::new(ServerState::default());
+        let mut content: Option<Content> = None;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let handle = state
+            .fs_manager
+            .lock()
+            .await
+            .open_file(file.as_ref(), false, false, true)
+            .await
+            .expect("Failed to open file");
+
+        do_remove_open_file(
+            Arc::clone(&state),
+            &DoRemoveOpenFileArgs {
+                id: handle.id + 1,
+                sig: handle.sig,
+            },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            fs::metadata(file.as_ref()).await.is_ok(),
+            "File unexpectedly missing after failed remove"
+        );
+
+        match content.unwrap() {
+            Content::IoError(IoErrorArgs { error_kind, .. }) => {
+                assert_eq!(error_kind, io::ErrorKind::NotFound)
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn do_remove_open_file_should_send_error_if_signature_different() {
+        let state = Arc::new(ServerState::default());
+        let mut content: Option<Content> = None;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let handle = state
+            .fs_manager
+            .lock()
+            .await
+            .open_file(file.as_ref(), false, false, true)
+            .await
+            .expect("Failed to open file");
+
+        do_remove_open_file(
+            Arc::clone(&state),
+            &DoRemoveOpenFileArgs {
+                id: handle.id,
+                sig: handle.sig + 1,
+            },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            fs::metadata(file.as_ref()).await.is_ok(),
+            "File unexpectedly missing after failed remove"
+        );
+
+        match content.unwrap() {
+            Content::FileSigChanged(FileSigChangedArgs { sig }) => {
+                assert_eq!(sig, handle.sig)
+            }
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn do_remove_open_file_should_send_confirmation_if_file_removed() {
+        let state = Arc::new(ServerState::default());
+        let mut content: Option<Content> = None;
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let handle = state
+            .fs_manager
+            .lock()
+            .await
+            .open_file(file.as_ref(), false, false, true)
+            .await
+            .expect("Failed to open file");
+
+        do_remove_open_file(
+            Arc::clone(&state),
+            &DoRemoveOpenFileArgs {
+                id: handle.id,
+                sig: handle.sig,
+            },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            fs::metadata(file.as_ref()).await.is_err(),
+            "File still exists"
+        );
+
+        match content.unwrap() {
+            Content::OpenFileRemoved(OpenFileRemovedArgs {}) => (),
+            x => panic!("Bad content: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn do_read_open_file_should_send_contents_if_read_successful() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
         let file_data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -725,7 +1057,7 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_read_file(
+        do_read_open_file(
             Arc::clone(&state),
             &DoReadOpenFileArgs { id, sig },
             |c| {
@@ -745,10 +1077,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_read_file_should_send_error_if_file_not_open() {
+    async fn do_read_open_file_should_send_error_if_file_not_open() {
         let mut content: Option<Content> = None;
 
-        do_read_file(
+        do_read_open_file(
             Arc::new(ServerState::default()),
             &DoReadOpenFileArgs { id: 0, sig: 0 },
             |c| {
@@ -768,7 +1100,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_read_file_should_send_error_if_not_readable() {
+    async fn do_read_open_file_should_send_error_if_not_readable() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
 
@@ -794,7 +1126,7 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_read_file(
+        do_read_open_file(
             Arc::clone(&state),
             &DoReadOpenFileArgs { id, sig },
             |c| {
@@ -815,7 +1147,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_read_file_should_send_error_if_file_sig_has_changed() {
+    async fn do_read_open_file_should_send_error_if_file_sig_has_changed() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
         let file = tempfile::NamedTempFile::new().unwrap();
@@ -830,7 +1162,7 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_read_file(
+        do_read_open_file(
             Arc::clone(&state),
             &DoReadOpenFileArgs { id, sig: sig + 1 },
             |c| {
@@ -850,7 +1182,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_write_file_should_send_success_if_write_successful() {
+    async fn do_write_open_file_should_send_success_if_write_successful() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -867,7 +1199,7 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_write_file(
+        do_write_open_file(
             Arc::clone(&state),
             &DoWriteOpenFileArgs {
                 id,
@@ -903,7 +1235,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_write_file_should_send_error_if_not_writeable() {
+    async fn do_write_open_file_should_send_error_if_not_writeable() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -920,7 +1252,7 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_write_file(
+        do_write_open_file(
             Arc::clone(&state),
             &DoWriteOpenFileArgs { id, sig, data },
             |c| {
@@ -941,7 +1273,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn do_write_file_should_send_error_if_file_sig_has_changed() {
+    async fn do_write_open_file_should_send_error_if_file_sig_has_changed() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -958,7 +1290,7 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_write_file(
+        do_write_open_file(
             Arc::clone(&state),
             &DoWriteOpenFileArgs {
                 id,
