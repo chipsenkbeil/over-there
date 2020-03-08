@@ -5,11 +5,7 @@ use crate::{
     },
     server::{
         action::ActionError,
-        fs::{
-            LocalDirEntry, LocalFileHandle, LocalFileReadError,
-            LocalFileReadIoError, LocalFileRemoveError, LocalFileRenameError,
-            LocalFileWriteError, LocalFileWriteIoError,
-        },
+        fs::{LocalDirEntry, LocalFileError, LocalFileHandle},
         state::ServerState,
     },
 };
@@ -65,7 +61,7 @@ where
         sig: args.sig,
     };
 
-    match state.fs_manager.lock().await.close_file(handle).await {
+    match state.fs_manager.lock().await.close_file(handle) {
         Ok(_) => respond(Content::FileClosed(FileClosedArgs {})).await,
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
@@ -111,13 +107,13 @@ where
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.rename(args.sig, &args.to).await {
             Ok(_) => respond(Content::FileRenamed(FileRenamedArgs {})).await,
-            Err(LocalFileRenameError::SigMismatch) => {
+            Err(LocalFileError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
                     sig: local_file.sig(),
                 }))
                 .await
             }
-            Err(LocalFileRenameError::IoError(x)) => {
+            Err(LocalFileError::IoError(x)) => {
                 respond(Content::IoError(From::from(x))).await
             }
         },
@@ -159,32 +155,23 @@ where
 {
     debug!("do_remove_file: {:?}", args);
 
-    match state
-        .fs_manager
-        .lock()
-        .await
-        .close_file(LocalFileHandle {
-            id: args.id,
-            sig: args.sig,
-        })
-        .await
-    {
-        Ok(local_file) => {
-            let sig = local_file.sig();
-            match local_file.remove(args.sig).await {
-                Ok(_) => {
-                    respond(Content::FileRemoved(FileRemovedArgs {})).await
-                }
-                Err(LocalFileRemoveError::SigMismatch(_)) => {
-                    respond(Content::FileSigChanged(FileSigChangedArgs { sig }))
-                        .await
-                }
-                Err(LocalFileRemoveError::IoError(x, _)) => {
-                    respond(Content::IoError(From::from(x))).await
-                }
+    match state.fs_manager.lock().await.get_mut(args.id) {
+        Some(local_file) => match local_file.remove(args.sig).await {
+            Ok(_) => respond(Content::FileRemoved(FileRemovedArgs {})).await,
+            Err(LocalFileError::SigMismatch) => {
+                respond(Content::FileSigChanged(FileSigChangedArgs {
+                    sig: local_file.sig(),
+                }))
+                .await
             }
+            Err(LocalFileError::IoError(x)) => {
+                respond(Content::IoError(From::from(x))).await
+            }
+        },
+        None => {
+            respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id)))
+                .await
         }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
 
@@ -204,22 +191,14 @@ where
             Ok(data) => {
                 respond(Content::FileContents(FileContentsArgs { data })).await
             }
-            Err(LocalFileReadError::SigMismatch) => {
+            Err(LocalFileError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
                     sig: local_file.sig(),
                 }))
                 .await
             }
-            Err(LocalFileReadError::IoError(x)) => {
-                respond(Content::IoError(match x {
-                    LocalFileReadIoError::SeekError(x) => {
-                        IoErrorArgs::from_error_with_prefix(x, "Seek(0): ")
-                    }
-                    LocalFileReadIoError::ReadToEndError(x) => {
-                        IoErrorArgs::from_error_with_prefix(x, "ReadToEnd: ")
-                    }
-                }))
-                .await
+            Err(LocalFileError::IoError(x)) => {
+                respond(Content::IoError(From::from(x))).await
             }
         },
         None => {
@@ -249,31 +228,14 @@ where
                     }))
                     .await
                 }
-                Err(LocalFileWriteError::SigMismatch) => {
+                Err(LocalFileError::SigMismatch) => {
                     respond(Content::FileSigChanged(FileSigChangedArgs {
                         sig: local_file.sig(),
                     }))
                     .await
                 }
-                Err(LocalFileWriteError::IoError(x)) => {
-                    respond(Content::IoError(match x {
-                        LocalFileWriteIoError::SeekError(x) => {
-                            IoErrorArgs::from_error_with_prefix(x, "Seek(0): ")
-                        }
-                        LocalFileWriteIoError::SetLenError(x) => {
-                            IoErrorArgs::from_error_with_prefix(
-                                x,
-                                "SetLen(0): ",
-                            )
-                        }
-                        LocalFileWriteIoError::WriteAllError(x) => {
-                            IoErrorArgs::from_error_with_prefix(x, "WriteAll: ")
-                        }
-                        LocalFileWriteIoError::FlushError(x) => {
-                            IoErrorArgs::from_error_with_prefix(x, "Flush: ")
-                        }
-                    }))
-                    .await
+                Err(LocalFileError::IoError(x)) => {
+                    respond(Content::IoError(From::from(x))).await
                 }
             }
         }
@@ -326,10 +288,7 @@ where
         .await
     {
         Ok(_) => respond(Content::DirRenamed(DirRenamedArgs {})).await,
-        Err(x) => {
-            let err: io::Error = x.into();
-            respond(Content::IoError(From::from(err))).await
-        }
+        Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
 
@@ -378,10 +337,7 @@ where
                 Err(x) => respond(Content::IoError(From::from(x))).await,
             }
         }
-        Err(x) => {
-            let e: io::Error = x.into();
-            respond(Content::IoError(From::from(e))).await
-        }
+        Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
 
@@ -732,7 +688,7 @@ mod tests {
 
         match content.unwrap() {
             Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::NotFound)
+                assert_eq!(error_kind, io::ErrorKind::InvalidInput)
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -799,7 +755,8 @@ mod tests {
             .open_file(file.as_ref(), false, false, true)
             .await
             .expect("Failed to open file");
-        let new_path_str = String::from("new-file-name");
+        let new_path_str =
+            format!("{}.2", file.as_ref().to_string_lossy().to_string());
 
         do_rename_file(
             Arc::clone(&state),
@@ -939,7 +896,7 @@ mod tests {
 
         match content.unwrap() {
             Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::NotFound)
+                assert_eq!(error_kind, io::ErrorKind::InvalidInput)
             }
             x => panic!("Bad content: {:?}", x),
         }

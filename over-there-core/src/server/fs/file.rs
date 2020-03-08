@@ -8,62 +8,13 @@ use tokio::{
 };
 
 #[derive(Debug, Error)]
-pub enum LocalFileWriteError {
-    SigMismatch,
-    IoError(LocalFileWriteIoError),
-}
-
-#[derive(Debug, Error)]
-pub enum LocalFileWriteIoError {
-    SeekError(io::Error),
-    SetLenError(io::Error),
-    WriteAllError(io::Error),
-    FlushError(io::Error),
-}
-
-impl Into<io::Error> for LocalFileWriteIoError {
-    fn into(self: Self) -> io::Error {
-        match self {
-            Self::SeekError(x) => x,
-            Self::SetLenError(x) => x,
-            Self::WriteAllError(x) => x,
-            Self::FlushError(x) => x,
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum LocalFileReadError {
-    SigMismatch,
-    IoError(LocalFileReadIoError),
-}
-
-#[derive(Debug, Error)]
-pub enum LocalFileReadIoError {
-    SeekError(io::Error),
-    ReadToEndError(io::Error),
-}
-
-impl Into<io::Error> for LocalFileReadIoError {
-    fn into(self: Self) -> io::Error {
-        match self {
-            Self::SeekError(x) => x,
-            Self::ReadToEndError(x) => x,
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum LocalFileRenameError {
+pub enum LocalFileError {
     SigMismatch,
     IoError(io::Error),
 }
 
-#[derive(Debug, Error)]
-pub enum LocalFileRemoveError {
-    SigMismatch(LocalFile),
-    IoError(io::Error, LocalFile),
-}
+/// Represents a result from a local file operation
+pub type Result<T> = std::result::Result<T, LocalFileError>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LocalFileHandle {
@@ -174,14 +125,14 @@ impl LocalFile {
         &mut self,
         sig: u32,
         to: impl AsRef<Path>,
-    ) -> Result<u32, LocalFileRenameError> {
+    ) -> Result<u32> {
         if self.sig != sig {
-            return Err(LocalFileRenameError::SigMismatch);
+            return Err(LocalFileError::SigMismatch);
         }
 
         rename(self.path.as_path(), to.as_ref())
             .await
-            .map_err(LocalFileRenameError::IoError)?;
+            .map_err(LocalFileError::IoError)?;
 
         // Update signature to reflect the change and update our internal
         // path so that we can continue to do renames/removals properly
@@ -192,25 +143,25 @@ impl LocalFile {
     }
 
     /// Removes the file (if possible) using its underlying path
-    pub async fn remove(self, sig: u32) -> Result<(), LocalFileRemoveError> {
+    ///
+    /// NOTE: If successful, this makes the local file reference no longer
+    ///       usable for the majority of its functionality
+    pub async fn remove(&mut self, sig: u32) -> Result<()> {
         if self.sig != sig {
-            return Err(LocalFileRemoveError::SigMismatch(self));
+            return Err(LocalFileError::SigMismatch);
         }
 
         remove(self.path.as_path())
             .await
-            .map_err(|x| LocalFileRemoveError::IoError(x, self))?;
+            .map_err(LocalFileError::IoError)?;
 
         Ok(())
     }
 
     /// Reads all contents of file from beginning to end
-    pub async fn read_all(
-        &mut self,
-        sig: u32,
-    ) -> Result<Vec<u8>, LocalFileReadError> {
+    pub async fn read_all(&mut self, sig: u32) -> Result<Vec<u8>> {
         if self.sig != sig {
-            return Err(LocalFileReadError::SigMismatch);
+            return Err(LocalFileError::SigMismatch);
         }
 
         let mut buf = Vec::new();
@@ -218,39 +169,31 @@ impl LocalFile {
         self.file
             .seek(SeekFrom::Start(0))
             .await
-            .map_err(LocalFileReadIoError::SeekError)
-            .map_err(LocalFileReadError::IoError)?;
+            .map_err(LocalFileError::IoError)?;
 
         self.file
             .read_to_end(&mut buf)
             .await
-            .map_err(LocalFileReadIoError::ReadToEndError)
-            .map_err(LocalFileReadError::IoError)?;
+            .map_err(LocalFileError::IoError)?;
 
         Ok(buf)
     }
 
     /// Overwrites contents of file with provided contents
-    pub async fn write_all(
-        &mut self,
-        sig: u32,
-        buf: &[u8],
-    ) -> Result<(), LocalFileWriteError> {
+    pub async fn write_all(&mut self, sig: u32, buf: &[u8]) -> Result<()> {
         if self.sig != sig {
-            return Err(LocalFileWriteError::SigMismatch);
+            return Err(LocalFileError::SigMismatch);
         }
 
         self.file
             .seek(SeekFrom::Start(0))
             .await
-            .map_err(LocalFileWriteIoError::SeekError)
-            .map_err(LocalFileWriteError::IoError)?;
+            .map_err(LocalFileError::IoError)?;
 
         self.file
             .set_len(0)
             .await
-            .map_err(LocalFileWriteIoError::SetLenError)
-            .map_err(LocalFileWriteError::IoError)?;
+            .map_err(LocalFileError::IoError)?;
 
         // Update our sig after we first touch the file so we guarantee
         // that any modification (even partial) is reflected as a change
@@ -259,14 +202,9 @@ impl LocalFile {
         self.file
             .write_all(buf)
             .await
-            .map_err(LocalFileWriteIoError::WriteAllError)
-            .map_err(LocalFileWriteError::IoError)?;
+            .map_err(LocalFileError::IoError)?;
 
-        self.file
-            .flush()
-            .await
-            .map_err(LocalFileWriteIoError::FlushError)
-            .map_err(LocalFileWriteError::IoError)
+        self.file.flush().await.map_err(LocalFileError::IoError)
     }
 }
 
@@ -368,7 +306,7 @@ mod tests {
 
         let sig = lf.sig();
         match lf.read_all(sig + 1).await {
-            Err(LocalFileReadError::SigMismatch) => {
+            Err(LocalFileError::SigMismatch) => {
                 assert_eq!(lf.sig(), sig, "Signature changed after error");
             }
             Err(x) => panic!("Unexpected error: {}", x),
@@ -389,9 +327,9 @@ mod tests {
         let sig = lf.sig();
 
         match lf.read_all(sig).await {
-            Err(LocalFileReadError::IoError(
-                LocalFileReadIoError::ReadToEndError(_),
-            )) => {
+            Err(LocalFileError::IoError(x))
+                if x.kind() == io::ErrorKind::Other =>
+            {
                 assert_eq!(
                     sig,
                     lf.sig(),
@@ -457,7 +395,7 @@ mod tests {
 
         let sig = lf.sig();
         match lf.write_all(sig + 1, b"some contents").await {
-            Err(LocalFileWriteError::SigMismatch) => {
+            Err(LocalFileError::SigMismatch) => {
                 assert_eq!(lf.sig(), sig, "Signature changed after error");
             }
             Err(x) => panic!("Unexpected error: {}", x),
@@ -478,9 +416,9 @@ mod tests {
         let sig = lf.sig();
 
         match lf.write_all(sig, b"some content").await {
-            Err(LocalFileWriteError::IoError(
-                LocalFileWriteIoError::SetLenError(_),
-            )) => {
+            Err(LocalFileError::IoError(x))
+                if x.kind() == io::ErrorKind::InvalidInput =>
+            {
                 assert_eq!(
                     sig,
                     lf.sig(),
@@ -532,7 +470,7 @@ mod tests {
 
         let sig = lf.sig();
         match lf.rename(sig + 1, "something_else").await {
-            Err(LocalFileRenameError::SigMismatch) => {
+            Err(LocalFileError::SigMismatch) => {
                 assert_eq!(lf.sig(), sig, "Signature changed after error");
             }
             Err(x) => panic!("Unexpected error: {}", x),
@@ -546,7 +484,9 @@ mod tests {
 
         let sig = lf.sig();
         match lf.rename(sig, "something_else").await {
-            Err(LocalFileRenameError::IoError(_)) => {
+            Err(LocalFileError::IoError(x))
+                if x.kind() == io::ErrorKind::NotFound =>
+            {
                 assert_eq!(lf.sig(), sig, "Signature changed after error")
             }
             Err(x) => panic!("Unexpected error: {}", x),
@@ -603,11 +543,11 @@ mod tests {
 
     #[tokio::test]
     async fn remove_should_yield_error_if_provided_sig_is_different() {
-        let lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
+        let mut lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         let sig = lf.sig();
         match lf.remove(sig + 1).await {
-            Err(LocalFileRemoveError::SigMismatch(lf)) => {
+            Err(LocalFileError::SigMismatch) => {
                 assert_eq!(lf.sig(), sig, "Signature changed after error");
             }
             Err(x) => panic!("Unexpected error: {}", x),
@@ -617,11 +557,13 @@ mod tests {
 
     #[tokio::test]
     async fn remove_should_yield_error_if_underlying_path_is_missing() {
-        let lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
+        let mut lf = create_test_local_file(tempfile::tempfile().unwrap(), "");
 
         let sig = lf.sig();
         match lf.remove(sig).await {
-            Err(LocalFileRemoveError::IoError(_, lf)) => {
+            Err(LocalFileError::IoError(x))
+                if x.kind() == io::ErrorKind::NotFound =>
+            {
                 assert_eq!(lf.sig(), sig, "Signature changed after error");
             }
             Err(x) => panic!("Unexpected error: {}", x),
@@ -634,7 +576,8 @@ mod tests {
         let f = tempfile::NamedTempFile::new().unwrap();
         let path = f.path();
 
-        let lf = create_test_local_file(f.as_file().try_clone().unwrap(), path);
+        let mut lf =
+            create_test_local_file(f.as_file().try_clone().unwrap(), path);
 
         let sig = lf.sig();
 

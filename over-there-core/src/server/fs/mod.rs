@@ -1,12 +1,9 @@
 mod dir;
 mod file;
 
-pub use dir::{LocalDirEntriesError, LocalDirEntry, LocalDirRenameError};
-
+pub use dir::LocalDirEntry;
 pub use file::{
-    LocalFile, LocalFileHandle, LocalFilePermissions, LocalFileReadError,
-    LocalFileReadIoError, LocalFileRemoveError, LocalFileRenameError,
-    LocalFileWriteError, LocalFileWriteIoError,
+    LocalFile, LocalFileError, LocalFileHandle, LocalFilePermissions,
 };
 
 use std::collections::{hash_map::Entry, HashMap};
@@ -71,16 +68,11 @@ impl FileSystemManager {
         &mut self,
         from: impl AsRef<Path>,
         to: impl AsRef<Path>,
-    ) -> Result<(), LocalDirRenameError> {
-        let from = self
-            .validate_path(from.as_ref())
-            .map_err(LocalDirRenameError::IoError)?;
-        let to = self
-            .validate_path(to.as_ref())
-            .map_err(LocalDirRenameError::IoError)?;
+    ) -> io::Result<()> {
+        let from = self.validate_path(from.as_ref())?;
+        let to = self.validate_path(to.as_ref())?;
 
-        self.check_no_open_files(from.as_path())
-            .map_err(LocalDirRenameError::IoError)?;
+        self.check_no_open_files(from.as_path())?;
 
         // No open file is within this directory, so good to attempt to rename
         dir::rename(from.as_path(), to.as_path()).await?;
@@ -115,10 +107,8 @@ impl FileSystemManager {
     pub async fn dir_entries(
         &self,
         path: impl AsRef<Path>,
-    ) -> Result<Vec<LocalDirEntry>, LocalDirEntriesError> {
-        let path = self
-            .validate_path(path.as_ref())
-            .map_err(LocalDirEntriesError::ReadDirError)?;
+    ) -> io::Result<Vec<LocalDirEntry>> {
+        let path = self.validate_path(path.as_ref())?;
 
         dir::entries(path).await
     }
@@ -198,7 +188,7 @@ impl FileSystemManager {
     ///
     /// Will fail if no file with `handle` id is open, or if the signature
     /// on the file is different than that of `handle`.
-    pub async fn close_file(
+    pub fn close_file(
         &mut self,
         handle: LocalFileHandle,
     ) -> io::Result<LocalFile> {
@@ -243,6 +233,22 @@ impl FileSystemManager {
         file::remove(path).await
     }
 
+    /// Removes an open file, failing if the file isn't open, the signature
+    /// is different, or some internal error occurs
+    // pub async fn remove_open_file(
+    //     &mut self,
+    //     handle: LocalFileHandle,
+    // ) -> io::Result<()> {
+    //     // In order to return proper sig mismatch error, we need to manually
+    //     // do a couple of steps
+    //     let local_file = self.files.remove(handle.id).ok_or_else(|| {
+    //         io::Error::new(
+    //             io::ErrorKind::NotFound,
+    //             format!("No open file with id {}", handle.id),
+    //         )
+    //     })?;
+    // }
+
     /// Represents the total files that are open within the manager
     pub fn file_cnt(&self) -> usize {
         self.files.len()
@@ -262,6 +268,11 @@ impl FileSystemManager {
             Some(file) => Some(file),
             None => None,
         }
+    }
+
+    /// Determines if a file is open with the specified `id`
+    pub fn exists(&self, id: impl Into<u32>) -> bool {
+        self.get(id).is_some()
     }
 
     /// Checks that `path` is not an open file or (if dir) does not contain any
@@ -373,11 +384,7 @@ mod tests {
         let destination = root.as_ref().join("destination");
 
         match fsm.rename_dir(origin, destination).await {
-            Err(LocalDirRenameError::IoError(x))
-                if x.kind() == io::ErrorKind::PermissionDenied =>
-            {
-                ()
-            }
+            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -395,11 +402,7 @@ mod tests {
         let destination = other_root.as_ref().join("destination");
 
         match fsm.rename_dir(origin, destination).await {
-            Err(LocalDirRenameError::IoError(x))
-                if x.kind() == io::ErrorKind::PermissionDenied =>
-            {
-                ()
-            }
+            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -413,9 +416,7 @@ mod tests {
         let destination = root.as_ref().join("destination");
 
         match fsm.rename_dir(origin, destination).await {
-            Err(LocalDirRenameError::FailedToGetMetadata(x)) => {
-                assert_eq!(x.kind(), io::ErrorKind::NotFound)
-            }
+            Err(x) => assert_eq!(x.kind(), io::ErrorKind::NotFound),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -432,7 +433,7 @@ mod tests {
         let destination = root.as_ref().join("destination");
 
         match fsm.rename_dir(origin_file.as_ref(), destination).await {
-            Err(LocalDirRenameError::NotADirectory) => (),
+            Err(_) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -457,9 +458,7 @@ mod tests {
             .rename_dir(origin.as_path(), destination.as_path())
             .await
         {
-            Err(LocalDirRenameError::IoError(x)) => {
-                assert_eq!(x.kind(), io::ErrorKind::InvalidData)
-            }
+            Err(x) => assert_eq!(x.kind(), io::ErrorKind::InvalidData),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -486,11 +485,7 @@ mod tests {
         let fsm = FileSystemManager::with_root(root.as_ref());
 
         match fsm.dir_entries(tempfile::tempdir().unwrap()).await {
-            Err(LocalDirEntriesError::ReadDirError(x))
-                if x.kind() == io::ErrorKind::PermissionDenied =>
-            {
-                ()
-            }
+            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -503,11 +498,7 @@ mod tests {
         let file = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
 
         match fsm.dir_entries(file.path()).await {
-            Err(LocalDirEntriesError::ReadDirError(x))
-                if x.kind() == io::ErrorKind::Other =>
-            {
-                ()
-            }
+            Err(x) if x.kind() == io::ErrorKind::Other => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -815,13 +806,10 @@ mod tests {
             .await
             .expect("Failed to create file");
 
-        match fsm
-            .close_file(LocalFileHandle {
-                id: handle.id + 1,
-                sig: handle.sig,
-            })
-            .await
-        {
+        match fsm.close_file(LocalFileHandle {
+            id: handle.id + 1,
+            sig: handle.sig,
+        }) {
             Err(x) if x.kind() == io::ErrorKind::NotFound => (),
             x => panic!("Unexpected result: {:?}", x),
         }
@@ -837,13 +825,10 @@ mod tests {
             .await
             .expect("Failed to create file");
 
-        match fsm
-            .close_file(LocalFileHandle {
-                id: handle.id,
-                sig: handle.sig + 1,
-            })
-            .await
-        {
+        match fsm.close_file(LocalFileHandle {
+            id: handle.id,
+            sig: handle.sig + 1,
+        }) {
             Err(x) if x.kind() == io::ErrorKind::InvalidInput => (),
             x => panic!("Unexpected result: {:?}", x),
         }
@@ -859,7 +844,7 @@ mod tests {
             .await
             .expect("Failed to create file");
 
-        match fsm.close_file(handle).await {
+        match fsm.close_file(handle) {
             Ok(_) => (),
             x => panic!("Unexpected result: {:?}", x),
         }

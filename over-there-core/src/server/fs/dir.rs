@@ -1,43 +1,6 @@
-use over_there_derive::Error;
 use std::io;
 use std::path::{Path, PathBuf};
 use tokio::fs;
-
-#[derive(Debug, Error)]
-pub enum LocalDirRenameError {
-    NotADirectory,
-    FailedToGetMetadata(io::Error),
-    IoError(io::Error),
-}
-
-impl Into<io::Error> for LocalDirRenameError {
-    fn into(self) -> io::Error {
-        match self {
-            Self::NotADirectory => {
-                io::Error::new(io::ErrorKind::InvalidInput, "Not a directory")
-            }
-            Self::FailedToGetMetadata(x) => x,
-            Self::IoError(x) => x,
-        }
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum LocalDirEntriesError {
-    ReadDirError(io::Error),
-    NextEntryError(io::Error),
-    FileTypeError(io::Error),
-}
-
-impl Into<io::Error> for LocalDirEntriesError {
-    fn into(self: Self) -> io::Error {
-        match self {
-            Self::ReadDirError(x) => x,
-            Self::NextEntryError(x) => x,
-            Self::FileTypeError(x) => x,
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalDirEntry {
@@ -53,22 +16,11 @@ impl LocalDirEntry {
     }
 }
 
-pub async fn entries(
-    path: impl AsRef<Path>,
-) -> Result<Vec<LocalDirEntry>, LocalDirEntriesError> {
+pub async fn entries(path: impl AsRef<Path>) -> io::Result<Vec<LocalDirEntry>> {
     let mut entries = Vec::new();
-    let mut dir_stream = fs::read_dir(path)
-        .await
-        .map_err(LocalDirEntriesError::ReadDirError)?;
-    while let Some(entry) = dir_stream
-        .next_entry()
-        .await
-        .map_err(LocalDirEntriesError::NextEntryError)?
-    {
-        let file_type = entry
-            .file_type()
-            .await
-            .map_err(LocalDirEntriesError::FileTypeError)?;
+    let mut dir_stream = fs::read_dir(path).await?;
+    while let Some(entry) = dir_stream.next_entry().await? {
+        let file_type = entry.file_type().await?;
         entries.push(LocalDirEntry {
             path: entry.path(),
             is_file: file_type.is_file(),
@@ -82,17 +34,13 @@ pub async fn entries(
 pub async fn rename(
     from: impl AsRef<Path>,
     to: impl AsRef<Path>,
-) -> Result<(), LocalDirRenameError> {
-    let metadata = fs::metadata(from.as_ref())
-        .await
-        .map_err(LocalDirRenameError::FailedToGetMetadata)?;
+) -> io::Result<()> {
+    let metadata = fs::metadata(from.as_ref()).await?;
 
     if metadata.is_dir() {
-        fs::rename(from, to)
-            .await
-            .map_err(LocalDirRenameError::IoError)
+        fs::rename(from, to).await
     } else {
-        Err(LocalDirRenameError::NotADirectory)
+        Err(io::Error::new(io::ErrorKind::Other, "Not a directory"))
     }
 }
 
@@ -127,7 +75,7 @@ mod tests {
         };
 
         match result {
-            Err(LocalDirEntriesError::ReadDirError(_)) => (),
+            Err(x) if x.kind() == io::ErrorKind::Other => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -190,7 +138,7 @@ mod tests {
         };
 
         match result {
-            Err(LocalDirRenameError::NotADirectory) => (),
+            Err(x) if x.kind() == io::ErrorKind::Other => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -271,7 +219,7 @@ mod tests {
         };
 
         match result {
-            Err(_) => (),
+            Err(x) if x.kind() == io::ErrorKind::Other => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
@@ -315,7 +263,7 @@ mod tests {
         };
 
         match result {
-            Err(_) => (),
+            Err(x) if x.kind() == io::ErrorKind::Other => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }
