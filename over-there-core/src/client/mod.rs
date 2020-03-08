@@ -311,6 +311,75 @@ impl Client {
         }
     }
 
+    /// Requests to create a new directory
+    pub async fn ask_create_dir(
+        &mut self,
+        path: String,
+        include_components: bool,
+    ) -> Result<(), FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoCreateDir(DoCreateDirArgs {
+                path,
+                include_components,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::DirCreated(_) => Ok(()),
+            x => Err(make_file_ask_error(x)),
+        }
+    }
+
+    /// Requests to rename an existing directory
+    pub async fn ask_rename_dir(
+        &mut self,
+        from: String,
+        to: String,
+    ) -> Result<(), FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoRenameDir(DoRenameDirArgs {
+                from,
+                to,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::DirRenamed(_) => Ok(()),
+            x => Err(make_file_ask_error(x)),
+        }
+    }
+
+    /// Requests to remove an existing directory
+    pub async fn ask_remove_dir(
+        &mut self,
+        path: String,
+        non_empty: bool,
+    ) -> Result<(), FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoRemoveDir(DoRemoveDirArgs {
+                path,
+                non_empty,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::DirRemoved(_) => Ok(()),
+            x => Err(make_file_ask_error(x)),
+        }
+    }
+
     /// Requests to get a list of the root directory's contents on the server
     pub async fn ask_list_root_dir_contents(
         &mut self,
@@ -376,6 +445,70 @@ impl Client {
                 sig: args.sig,
                 path,
             }),
+            x => Err(make_file_ask_error(x)),
+        }
+    }
+
+    /// Requests to close an open file
+    pub async fn ask_close_file(
+        &mut self,
+        file: &RemoteFile,
+    ) -> Result<(), FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoCloseFile(DoCloseFileArgs {
+                id: file.id,
+                sig: file.sig,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::FileClosed(_) => Ok(()),
+            x => Err(make_file_ask_error(x)),
+        }
+    }
+
+    /// Requests to rename a non-open file
+    pub async fn ask_rename_file(
+        &mut self,
+        from: String,
+        to: String,
+    ) -> Result<(), FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoRenameFile(DoRenameFileArgs {
+                from,
+                to,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::FileRenamed(_) => Ok(()),
+            x => Err(make_file_ask_error(x)),
+        }
+    }
+
+    /// Requests to remove a non-open file
+    pub async fn ask_remove_file(
+        &mut self,
+        path: String,
+    ) -> Result<(), FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoRemoveFile(DoRemoveFileArgs { path })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::FileRemoved(_) => Ok(()),
             x => Err(make_file_ask_error(x)),
         }
     }

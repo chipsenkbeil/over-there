@@ -28,6 +28,18 @@ async fn test_udp_client_file_manipulation() {
 }
 
 #[tokio::test]
+async fn test_tcp_client_dir_manipulation() {
+    let test_bench = setup::setup(TestMode::Tcp).await;
+    scenarios::dir::async_test(test_bench.client).await;
+}
+
+#[tokio::test]
+async fn test_udp_client_dir_manipulation() {
+    let test_bench = setup::setup(TestMode::Udp).await;
+    scenarios::dir::async_test(test_bench.client).await;
+}
+
+#[tokio::test]
 async fn test_tcp_client_remote_process() {
     let test_bench = setup::setup(TestMode::Tcp).await;
     scenarios::proc::async_test(test_bench.client).await;
