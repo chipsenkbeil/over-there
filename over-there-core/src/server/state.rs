@@ -30,6 +30,23 @@ impl ServerState {
 
         state
     }
+
+    /// Acquires debug-related information for each part of state,
+    /// which requires locking each component
+    pub(crate) async fn internal_debug(&self) -> String {
+        format!(
+            "Conns: {:#?}
+            FS Manager: {:#?}
+            Conn Files: {:#?}
+            Procs: {:#?}
+            Conn Procs: {:#?}",
+            self.conns.lock().await,
+            self.fs_manager.lock().await,
+            self.conn_files.lock().await,
+            self.procs.lock().await,
+            self.conn_procs.lock().await,
+        )
+    }
 }
 
 impl Default for ServerState {

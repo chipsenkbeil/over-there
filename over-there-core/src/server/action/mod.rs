@@ -217,6 +217,10 @@ impl<T> Executor<T> {
             Content::DoKillProc(args) => {
                 handler::proc::do_kill_proc(state, args, do_respond).await
             }
+            Content::InternalDebug(args) => {
+                handler::internal_debug::internal_debug(state, args, do_respond)
+                    .await
+            }
             _ => Err(ActionError::Unknown),
         }
     }

@@ -8,6 +8,7 @@ use crate::{
     msg::{
         content::{
             capabilities::Capability,
+            internal_debug::InternalDebugArgs,
             io::{fs::*, proc::*},
             Content,
         },
@@ -766,6 +767,23 @@ impl Client {
             }
             Content::ProcStatus(x) => Ok(From::from(x)),
             x => Err(make_exec_ask_error(x)),
+        }
+    }
+
+    /// Requests internal state of server
+    pub async fn ask_internal_debug(&mut self) -> Result<Vec<u8>, AskError> {
+        let result = self
+            .ask(Msg::from(Content::InternalDebug(InternalDebugArgs {
+                input: vec![],
+                output: vec![],
+            })))
+            .await?;
+
+        match result.content {
+            Content::InternalDebug(InternalDebugArgs { output, .. }) => {
+                Ok(output)
+            }
+            x => Err(make_ask_error(x)),
         }
     }
 }

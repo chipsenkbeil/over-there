@@ -2,6 +2,7 @@ pub mod capabilities;
 pub mod custom;
 pub mod error;
 pub mod forward;
+pub mod internal_debug;
 pub mod io;
 pub mod version;
 
@@ -168,4 +169,7 @@ pub enum Content {
     /// This will be sent in either direction to provide a custom content
     /// that would be evaluated through user-implemented handlers
     Custom(custom::CustomArgs),
+
+    /// For debugging purposes when needing to query the state of client/server
+    InternalDebug(internal_debug::InternalDebugArgs),
 }

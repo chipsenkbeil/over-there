@@ -2,6 +2,7 @@ pub mod capabilities;
 pub mod dir;
 pub mod exec;
 pub mod file;
+pub mod internal_debug;
 pub mod version;
 
 use super::{parsers, CommonOpts};
@@ -33,6 +34,9 @@ pub enum Subcommand {
 
     #[clap(name = "reattach-exec")]
     ReattachExec(exec::ReattachExecCommand),
+
+    #[clap(name = "internal-debug")]
+    InternalDebug(internal_debug::InternalDebugCommand),
 }
 
 #[derive(Clap, Debug)]

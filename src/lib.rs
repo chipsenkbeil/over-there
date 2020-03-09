@@ -190,6 +190,10 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             }
         }
         client::Subcommand::ReattachExec(_c) => unimplemented!(),
+        client::Subcommand::InternalDebug(_) => println!(
+            "{}",
+            String::from_utf8_lossy(&client.ask_internal_debug().await?)
+        ),
     };
 
     Ok(())
