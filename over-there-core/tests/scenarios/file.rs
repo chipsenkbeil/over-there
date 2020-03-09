@@ -34,19 +34,13 @@ pub async fn async_test(mut client: Client) {
         .expect("Failed to get dir contents");
     assert_eq!(dir_contents.len(), 1);
 
-    // Close the file, rename it, re-open it, read content
-    client
-        .ask_close_file(&file)
-        .await
-        .expect("Failed to close file");
-
     let file_path_2 = format!("{}.2", file_path.clone());
     client
-        .ask_rename_file(file_path, file_path_2.clone())
+        .ask_rename_file(&mut file, file_path_2.clone())
         .await
         .expect("Failed to rename file");
 
-    let file = client
+    let mut file = client
         .ask_open_file(file_path_2.clone())
         .await
         .expect("Failed to open renamed file");
@@ -57,17 +51,11 @@ pub async fn async_test(mut client: Client) {
     );
     assert_eq!(result, "Hello!\nThis is a test!\nGoodbye!");
 
-    // Close file and remove it
     client
-        .ask_close_file(&file)
-        .await
-        .expect("Failed to close file");
-    client
-        .ask_remove_file(file_path_2)
+        .ask_remove_file(&mut file)
         .await
         .expect("Failed to remove renamed file");
 
-    // Verify it's gone
     let dir_contents = client
         .ask_list_dir_contents(dir_path)
         .await

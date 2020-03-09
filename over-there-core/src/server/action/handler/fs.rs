@@ -106,7 +106,12 @@ where
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.rename(args.sig, &args.to).await {
-            Ok(_) => respond(Content::FileRenamed(FileRenamedArgs {})).await,
+            Ok(_) => {
+                respond(Content::FileRenamed(FileRenamedArgs {
+                    sig: local_file.sig(),
+                }))
+                .await
+            }
             Err(LocalFileError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
                     sig: local_file.sig(),
@@ -157,7 +162,12 @@ where
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.remove(args.sig).await {
-            Ok(_) => respond(Content::FileRemoved(FileRemovedArgs {})).await,
+            Ok(_) => {
+                respond(Content::FileRemoved(FileRemovedArgs {
+                    sig: local_file.sig(),
+                }))
+                .await
+            }
             Err(LocalFileError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
                     sig: local_file.sig(),
@@ -784,7 +794,10 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::FileRenamed(FileRenamedArgs {}) => (),
+            Content::FileRenamed(FileRenamedArgs { sig }) => assert_ne!(
+                handle.sig, sig,
+                "Signature returned is not different"
+            ),
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -977,7 +990,10 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::FileRemoved(FileRemovedArgs {}) => (),
+            Content::FileRemoved(FileRemovedArgs { sig }) => assert_ne!(
+                handle.sig, sig,
+                "Signature returned is not different"
+            ),
             x => panic!("Bad content: {:?}", x),
         }
     }

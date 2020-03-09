@@ -155,6 +155,9 @@ impl LocalFile {
             .await
             .map_err(LocalFileError::IoError)?;
 
+        // Update signature to reflect the change
+        self.sig = OsRng.next_u32();
+
         Ok(())
     }
 
@@ -581,9 +584,10 @@ mod tests {
 
         let sig = lf.sig();
 
-        // Do reomve and verify that the file at path is gone
+        // Do remove and verify that the file at path is gone
         assert!(fs::read(path).await.is_ok(), "File already missing at path");
         lf.remove(sig).await.expect("Failed to remove file");
         assert!(fs::read(path).await.is_err(), "File still exists at path");
+        assert_ne!(sig, lf.sig(), "Signature was not updated");
     }
 }

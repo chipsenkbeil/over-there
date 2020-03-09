@@ -471,17 +471,43 @@ impl Client {
         }
     }
 
-    /// Requests to rename a non-open file
+    /// Requests to rename an open file
     pub async fn ask_rename_file(
+        &mut self,
+        file: &mut RemoteFile,
+        to: String,
+    ) -> Result<(), FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoRenameFile(DoRenameFileArgs {
+                id: file.id,
+                sig: file.sig,
+                to,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::FileRenamed(FileRenamedArgs { sig }) => {
+                file.sig = sig;
+                Ok(())
+            }
+            x => Err(make_file_ask_error(x)),
+        }
+    }
+
+    /// Requests to rename a non-open file
+    pub async fn ask_rename_unopened_file(
         &mut self,
         from: String,
         to: String,
     ) -> Result<(), FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRenameUnopenedFile(DoRenameUnopenedFileArgs {
-                from,
-                to,
-            })))
+            .ask(Msg::from(Content::DoRenameUnopenedFile(
+                DoRenameUnopenedFileArgs { from, to },
+            )))
             .await;
 
         if let Err(x) = result {
@@ -494,13 +520,40 @@ impl Client {
         }
     }
 
-    /// Requests to remove a non-open file
+    /// Requests to remove an open file
     pub async fn ask_remove_file(
+        &mut self,
+        file: &mut RemoteFile,
+    ) -> Result<(), FileAskError> {
+        let result = self
+            .ask(Msg::from(Content::DoRemoveFile(DoRemoveFileArgs {
+                id: file.id,
+                sig: file.sig,
+            })))
+            .await;
+
+        if let Err(x) = result {
+            return Err(From::from(x));
+        }
+
+        match result.unwrap().content {
+            Content::FileRemoved(FileRemovedArgs { sig }) => {
+                file.sig = sig;
+                Ok(())
+            }
+            x => Err(make_file_ask_error(x)),
+        }
+    }
+
+    /// Requests to remove a non-open file
+    pub async fn ask_remove_unopened_file(
         &mut self,
         path: String,
     ) -> Result<(), FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRemoveUnopenedFile(DoRemoveUnopenedFileArgs { path })))
+            .ask(Msg::from(Content::DoRemoveUnopenedFile(
+                DoRemoveUnopenedFileArgs { path },
+            )))
             .await;
 
         if let Err(x) = result {

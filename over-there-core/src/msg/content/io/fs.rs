@@ -102,7 +102,9 @@ pub struct DoRenameFileArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FileRenamedArgs {}
+pub struct FileRenamedArgs {
+    pub sig: u32,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoRemoveUnopenedFileArgs {
@@ -119,7 +121,9 @@ pub struct DoRemoveFileArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FileRemovedArgs {}
+pub struct FileRemovedArgs {
+    pub sig: u32,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoReadFileArgs {
