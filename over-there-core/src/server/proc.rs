@@ -114,17 +114,12 @@ impl LocalProc {
                                         .await
                                         .extend_from_slice(&buf[..size]);
                                 }
-                                Ok(_) => (),
+                                Ok(_) => break,
                                 Err(x) => {
                                     error!("stdout reader died: {}", x);
                                     break;
                                 }
                             }
-
-                            // NOTE: Loop recovers too quickly from await on
-                            //       read yielding size == 0, so yielding to
-                            //       ensure that other tasks get a fair shake
-                            task::yield_now().await;
                         }
                     }
                 },
@@ -142,17 +137,12 @@ impl LocalProc {
                                         .await
                                         .extend_from_slice(&buf[..size]);
                                 }
-                                Ok(_) => (),
+                                Ok(_) => break,
                                 Err(x) => {
                                     error!("stderr reader died: {}", x);
                                     break;
                                 }
                             }
-
-                            // NOTE: Loop recovers too quickly from await on
-                            //       read yielding size == 0, so yielding to
-                            //       ensure that other tasks get a fair shake
-                            task::yield_now().await;
                         }
                     }
                 }
