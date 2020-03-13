@@ -1,7 +1,7 @@
 use super::{fs::FileSystemManager, proc::LocalProc};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
@@ -23,12 +23,18 @@ pub struct ServerState {
 impl ServerState {
     /// Produces new state where the server's fs-based operations are locked
     /// to the specified `root`
-    pub fn new(root: impl AsRef<Path>) -> Self {
-        let mut state = Self::default();
-
-        state.fs_manager = Mutex::new(FileSystemManager::with_root(root));
-
-        state
+    pub fn new(maybe_root: Option<PathBuf>) -> Self {
+        Self {
+            conns: Mutex::new(HashMap::default()),
+            fs_manager: Mutex::new(if let Some(root) = maybe_root {
+                FileSystemManager::with_root(root)
+            } else {
+                FileSystemManager::default()
+            }),
+            conn_files: Mutex::new(HashMap::default()),
+            procs: Mutex::new(HashMap::default()),
+            conn_procs: Mutex::new(HashMap::default()),
+        }
     }
 
     /// Acquires debug-related information for each part of state,
@@ -51,12 +57,6 @@ impl ServerState {
 
 impl Default for ServerState {
     fn default() -> Self {
-        Self {
-            conns: Mutex::new(HashMap::default()),
-            fs_manager: Mutex::new(FileSystemManager::default()),
-            conn_files: Mutex::new(HashMap::default()),
-            procs: Mutex::new(HashMap::default()),
-            conn_procs: Mutex::new(HashMap::default()),
-        }
+        Self::new(None)
     }
 }

@@ -7,6 +7,7 @@ use crate::{event::AddrEventManager, Communicator, Msg, Transport};
 use log::error;
 use over_there_wire::{Authenticator, Bicrypter, NetTransmission, Wire};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::{
     io,
@@ -44,9 +45,10 @@ impl Server {
 }
 
 async fn tcp_event_handler(
+    maybe_root: Option<PathBuf>,
     mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<Vec<u8>>)>,
 ) {
-    let state = Arc::new(state::ServerState::default());
+    let state = Arc::new(state::ServerState::new(maybe_root));
     while let Some((msg, addr, tx)) = rx.recv().await {
         if let Err(x) = action::Executor::<Vec<u8>>::new(tx, addr)
             .execute(Arc::clone(&state), msg)
@@ -58,13 +60,14 @@ async fn tcp_event_handler(
 }
 
 async fn udp_event_handler(
+    maybe_root: Option<PathBuf>,
     mut rx: mpsc::Receiver<(
         Msg,
         SocketAddr,
         mpsc::Sender<(Vec<u8>, SocketAddr)>,
     )>,
 ) {
-    let state = Arc::new(state::ServerState::default());
+    let state = Arc::new(state::ServerState::new(maybe_root));
     while let Some((msg, addr, tx)) = rx.recv().await {
         if let Err(x) = action::Executor::<(Vec<u8>, SocketAddr)>::new(tx, addr)
             .execute(Arc::clone(&state), msg)
@@ -85,6 +88,7 @@ where
         self,
         transport: Transport,
         buffer: usize,
+        maybe_root: Option<PathBuf>,
     ) -> io::Result<Server> {
         let handle = Handle::current();
 
@@ -116,7 +120,8 @@ where
                 );
 
                 let (tx, rx) = mpsc::channel(buffer);
-                let _event_handle = handle.spawn(tcp_event_handler(rx));
+                let _event_handle =
+                    handle.spawn(tcp_event_handler(maybe_root, rx));
                 let addr_event_manager = AddrEventManager::for_tcp_listener(
                     handle.clone(),
                     buffer,
@@ -159,7 +164,8 @@ where
                 );
 
                 let (tx, rx) = mpsc::channel(buffer);
-                let _event_handle = handle.spawn(udp_event_handler(rx));
+                let _event_handle =
+                    handle.spawn(udp_event_handler(maybe_root, rx));
                 let addr_event_manager = AddrEventManager::for_udp_socket(
                     handle.clone(),
                     buffer,

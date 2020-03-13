@@ -59,6 +59,7 @@ async fn start_tcp_client_and_server() -> TestBench {
     .listen(
         Transport::Tcp(wire::net::make_local_ipv4_addr_list()),
         CHANNEL_MAX_SIZE,
+        None,
     )
     .await
     .unwrap();
@@ -89,6 +90,7 @@ async fn start_udp_client_and_server() -> TestBench {
     .listen(
         Transport::Udp(wire::net::make_local_ipv4_addr_list()),
         CHANNEL_MAX_SIZE,
+        None,
     )
     .await
     .unwrap();

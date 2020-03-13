@@ -1271,7 +1271,8 @@ mod tests {
     #[tokio::test]
     async fn do_create_dir_should_send_error_if_directory_outside_root() {
         let root_path = tempfile::tempdir().unwrap();
-        let state = Arc::new(ServerState::new(root_path.as_ref()));
+        let state =
+            Arc::new(ServerState::new(Some(root_path.as_ref().to_path_buf())));
         let mut content: Option<Content> = None;
 
         let dir_path = tempfile::tempdir()
@@ -1311,7 +1312,8 @@ mod tests {
     async fn do_create_dir_should_send_error_if_part_of_path_missing_and_flag_not_set(
     ) {
         let root_path = tempfile::tempdir().unwrap();
-        let state = Arc::new(ServerState::new(root_path.as_ref()));
+        let state =
+            Arc::new(ServerState::new(Some(root_path.as_ref().to_path_buf())));
         let mut content: Option<Content> = None;
 
         let dir_path = root_path.as_ref().join("test").join("dir");
@@ -1347,7 +1349,8 @@ mod tests {
     async fn do_create_dir_should_send_confirmation_if_single_level_directory_created(
     ) {
         let root_path = tempfile::tempdir().unwrap();
-        let state = Arc::new(ServerState::new(root_path.as_ref()));
+        let state =
+            Arc::new(ServerState::new(Some(root_path.as_ref().to_path_buf())));
         let mut content: Option<Content> = None;
 
         let dir_path = root_path.as_ref().join("test");
@@ -1381,7 +1384,8 @@ mod tests {
     async fn do_create_dir_should_send_confirmation_if_multi_level_directory_created(
     ) {
         let root_path = tempfile::tempdir().unwrap();
-        let state = Arc::new(ServerState::new(root_path.as_ref()));
+        let state =
+            Arc::new(ServerState::new(Some(root_path.as_ref().to_path_buf())));
         let mut content: Option<Content> = None;
 
         let dir_path = root_path.as_ref().join("test").join("dir");
