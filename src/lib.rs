@@ -1,5 +1,5 @@
+mod builder;
 mod opts;
-mod start;
 
 use log::info;
 use opts::{
@@ -7,7 +7,6 @@ use opts::{
     server::ServerCommand,
     Command,
 };
-use over_there_wire::{self as wire};
 use std::error::Error;
 use std::io;
 
@@ -56,8 +55,7 @@ async fn run_server(cmd: ServerCommand) -> Result<(), Box<dyn Error>> {
 
     validate_opts(&cmd.opts)?;
 
-    let addrs = wire::net::make_addr_list(cmd.addr.ip(), vec![cmd.addr.port()]);
-    let server = start::start_server(&cmd.opts, addrs).await?;
+    let server = builder::start_server(&cmd).await?;
 
     // Let server run to completion
     server.wait().await?;
@@ -70,7 +68,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
 
     validate_opts(&cmd.opts)?;
 
-    let mut client = start::start_client(&cmd.opts, cmd.addr)
+    let mut client = builder::start_client(&cmd)
         .await
         .expect("Failed to connect with client");
 

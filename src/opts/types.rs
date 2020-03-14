@@ -10,10 +10,12 @@ pub enum Authentication {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString, EnumVariantNames)]
 pub enum Encryption {
     None,
-    AesGcm128,
-    AesGcm256,
-    AesGcmSiv128,
-    AesGcmSiv256,
+    Aes128Gcm,
+    Aes256Gcm,
+    Aes128GcmSiv,
+    Aes256GcmSiv,
+    Aes128Siv,
+    Aes256Siv,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString, EnumVariantNames)]

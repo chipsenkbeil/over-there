@@ -13,17 +13,19 @@ pub struct ServerCommand {
     #[clap(flatten)]
     pub opts: CommonOpts,
 
-    #[clap(name = "root", default_value = &default_root())]
-    pub root: PathBuf,
+    #[clap(name = "root")]
+    pub root: Option<PathBuf>,
 
     #[clap(long)]
     pub no_root: bool,
 }
 
-/// Default root will be the current directory if available
-fn default_root() -> String {
-    env::current_dir()
-        .ok()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_default()
+impl ServerCommand {
+    /// Returns the root if set, or a default root if available
+    pub fn root_or_default(&self) -> PathBuf {
+        match &self.root {
+            Some(root) => root.to_path_buf(),
+            None => env::current_dir().ok().unwrap_or_default(),
+        }
+    }
 }
