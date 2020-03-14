@@ -3,7 +3,7 @@ use over_there_core::{
     ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder, Transport,
 };
 use over_there_crypto::{self as crypto, Aes256GcmBicrypter};
-use over_there_wire::{self as wire, constants};
+use over_there_wire::{self as wire};
 use std::time::Duration;
 
 pub enum TestMode {
@@ -17,7 +17,6 @@ pub struct TestBench {
 }
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_millis(2500);
-pub const CHANNEL_MAX_SIZE: usize = 1000;
 
 pub async fn setup(mode: TestMode) -> TestBench {
     setup_with_timeout(mode, DEFAULT_TIMEOUT).await
@@ -54,11 +53,9 @@ async fn start_tcp_client_and_server() -> TestBench {
     let bicrypter = Aes256GcmBicrypter::new(&encrypt_key);
 
     let server = ServerBuilder::default()
-        .packet_ttl(constants::DEFAULT_TTL)
         .authenticator(auth.clone())
         .bicrypter(bicrypter.clone())
         .transport(Transport::Tcp(wire::net::make_local_ipv4_addr_list()))
-        .buffer(CHANNEL_MAX_SIZE)
         .build()
         .expect("Failed to build server config")
         .listen()
@@ -66,11 +63,9 @@ async fn start_tcp_client_and_server() -> TestBench {
         .expect("Failed to listen");
 
     let client = ClientBuilder::default()
-        .packet_ttl(constants::DEFAULT_TTL)
         .authenticator(auth.clone())
         .bicrypter(bicrypter.clone())
         .transport(Transport::Tcp(vec![server.addr()]))
-        .buffer(CHANNEL_MAX_SIZE)
         .build()
         .expect("Failed to build client config")
         .connect()
@@ -87,11 +82,9 @@ async fn start_udp_client_and_server() -> TestBench {
     let bicrypter = Aes256GcmBicrypter::new(&encrypt_key);
 
     let server = ServerBuilder::default()
-        .packet_ttl(constants::DEFAULT_TTL)
         .authenticator(auth.clone())
         .bicrypter(bicrypter.clone())
         .transport(Transport::Udp(wire::net::make_local_ipv4_addr_list()))
-        .buffer(CHANNEL_MAX_SIZE)
         .build()
         .expect("Failed to build server config")
         .listen()
@@ -99,11 +92,9 @@ async fn start_udp_client_and_server() -> TestBench {
         .expect("Failed to listen");
 
     let client = ClientBuilder::default()
-        .packet_ttl(constants::DEFAULT_TTL)
         .authenticator(auth.clone())
         .bicrypter(bicrypter.clone())
         .transport(Transport::Udp(vec![server.addr()]))
-        .buffer(CHANNEL_MAX_SIZE)
         .build()
         .expect("Failed to build client config")
         .connect()

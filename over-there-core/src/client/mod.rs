@@ -44,7 +44,7 @@ where
     B: Bicrypter,
 {
     /// TTL to collect all packets for a msg
-    #[builder(default = over_there_wire::constants::DEFAULT_TTL)]
+    #[builder(default = "over_there_wire::constants::DEFAULT_TTL")]
     packet_ttl: Duration,
 
     /// Used to sign & verify msgs
