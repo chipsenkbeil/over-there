@@ -2,6 +2,7 @@ mod auth;
 mod crypto;
 
 use crate::opts::{client::ClientCommand, server::ServerCommand, types};
+use log::debug;
 use over_there_core::{
     ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder, Transport,
 };
@@ -206,7 +207,11 @@ where
         .packet_ttl(packet_ttl);
 
     if !cmd.no_root {
-        config.root(cmd.root_or_default());
+        let root = cmd.root_or_default();
+        debug!("Server root: {}", root.to_string_lossy().to_string());
+        config.root(root);
+    } else {
+        debug!("Server root: <None>");
     }
 
     config
