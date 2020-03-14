@@ -1,9 +1,9 @@
-use over_there_core::{Client, ExecAskError, RemoteProc};
+use over_there_core::{ConnectedClient, ExecAskError, RemoteProc};
 use std::time::{Duration, Instant};
 
 const OUTPUT_TIMEOUT: Duration = Duration::from_millis(2500);
 
-pub async fn async_test(mut client: Client) {
+pub async fn async_test(mut client: ConnectedClient) {
     // Perform an echo, which will run once to completion
     let proc = client
         .ask_exec_proc(String::from("echo"), vec![String::from("hello")])
@@ -61,7 +61,7 @@ pub async fn async_test(mut client: Client) {
 }
 
 async fn wait_for_nonempty_output(
-    client: &mut Client,
+    client: &mut ConnectedClient,
     proc: &RemoteProc,
     timeout: Duration,
 ) -> String {

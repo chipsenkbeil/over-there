@@ -14,8 +14,9 @@ use crate::{
         },
         Msg,
     },
-    Communicator, Transport,
+    Transport,
 };
+use derive_builder::Builder;
 use error::{AskError, ExecAskError, FileAskError, TellError};
 use file::RemoteFile;
 use log::{error, trace, warn};
@@ -35,22 +36,43 @@ use tokio::{
     task,
 };
 
-impl<A, B> Communicator<A, B>
+/// Represents a client configuration prior to connecting
+#[derive(Builder)]
+pub struct Client<A, B>
+where
+    A: Authenticator,
+    B: Bicrypter,
+{
+    /// TTL to collect all packets for a msg
+    #[builder(default = over_there_wire::constants::DEFAULT_TTL)]
+    packet_ttl: Duration,
+
+    /// Used to sign & verify msgs
+    authenticator: A,
+
+    /// Used to encrypt & decrypt msgs
+    bicrypter: B,
+
+    /// Transportation mechanism & address to listen on
+    transport: Transport,
+
+    /// Internal buffer for cross-thread messaging
+    #[builder(default = "1000")]
+    buffer: usize,
+}
+
+impl<A, B> Client<A, B>
 where
     A: Authenticator + Clone + Send + 'static,
     B: Bicrypter + Clone + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
-    pub async fn connect(
-        self,
-        transport: Transport,
-        buffer: usize,
-    ) -> io::Result<Client> {
+    pub async fn connect(self) -> io::Result<ConnectedClient> {
         let handle = Handle::current();
         let state = Arc::new(Mutex::new(state::ClientState::default()));
         let state_2 = Arc::clone(&state);
 
-        match transport {
+        match self.transport {
             Transport::Tcp(addrs) => {
                 // NOTE: Tokio does not support &[SocketAddr] -> ToSocketAddrs,
                 //       so we have to loop through manually
@@ -80,24 +102,24 @@ where
                     self.bicrypter,
                 );
 
-                let (tx, rx) = mpsc::channel(buffer);
+                let (tx, rx) = mpsc::channel(self.buffer);
                 let _event_handle =
                     handle.spawn(tcp_event_handler(state_2, rx));
                 let event_manager = EventManager::for_tcp_stream(
                     handle.clone(),
-                    buffer,
+                    self.buffer,
                     stream,
                     remote_addr,
                     wire,
                     tx,
                 );
 
-                Ok(Client {
+                Ok(ConnectedClient {
                     state,
                     event_manager: Either::Left(event_manager),
                     _event_handle,
                     remote_addr,
-                    timeout: Client::DEFAULT_TIMEOUT,
+                    timeout: ConnectedClient::DEFAULT_TIMEOUT,
                 })
             }
             Transport::Udp(addrs) => {
@@ -144,23 +166,23 @@ where
                     self.bicrypter,
                 );
 
-                let (tx, rx) = mpsc::channel(buffer);
+                let (tx, rx) = mpsc::channel(self.buffer);
                 let _event_handle =
                     handle.spawn(udp_event_handler(state_2, rx));
                 let addr_event_manager = AddrEventManager::for_udp_socket(
                     handle.clone(),
-                    buffer,
+                    self.buffer,
                     socket,
                     wire,
                     tx,
                 );
 
-                Ok(Client {
+                Ok(ConnectedClient {
                     state,
                     event_manager: Either::Right(addr_event_manager),
                     _event_handle,
                     remote_addr,
-                    timeout: Client::DEFAULT_TIMEOUT,
+                    timeout: ConnectedClient::DEFAULT_TIMEOUT,
                 })
             }
         }
@@ -208,7 +230,7 @@ async fn udp_event_handler(
 }
 
 /// Represents a client after connecting to an endpoint
-pub struct Client {
+pub struct ConnectedClient {
     state: Arc<Mutex<state::ClientState>>,
 
     /// Represents the event manager used to send and receive data
@@ -224,7 +246,7 @@ pub struct Client {
     pub timeout: Duration,
 }
 
-impl Client {
+impl ConnectedClient {
     /// Default timeout applied to a new client for any ask made
     pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 

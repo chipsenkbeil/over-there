@@ -3,6 +3,12 @@ use crate::{AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter};
 #[derive(Clone, Copy)]
 pub struct NoopBicrypter;
 
+impl Default for NoopBicrypter {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl Bicrypter for NoopBicrypter {}
 
 impl Encrypter for NoopBicrypter {

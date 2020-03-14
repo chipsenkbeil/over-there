@@ -15,6 +15,12 @@ pub trait Verifier {
 #[derive(Clone, Copy)]
 pub struct NoopAuthenticator;
 
+impl Default for NoopAuthenticator {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl Authenticator for NoopAuthenticator {}
 
 impl Signer for NoopAuthenticator {
@@ -104,6 +110,13 @@ pub struct Sha256Authenticator {
     key: Vec<u8>,
 }
 
+/// NOTE: This is purely for derive_builder and should not be used externally
+impl Default for Sha256Authenticator {
+    fn default() -> Self {
+        Self::new(b"")
+    }
+}
+
 impl Sha256Authenticator {
     pub fn new(key: &[u8]) -> Self {
         Self { key: key.to_vec() }
@@ -129,6 +142,13 @@ impl Verifier for Sha256Authenticator {
 #[derive(Clone)]
 pub struct Sha512Authenticator {
     key: Vec<u8>,
+}
+
+/// NOTE: This is purely for derive_builder and should not be used externally
+impl Default for Sha512Authenticator {
+    fn default() -> Self {
+        Self::new(b"")
+    }
 }
 
 impl Sha512Authenticator {

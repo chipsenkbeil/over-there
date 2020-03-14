@@ -1,5 +1,7 @@
 use over_there_auth::Sha256Authenticator;
-use over_there_core::{Client, Communicator, Server, Transport};
+use over_there_core::{
+    ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder, Transport,
+};
 use over_there_crypto::{self as crypto, Aes256GcmBicrypter};
 use over_there_wire::{self as wire, constants};
 use std::time::Duration;
@@ -10,8 +12,8 @@ pub enum TestMode {
 }
 
 pub struct TestBench {
-    pub client: Client,
-    pub server: Server,
+    pub client: ConnectedClient,
+    pub server: ListeningServer,
 }
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_millis(2500);
@@ -51,27 +53,29 @@ async fn start_tcp_client_and_server() -> TestBench {
     let auth = Sha256Authenticator::new(sign_key);
     let bicrypter = Aes256GcmBicrypter::new(&encrypt_key);
 
-    let server = Communicator::new(
-        constants::DEFAULT_TTL,
-        auth.clone(),
-        bicrypter.clone(),
-    )
-    .listen(
-        Transport::Tcp(wire::net::make_local_ipv4_addr_list()),
-        CHANNEL_MAX_SIZE,
-        None,
-    )
-    .await
-    .unwrap();
+    let server = ServerBuilder::default()
+        .packet_ttl(constants::DEFAULT_TTL)
+        .authenticator(auth.clone())
+        .bicrypter(bicrypter.clone())
+        .transport(Transport::Tcp(wire::net::make_local_ipv4_addr_list()))
+        .buffer(CHANNEL_MAX_SIZE)
+        .build()
+        .expect("Failed to build server config")
+        .listen()
+        .await
+        .expect("Failed to listen");
 
-    let client = Communicator::new(
-        constants::DEFAULT_TTL,
-        auth.clone(),
-        bicrypter.clone(),
-    )
-    .connect(Transport::Tcp(vec![server.addr()]), CHANNEL_MAX_SIZE)
-    .await
-    .unwrap();
+    let client = ClientBuilder::default()
+        .packet_ttl(constants::DEFAULT_TTL)
+        .authenticator(auth.clone())
+        .bicrypter(bicrypter.clone())
+        .transport(Transport::Tcp(vec![server.addr()]))
+        .buffer(CHANNEL_MAX_SIZE)
+        .build()
+        .expect("Failed to build client config")
+        .connect()
+        .await
+        .expect("Failed to connect");
 
     TestBench { client, server }
 }
@@ -82,27 +86,29 @@ async fn start_udp_client_and_server() -> TestBench {
     let auth = Sha256Authenticator::new(sign_key);
     let bicrypter = Aes256GcmBicrypter::new(&encrypt_key);
 
-    let server = Communicator::new(
-        constants::DEFAULT_TTL,
-        auth.clone(),
-        bicrypter.clone(),
-    )
-    .listen(
-        Transport::Udp(wire::net::make_local_ipv4_addr_list()),
-        CHANNEL_MAX_SIZE,
-        None,
-    )
-    .await
-    .unwrap();
+    let server = ServerBuilder::default()
+        .packet_ttl(constants::DEFAULT_TTL)
+        .authenticator(auth.clone())
+        .bicrypter(bicrypter.clone())
+        .transport(Transport::Udp(wire::net::make_local_ipv4_addr_list()))
+        .buffer(CHANNEL_MAX_SIZE)
+        .build()
+        .expect("Failed to build server config")
+        .listen()
+        .await
+        .expect("Failed to listen");
 
-    let client = Communicator::new(
-        constants::DEFAULT_TTL,
-        auth.clone(),
-        bicrypter.clone(),
-    )
-    .connect(Transport::Udp(vec![server.addr()]), CHANNEL_MAX_SIZE)
-    .await
-    .unwrap();
+    let client = ClientBuilder::default()
+        .packet_ttl(constants::DEFAULT_TTL)
+        .authenticator(auth.clone())
+        .bicrypter(bicrypter.clone())
+        .transport(Transport::Udp(vec![server.addr()]))
+        .buffer(CHANNEL_MAX_SIZE)
+        .build()
+        .expect("Failed to build client config")
+        .connect()
+        .await
+        .expect("Failed to connect");
 
     TestBench { client, server }
 }

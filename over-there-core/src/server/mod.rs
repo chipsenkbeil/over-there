@@ -3,12 +3,14 @@ pub mod fs;
 pub mod proc;
 pub mod state;
 
-use crate::{event::AddrEventManager, Communicator, Msg, Transport};
+use crate::{event::AddrEventManager, Msg, Transport};
+use derive_builder::Builder;
 use log::error;
 use over_there_wire::{Authenticator, Bicrypter, NetTransmission, Wire};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::{
     io,
     net::{TcpListener, UdpSocket},
@@ -18,7 +20,7 @@ use tokio::{
 };
 
 /// Represents a server after listening has begun
-pub struct Server {
+pub struct ListeningServer {
     /// Address of bound server
     addr: SocketAddr,
 
@@ -29,7 +31,7 @@ pub struct Server {
     _event_handle: task::JoinHandle<()>,
 }
 
-impl Server {
+impl ListeningServer {
     pub fn addr_event_manager(&self) -> &AddrEventManager {
         &self.addr_event_manager
     }
@@ -78,21 +80,45 @@ async fn udp_event_handler(
     }
 }
 
-impl<A, B> Communicator<A, B>
+/// Represents a server configuration prior to listening
+#[derive(Builder, Clone)]
+pub struct Server<A, B>
+where
+    A: Authenticator,
+    B: Bicrypter,
+{
+    /// TTL to collect all packets for a msg
+    #[builder(default = over_there_wire::constants::DEFAULT_TTL)]
+    packet_ttl: Duration,
+
+    /// Used to sign & verify msgs
+    authenticator: A,
+
+    /// Used to encrypt & decrypt msgs
+    bicrypter: B,
+
+    /// Transportation mechanism & address to listen on
+    transport: Transport,
+
+    /// Internal buffer for cross-thread messaging
+    #[builder(default = "1000")]
+    buffer: usize,
+
+    /// Root for file-based operations
+    #[builder(default, setter(strip_option))]
+    root: Option<PathBuf>,
+}
+
+impl<A, B> Server<A, B>
 where
     A: Authenticator + Clone + Send + 'static,
     B: Bicrypter + Clone + Send + 'static,
 {
     /// Starts actively listening for msgs via the specified transport medium
-    pub async fn listen(
-        self,
-        transport: Transport,
-        buffer: usize,
-        maybe_root: Option<PathBuf>,
-    ) -> io::Result<Server> {
+    pub async fn listen(self) -> io::Result<ListeningServer> {
         let handle = Handle::current();
 
-        match transport {
+        match self.transport {
             Transport::Tcp(addrs) => {
                 // NOTE: Tokio does not support &[SocketAddr] -> ToSocketAddrs,
                 //       so we have to loop through manually
@@ -119,18 +145,18 @@ where
                     self.bicrypter,
                 );
 
-                let (tx, rx) = mpsc::channel(buffer);
+                let (tx, rx) = mpsc::channel(self.buffer);
                 let _event_handle =
-                    handle.spawn(tcp_event_handler(maybe_root, rx));
+                    handle.spawn(tcp_event_handler(self.root, rx));
                 let addr_event_manager = AddrEventManager::for_tcp_listener(
                     handle.clone(),
-                    buffer,
+                    self.buffer,
                     listener,
                     wire,
                     tx,
                 );
 
-                Ok(Server {
+                Ok(ListeningServer {
                     addr,
                     addr_event_manager,
                     _event_handle,
@@ -163,18 +189,18 @@ where
                     self.bicrypter,
                 );
 
-                let (tx, rx) = mpsc::channel(buffer);
+                let (tx, rx) = mpsc::channel(self.buffer);
                 let _event_handle =
-                    handle.spawn(udp_event_handler(maybe_root, rx));
+                    handle.spawn(udp_event_handler(self.root, rx));
                 let addr_event_manager = AddrEventManager::for_udp_socket(
                     handle.clone(),
-                    buffer,
+                    self.buffer,
                     socket,
                     wire,
                     tx,
                 );
 
-                Ok(Server {
+                Ok(ListeningServer {
                     addr,
                     addr_event_manager,
                     _event_handle,

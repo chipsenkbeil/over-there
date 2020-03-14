@@ -13,6 +13,13 @@ pub struct Aes128GcmSivBicrypter {
     nonce_size: NonceSize,
 }
 
+/// NOTE: This is purely for derive_builder and should not be used externally
+impl Default for Aes128GcmSivBicrypter {
+    fn default() -> Self {
+        Self::new(&crate::key::new_128bit_key())
+    }
+}
+
 impl Aes128GcmSivBicrypter {
     pub fn new(key: &Key128Bits) -> Self {
         let key = GenericArray::clone_from_slice(key);

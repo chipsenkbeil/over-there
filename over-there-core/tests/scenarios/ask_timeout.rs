@@ -1,7 +1,9 @@
-use over_there_core::{content::custom::CustomArgs, AskError, Client, Content};
+use over_there_core::{
+    content::custom::CustomArgs, AskError, ConnectedClient, Content,
+};
 use std::time::Duration;
 
-pub async fn async_test(mut client: Client) {
+pub async fn async_test(mut client: ConnectedClient) {
     // Make the timeout really short so we don't wait too long for the ask
     // to fail
     client.timeout = Duration::from_millis(10);

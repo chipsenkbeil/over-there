@@ -1,6 +1,6 @@
-use over_there_core::Client;
+use over_there_core::ConnectedClient;
 
-pub async fn async_test(mut client: Client) {
+pub async fn async_test(mut client: ConnectedClient) {
     // Produce a new directory to work in
     let dir = tempfile::TempDir::new().unwrap();
     let root = dir.as_ref().join("test").join("dir");
