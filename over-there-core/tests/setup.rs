@@ -1,6 +1,6 @@
 use over_there_auth::Sha256Authenticator;
 use over_there_core::{Client, Communicator, Server, Transport};
-use over_there_crypto::{self as crypto, aes_gcm};
+use over_there_crypto::{self as crypto, Aes256GcmBicrypter};
 use over_there_wire::{self as wire, constants};
 use std::time::Duration;
 
@@ -49,7 +49,7 @@ async fn start_tcp_client_and_server() -> TestBench {
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
     let auth = Sha256Authenticator::new(sign_key);
-    let bicrypter = aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key);
+    let bicrypter = Aes256GcmBicrypter::new(&encrypt_key);
 
     let server = Communicator::new(
         constants::DEFAULT_TTL,
@@ -80,7 +80,7 @@ async fn start_udp_client_and_server() -> TestBench {
     let encrypt_key = crypto::key::new_256bit_key();
     let sign_key = b"my signature key";
     let auth = Sha256Authenticator::new(sign_key);
-    let bicrypter = aes_gcm::new_aes_256_gcm_bicrypter(&encrypt_key);
+    let bicrypter = Aes256GcmBicrypter::new(&encrypt_key);
 
     let server = Communicator::new(
         constants::DEFAULT_TTL,
