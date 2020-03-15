@@ -10,10 +10,10 @@ use tokio::sync::Mutex;
 pub mod constants {
     use std::time::Duration;
 
-    /// Default file ttl (time since last touched) before until closing
-    pub const DEFAULT_FILE_TTL: Duration = Duration::from_secs(60 * 60);
+    /// Default file ttl (time since last touched) before until closing (30 min)
+    pub const DEFAULT_FILE_TTL: Duration = Duration::from_secs(60 * 30);
 
-    /// Default proc ttl (time since last touched) before until killing
+    /// Default proc ttl (time since last touched) before until killing (60 min)
     pub const DEFAULT_PROC_TTL: Duration = Duration::from_secs(60 * 60);
 }
 
@@ -54,12 +54,16 @@ impl ServerState {
         }
     }
 
-    /// Creates or updates an internal TTL for a file with associated id
+    /// Creates or updates an internal TTL for a file with `id` using the
+    /// state-configured TTL as the max untouched lifetime
     pub async fn touch_file_id(&self, id: u32) {
-        self.file_ids
-            .lock()
-            .await
-            .replace(TtlValue::new(id, self.file_ttl));
+        self.touch_file_id_with_ttl(id, self.file_ttl).await;
+    }
+
+    /// Creates or updates an internal TTL for a file with `id` using the
+    /// given `ttl` as the max untouched lifetime
+    pub async fn touch_file_id_with_ttl(&self, id: u32, ttl: Duration) {
+        self.file_ids.lock().await.replace(TtlValue::new(id, ttl));
     }
 
     /// Removes id associated with an open file, used for internal TTL tracking
@@ -88,12 +92,16 @@ impl ServerState {
         });
     }
 
-    /// Creates or updates an internal TTL for a proc with associated id
+    /// Creates or updates an internal TTL for a proc with `id` using the
+    /// state-configured TTL as the max untouched lifetime
     pub async fn touch_proc_id(&self, id: u32) {
-        self.proc_ids
-            .lock()
-            .await
-            .replace(TtlValue::new(id, self.proc_ttl));
+        self.touch_proc_id_with_ttl(id, self.proc_ttl).await;
+    }
+
+    /// Creates or updates an internal TTL for a proc with `id` using the
+    /// given `ttl` as the max untouched lifetime
+    pub async fn touch_proc_id_with_ttl(&self, id: u32, ttl: Duration) {
+        self.proc_ids.lock().await.replace(TtlValue::new(id, ttl));
     }
 
     /// Removes id associated with a proc, used for internal TTL tracking
@@ -166,7 +174,7 @@ mod tests {
     use tokio::process::Command;
 
     #[tokio::test]
-    async fn touch_file_id_should_produce_a_new_id_with_ttl_if_never_touched() {
+    async fn touch_file_id_should_produce_a_new_id_if_never_touched() {
         let state = ServerState::default();
 
         assert!(!state.file_ids.lock().await.contains(&From::from(1)));
@@ -180,7 +188,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn touch_file_id_should_update_an_existing_id_with_ttl_if_touched() {
+    async fn touch_file_id_should_update_an_existing_id_if_touched() {
         let state = ServerState::default();
 
         state.touch_file_id(1).await;
@@ -200,6 +208,50 @@ mod tests {
             id.last_touched() > &last_touched,
             "Did not update touch time"
         );
+    }
+
+    #[tokio::test]
+    async fn touch_file_id_with_ttl_should_produce_a_new_id_if_never_touched() {
+        let state = ServerState::default();
+
+        assert!(!state.file_ids.lock().await.contains(&From::from(1)));
+
+        state
+            .touch_file_id_with_ttl(1, Duration::new(999, 111))
+            .await;
+
+        let ids = state.file_ids.lock().await;
+        let id = ids.get(&From::from(1)).expect("file id missing");
+
+        assert_eq!(id.ttl(), &Duration::new(999, 111));
+    }
+
+    #[tokio::test]
+    async fn touch_file_id_with_ttl_should_update_an_existing_id_if_touched() {
+        let state = ServerState::default();
+
+        state
+            .touch_file_id_with_ttl(1, Duration::new(222, 333))
+            .await;
+
+        let last_touched = {
+            let ids = state.file_ids.lock().await;
+            let id = ids.get(&From::from(1)).expect("File id missing");
+            *id.last_touched()
+        };
+
+        state
+            .touch_file_id_with_ttl(1, Duration::new(999, 111))
+            .await;
+
+        let ids = state.file_ids.lock().await;
+        let id = ids.get(&From::from(1)).expect("File id missing");
+
+        assert!(
+            id.last_touched() > &last_touched,
+            "Did not update touch time"
+        );
+        assert_eq!(id.ttl(), &Duration::new(999, 111));
     }
 
     #[tokio::test]
@@ -238,7 +290,7 @@ mod tests {
     #[tokio::test]
     async fn evict_files_should_close_any_file_that_has_expired() {
         let tempdir = tempfile::tempdir().expect("Failed to create temp dir");
-        let mut state = ServerState::default();
+        let state = ServerState::default();
 
         // Open two temporary files, one of which we'll mark with a low
         // TTL and the other a high TTL
@@ -268,12 +320,14 @@ mod tests {
             .expect("Failed to open test file 2");
 
         // File 1 will be a short TTL
-        state.file_ttl = Duration::new(0, 0);
-        state.touch_file_id(handle_1.id).await;
+        state
+            .touch_file_id_with_ttl(handle_1.id, Duration::new(0, 0))
+            .await;
 
         // File 2 will be a long TTL
-        state.file_ttl = Duration::from_secs(60);
-        state.touch_file_id(handle_2.id).await;
+        state
+            .touch_file_id_with_ttl(handle_2.id, Duration::from_secs(60))
+            .await;
 
         // Now evict the files that have expired and validate that only the
         // short TTL file has been evicted
@@ -306,7 +360,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn touch_proc_id_should_produce_a_new_id_with_ttl_if_never_touched() {
+    async fn touch_proc_id_should_produce_a_new_id_if_never_touched() {
         let state = ServerState::default();
 
         assert!(!state.proc_ids.lock().await.contains(&From::from(1)));
@@ -320,7 +374,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn touch_proc_id_should_update_an_existing_id_with_ttl_if_touched() {
+    async fn touch_proc_id_should_update_an_existing_id_if_touched() {
         let state = ServerState::default();
 
         state.touch_proc_id(1).await;
@@ -340,6 +394,50 @@ mod tests {
             id.last_touched() > &last_touched,
             "Did not update touch time"
         );
+    }
+
+    #[tokio::test]
+    async fn touch_proc_id_with_ttl_should_produce_a_new_id_if_never_touched() {
+        let state = ServerState::default();
+
+        assert!(!state.proc_ids.lock().await.contains(&From::from(1)));
+
+        state
+            .touch_proc_id_with_ttl(1, Duration::new(999, 111))
+            .await;
+
+        let ids = state.proc_ids.lock().await;
+        let id = ids.get(&From::from(1)).expect("Proc id missing");
+
+        assert_eq!(id.ttl(), &Duration::new(999, 111));
+    }
+
+    #[tokio::test]
+    async fn touch_proc_id_with_ttl_should_update_an_existing_id_if_touched() {
+        let state = ServerState::default();
+
+        state
+            .touch_proc_id_with_ttl(1, Duration::new(222, 333))
+            .await;
+
+        let last_touched = {
+            let ids = state.proc_ids.lock().await;
+            let id = ids.get(&From::from(1)).expect("Proc id missing");
+            *id.last_touched()
+        };
+
+        state
+            .touch_proc_id_with_ttl(1, Duration::new(999, 111))
+            .await;
+
+        let ids = state.proc_ids.lock().await;
+        let id = ids.get(&From::from(1)).expect("Proc id missing");
+
+        assert!(
+            id.last_touched() > &last_touched,
+            "Did not update touch time"
+        );
+        assert_eq!(id.ttl(), &Duration::new(999, 111));
     }
 
     #[tokio::test]
@@ -392,7 +490,7 @@ mod tests {
 
     #[tokio::test]
     async fn evict_procs_should_close_any_proc_that_has_expired() {
-        let mut state = ServerState::default();
+        let state = ServerState::default();
 
         // Spawn a process that will run for awhile with low TTL and another
         // process that will run for awhile with high TTL
@@ -423,12 +521,14 @@ mod tests {
         state.procs.lock().await.insert(id_2, local_proc_2);
 
         // Proc 1 will be a short TTL
-        state.proc_ttl = Duration::new(0, 0);
-        state.touch_proc_id(id_1).await;
+        state
+            .touch_proc_id_with_ttl(id_1, Duration::new(0, 0))
+            .await;
 
         // Proc 2 will be a long TTL
-        state.proc_ttl = Duration::from_secs(60);
-        state.touch_proc_id(id_2).await;
+        state
+            .touch_proc_id_with_ttl(id_2, Duration::from_secs(60))
+            .await;
 
         // Evict expired procs
         state.evict_procs().await;
