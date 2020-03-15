@@ -12,4 +12,4 @@ pub use capture::Capture;
 pub use delay::Delay;
 pub use delimiter::{DelimiterReader, DelimiterWriter, DEFAULT_DELIMITER};
 pub use either::Either;
-pub use ttl::TtlValue;
+pub use ttl::{EmptyTtlValue, TtlValue};

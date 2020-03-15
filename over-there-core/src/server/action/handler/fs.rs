@@ -39,6 +39,7 @@ where
         .await
     {
         Ok(LocalFileHandle { id, sig }) => {
+            state.touch_file_id(id).await;
             respond(Content::FileOpened(FileOpenedArgs { id, sig })).await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,
@@ -55,6 +56,7 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_close_file: {:?}", args);
+    state.touch_file_id(args.id).await;
 
     let handle = LocalFileHandle {
         id: args.id,
@@ -62,7 +64,10 @@ where
     };
 
     match state.fs_manager.lock().await.close_file(handle) {
-        Ok(_) => respond(Content::FileClosed(FileClosedArgs {})).await,
+        Ok(_) => {
+            state.remove_file_id(args.id).await;
+            respond(Content::FileClosed(FileClosedArgs {})).await
+        }
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
@@ -103,6 +108,7 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_rename_file: {:?}", args);
+    state.touch_file_id(args.id).await;
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.rename(args.sig, &args.to).await {
@@ -159,10 +165,12 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_remove_file: {:?}", args);
+    state.touch_file_id(args.id).await;
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.remove(args.sig).await {
             Ok(_) => {
+                state.remove_file_id(args.id).await;
                 respond(Content::FileRemoved(FileRemovedArgs {
                     sig: local_file.sig(),
                 }))
@@ -195,6 +203,7 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_read_file: {:?}", args);
+    state.touch_file_id(args.id).await;
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.read_all(args.sig).await {
@@ -228,6 +237,7 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_write_file: {:?}", args);
+    state.touch_file_id(args.id).await;
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => {

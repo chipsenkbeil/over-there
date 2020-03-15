@@ -185,8 +185,12 @@ impl LocalProc {
         }
     }
 
+    pub fn kill(&mut self) -> io::Result<()> {
+        self.inner.kill()
+    }
+
     pub async fn kill_and_wait(mut self) -> io::Result<Output> {
-        self.inner.kill()?;
+        self.kill()?;
         self.inner.wait_with_output().await
     }
 }

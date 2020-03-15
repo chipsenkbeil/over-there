@@ -16,7 +16,7 @@ use tokio::{
     net::{TcpListener, UdpSocket},
     runtime::Handle,
     sync::mpsc,
-    task,
+    task, time,
 };
 
 /// Represents a server after listening has begun
@@ -46,10 +46,10 @@ impl ListeningServer {
     }
 }
 
-async fn tcp_event_handler(
+async fn tcp_event_loop(
+    state: Arc<state::ServerState>,
     mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<Vec<u8>>)>,
 ) {
-    let state = Arc::new(state::ServerState::default());
     while let Some((msg, addr, tx)) = rx.recv().await {
         if let Err(x) = action::Executor::<Vec<u8>>::new(tx, addr)
             .execute(Arc::clone(&state), msg)
@@ -60,14 +60,14 @@ async fn tcp_event_handler(
     }
 }
 
-async fn udp_event_handler(
+async fn udp_event_loop(
+    state: Arc<state::ServerState>,
     mut rx: mpsc::Receiver<(
         Msg,
         SocketAddr,
         mpsc::Sender<(Vec<u8>, SocketAddr)>,
     )>,
 ) {
-    let state = Arc::new(state::ServerState::default());
     while let Some((msg, addr, tx)) = rx.recv().await {
         if let Err(x) = action::Executor::<(Vec<u8>, SocketAddr)>::new(tx, addr)
             .execute(Arc::clone(&state), msg)
@@ -75,6 +75,14 @@ async fn udp_event_handler(
         {
             error!("Failed to execute action: {}", x);
         }
+    }
+}
+
+async fn cleanup_loop(state: Arc<state::ServerState>, period: Duration) {
+    while state.is_running() {
+        state.evict_files().await;
+        state.evict_procs().await;
+        time::delay_for(period).await;
     }
 }
 
@@ -101,10 +109,6 @@ where
     /// Internal buffer for cross-thread messaging
     #[builder(default = "1000")]
     buffer: usize,
-
-    /// Root for file-based operations
-    #[builder(default, setter(strip_option))]
-    root: Option<PathBuf>,
 }
 
 impl<A, B> Server<A, B>
@@ -115,6 +119,10 @@ where
     /// Starts actively listening for msgs via the specified transport medium
     pub async fn listen(self) -> io::Result<ListeningServer> {
         let handle = Handle::current();
+        let state = Arc::new(state::ServerState::default());
+
+        // TODO: Provide config option for cleanup period (how often check occurs)
+        handle.spawn(cleanup_loop(Arc::clone(&state), Duration::from_secs(60)));
 
         match self.transport {
             Transport::Tcp(addrs) => {
@@ -144,7 +152,8 @@ where
                 );
 
                 let (tx, rx) = mpsc::channel(self.buffer);
-                let _event_handle = handle.spawn(tcp_event_handler(rx));
+                let _event_handle =
+                    handle.spawn(tcp_event_loop(Arc::clone(&state), rx));
                 let addr_event_manager = AddrEventManager::for_tcp_listener(
                     handle.clone(),
                     self.buffer,
@@ -187,7 +196,8 @@ where
                 );
 
                 let (tx, rx) = mpsc::channel(self.buffer);
-                let _event_handle = handle.spawn(udp_event_handler(rx));
+                let _event_handle =
+                    handle.spawn(udp_event_loop(Arc::clone(&state), rx));
                 let addr_event_manager = AddrEventManager::for_udp_socket(
                     handle.clone(),
                     self.buffer,

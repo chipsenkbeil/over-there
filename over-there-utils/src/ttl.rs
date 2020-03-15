@@ -12,7 +12,10 @@ pub struct TtlValue<T> {
     ttl: Duration,
 }
 
-impl TtlValue<()> {
+/// Represents a void value, purely used to keep track of access times
+pub type EmptyTtlValue = TtlValue<()>;
+
+impl EmptyTtlValue {
     pub fn empty(ttl: Duration) -> Self {
         Self::new((), ttl)
     }

@@ -44,6 +44,7 @@ where
             let local_proc = LocalProc::new(child).spawn();
             let id = local_proc.id();
             state.procs.lock().await.insert(id, local_proc);
+            state.touch_proc_id(id).await;
             respond(Content::ProcStarted(ProcStartedArgs { id })).await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,
@@ -60,6 +61,7 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_write_stdin: {:?}", args);
+    state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => match local_proc.write_stdin(&args.input).await {
@@ -83,6 +85,7 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_get_stdout: {:?}", args);
+    state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => match local_proc.read_stdout().await {
@@ -115,6 +118,7 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_get_stderr: {:?}", args);
+    state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => match local_proc.read_stderr().await {
@@ -147,6 +151,7 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_get_proc_status: {:?}", args);
+    state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.get_mut(&args.id) {
         // NOTE: We are killing and then WAITING for the process to die, which
@@ -187,6 +192,7 @@ where
     R: Future<Output = Result<(), ActionError>>,
 {
     debug!("do_kill_proc: {:?}", args);
+    state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.remove(&args.id) {
         // NOTE: We are killing and then WAITING for the process to die, which
@@ -194,6 +200,8 @@ where
         //       have the process clean up -- try_wait doesn't seem to work
         Some(local_proc) => match local_proc.kill_and_wait().await {
             Ok(output) => {
+                state.remove_proc_id(args.id).await;
+
                 // TODO: Send stdout/stderr msgs for any remaining content
                 respond(Content::ProcStatus(ProcStatusArgs {
                     id: args.id,
