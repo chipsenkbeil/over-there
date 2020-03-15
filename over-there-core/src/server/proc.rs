@@ -564,6 +564,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn kill_should_send_kill_request_to_process_without_waiting() {
+        let child = Command::new("sleep")
+            .arg("60")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let mut local_proc = LocalProc::new(child).spawn();
+        match local_proc.kill() {
+            Ok(_) => (),
+            Err(x) => panic!("Unexpected error: {}", x),
+        }
+    }
+
+    #[tokio::test]
     async fn test_kill_and_wait_should_kill_and_return_process_result() {
         let child = Command::new("sleep")
             .arg("60")
