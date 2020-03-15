@@ -154,11 +154,14 @@ where
     state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.get_mut(&args.id) {
-        // NOTE: We are killing and then WAITING for the process to die, which
-        //       would block, but seems to be required in order to properly
-        //       have the process clean up -- try_wait doesn't seem to work
         Some(local_proc) => match local_proc.exit_status().await {
             Some(exit_status) => {
+                // Process is now dead, so we want to touch with a smaller
+                // cleanup TTL while still allowing this to be polled
+                state
+                    .touch_proc_id_with_ttl(args.id, state.dead_proc_ttl)
+                    .await;
+
                 respond(Content::ProcStatus(ProcStatusArgs {
                     id: args.id,
                     is_alive: false,

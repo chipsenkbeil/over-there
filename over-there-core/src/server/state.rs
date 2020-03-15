@@ -15,6 +15,10 @@ pub mod constants {
 
     /// Default proc ttl (time since last touched) before until killing (60 min)
     pub const DEFAULT_PROC_TTL: Duration = Duration::from_secs(60 * 60);
+
+    /// Default proc ttl (time since last touched) since a proc has exited
+    /// before removing from queriable state (5 min)
+    pub const DEFAULT_DEAD_PROC_TTL: Duration = Duration::from_secs(60 * 5);
 }
 
 #[derive(Debug)]
@@ -32,6 +36,7 @@ pub struct ServerState {
     pub procs: Mutex<HashMap<u32, LocalProc>>,
     proc_ids: Mutex<HashSet<TtlValue<u32>>>,
     proc_ttl: Duration,
+    pub(crate) dead_proc_ttl: Duration,
 
     /// Indicator of whether or not the server is running, used to signal
     /// to looping handlers that it is time to shut down if false
@@ -39,9 +44,11 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    /// Produces new state where the server's fs-based operations are locked
-    /// to the specified `root`
-    pub fn new(file_ttl: Duration, proc_ttl: Duration) -> Self {
+    pub fn new(
+        file_ttl: Duration,
+        proc_ttl: Duration,
+        dead_proc_ttl: Duration,
+    ) -> Self {
         Self {
             conns: Mutex::new(HashMap::default()),
             fs_manager: Mutex::new(FileSystemManager::default()),
@@ -50,6 +57,7 @@ impl ServerState {
             procs: Mutex::new(HashMap::default()),
             proc_ids: Mutex::new(HashSet::default()),
             proc_ttl,
+            dead_proc_ttl,
             running: AtomicBool::new(true),
         }
     }
@@ -149,7 +157,8 @@ impl ServerState {
             File Untouched TTL: {:?}
             Procs: {:#?}
             Proc IDs: {:#?}
-            Proc Untouched TTL: {:?}",
+            Proc Untouched TTL: {:?}
+            Dead Proc Untouched TTL: {:?}",
             self.conns.lock().await,
             self.fs_manager.lock().await,
             self.file_ids.lock().await,
@@ -157,13 +166,18 @@ impl ServerState {
             self.procs.lock().await,
             self.proc_ids.lock().await,
             self.proc_ttl,
+            self.dead_proc_ttl,
         )
     }
 }
 
 impl Default for ServerState {
     fn default() -> Self {
-        Self::new(constants::DEFAULT_FILE_TTL, constants::DEFAULT_PROC_TTL)
+        Self::new(
+            constants::DEFAULT_FILE_TTL,
+            constants::DEFAULT_PROC_TTL,
+            constants::DEFAULT_DEAD_PROC_TTL,
+        )
     }
 }
 

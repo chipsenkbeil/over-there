@@ -8,7 +8,6 @@ use derive_builder::Builder;
 use log::error;
 use over_there_wire::{Authenticator, Bicrypter, NetTransmission, Wire};
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::{
