@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct FileSystemManager {
-    root: Option<PathBuf>,
     files: HashMap<u32, LocalFile>,
 }
 
@@ -23,32 +22,10 @@ impl Default for FileSystemManager {
 }
 
 impl FileSystemManager {
-    /// Creates new instance where operations are allowed anywhere
     pub fn new() -> Self {
         Self {
-            root: None,
             files: HashMap::new(),
         }
-    }
-
-    /// Creates new instance where operations are only allowed within
-    /// the current directory as defined by `std::env::current_dir`
-    pub fn with_current_dir() -> io::Result<Self> {
-        Ok(Self::with_root(std::env::current_dir()?))
-    }
-
-    /// Creates new instance where operations are only allowed within `root`
-    pub fn with_root(root: impl AsRef<Path>) -> Self {
-        Self {
-            root: Some(root.as_ref().to_path_buf()),
-            files: HashMap::new(),
-        }
-    }
-
-    /// Represents the root that the file system abides by when managing
-    /// resources
-    pub fn root(&self) -> Option<&PathBuf> {
-        self.root.as_ref()
     }
 
     /// Creates a new directory
@@ -57,7 +34,7 @@ impl FileSystemManager {
         path: impl AsRef<Path>,
         create_components: bool,
     ) -> io::Result<()> {
-        let path = self.validate_path(path.as_ref())?;
+        let path = self.clean_path(path.as_ref()).await;
         dir::create(path, create_components).await
     }
 
@@ -69,8 +46,8 @@ impl FileSystemManager {
         from: impl AsRef<Path>,
         to: impl AsRef<Path>,
     ) -> io::Result<()> {
-        let from = self.validate_path(from.as_ref())?;
-        let to = self.validate_path(to.as_ref())?;
+        let from = self.clean_path(from.as_ref()).await;
+        let to = self.clean_path(to.as_ref()).await;
 
         self.check_no_open_files(from.as_path())?;
 
@@ -87,7 +64,7 @@ impl FileSystemManager {
         path: impl AsRef<Path>,
         non_empty: bool,
     ) -> io::Result<()> {
-        let path = self.validate_path(path.as_ref())?;
+        let path = self.clean_path(path.as_ref()).await;
 
         self.check_no_open_files(path.as_path())?;
 
@@ -101,14 +78,13 @@ impl FileSystemManager {
     /// the immediate directory entires and not walk through subdirectories
     /// or follow symlinks.
     ///
-    /// Will yield an error if the path is not within the specified `root`,
-    /// or if there are complications with reading the directory and its
-    /// entries.
+    /// Will yield an error if there are complications with reading the
+    /// directory and its entries.
     pub async fn dir_entries(
         &self,
         path: impl AsRef<Path>,
     ) -> io::Result<Vec<LocalDirEntry>> {
-        let path = self.validate_path(path.as_ref())?;
+        let path = self.clean_path(path.as_ref()).await;
 
         dir::entries(path).await
     }
@@ -128,7 +104,7 @@ impl FileSystemManager {
         write: bool,
         read: bool,
     ) -> io::Result<LocalFileHandle> {
-        let path = self.validate_path(path.as_ref())?;
+        let path = self.clean_path(path.as_ref()).await;
 
         let mut new_permissions = LocalFilePermissions { read, write };
         let mut maybe_id_and_sig = None;
@@ -213,8 +189,8 @@ impl FileSystemManager {
         from: impl AsRef<Path>,
         to: impl AsRef<Path>,
     ) -> io::Result<()> {
-        let from = self.validate_path(from.as_ref())?;
-        let to = self.validate_path(to.as_ref())?;
+        let from = self.clean_path(from.as_ref()).await;
+        let to = self.clean_path(to.as_ref()).await;
 
         self.check_no_open_files(from.as_path())?;
 
@@ -226,28 +202,12 @@ impl FileSystemManager {
         &mut self,
         path: impl AsRef<Path>,
     ) -> io::Result<()> {
-        let path = self.validate_path(path.as_ref())?;
+        let path = self.clean_path(path.as_ref()).await;
 
         self.check_no_open_files(path.as_path())?;
 
         file::remove(path).await
     }
-
-    /// Removes an open file, failing if the file isn't open, the signature
-    /// is different, or some internal error occurs
-    // pub async fn remove_open_file(
-    //     &mut self,
-    //     handle: LocalFileHandle,
-    // ) -> io::Result<()> {
-    //     // In order to return proper sig mismatch error, we need to manually
-    //     // do a couple of steps
-    //     let local_file = self.files.remove(handle.id).ok_or_else(|| {
-    //         io::Error::new(
-    //             io::ErrorKind::NotFound,
-    //             format!("No open file with id {}", handle.id),
-    //         )
-    //     })?;
-    // }
 
     /// Represents the total files that are open within the manager
     pub fn file_cnt(&self) -> usize {
@@ -293,33 +253,13 @@ impl FileSystemManager {
         Ok(())
     }
 
-    /// Checks `path` to see if is okay, returning the fully-realized path.
-    ///
-    /// If `path` is relative, it is placed within the root of the manager.
-    /// If `path` is absolute, check if `path` is in `root`
-    /// 1. If so, then this function returns ok with the `path`
-    /// 2. Otherwise we have a bad path and this function returns an error
-    fn validate_path(&self, path: impl AsRef<Path>) -> io::Result<PathBuf> {
-        // If the path is relative, it's fine because we'll be shaping it
-        // within the context of our root; otherwise, ensure that it is
-        // within our specified root if it exists
-        let is_ok = path.as_ref().is_relative()
-            || self
-                .root
-                .as_ref()
-                .map(|r| path.as_ref().starts_with(r))
-                .unwrap_or(true);
-
-        if is_ok {
-            // If we have a root, use it as prefix, otherwise just use path
-            Ok(self
-                .root
-                .as_ref()
-                .map(|root| root.join(path.as_ref()))
-                .unwrap_or_else(|| path.as_ref().to_path_buf()))
-        } else {
-            Err(io::Error::from(io::ErrorKind::PermissionDenied))
-        }
+    /// Attempts to canonicalize the path, returning the canonicalized form
+    /// or the original form if failed.
+    async fn clean_path(&self, path: impl AsRef<Path>) -> PathBuf {
+        tokio::fs::canonicalize(path.as_ref())
+            .await
+            .ok()
+            .unwrap_or_else(|| path.as_ref().to_path_buf())
     }
 }
 
@@ -329,31 +269,23 @@ mod tests {
     use tokio::fs;
 
     #[tokio::test]
-    async fn create_dir_should_yield_error_if_path_not_in_root() {
-        let root = tempfile::tempdir().unwrap();
-        let fsm = FileSystemManager::with_root(root);
-
-        let result = fsm.create_dir("/some/dir", true).await;
-        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
-    }
-
-    #[tokio::test]
     async fn create_dir_should_yield_error_if_parent_dirs_missing_and_flag_not_set(
     ) {
         let root = tempfile::tempdir().unwrap();
-        let fsm = FileSystemManager::with_root(root);
+        let fsm = FileSystemManager::new();
 
-        let result = fsm.create_dir("some/dir", false).await;
+        let result =
+            fsm.create_dir(root.as_ref().join("some/dir"), false).await;
         assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
     }
 
     #[tokio::test]
     async fn create_dir_should_return_success_if_created_the_path() {
         let root = tempfile::tempdir().unwrap();
-        let fsm = FileSystemManager::with_root(root.as_ref());
+        let fsm = FileSystemManager::new();
 
         let path = root.as_ref().join("test-dir");
-        let result = fsm.create_dir("test-dir", false).await;
+        let result = fsm.create_dir(path.as_path(), false).await;
         assert!(
             result.is_ok(),
             "Unexpectedly failed to create dir: {:?}",
@@ -362,7 +294,7 @@ mod tests {
         assert!(fs::metadata(path).await.is_ok(), "Directory  missing");
 
         let path = root.as_ref().join("some/test-dir");
-        let result = fsm.create_dir("some/test-dir", true).await;
+        let result = fsm.create_dir(path.as_path(), true).await;
         assert!(
             result.is_ok(),
             "Unexpectedly failed to create nested dir: {:?}",
@@ -372,45 +304,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rename_dir_should_yield_error_if_origin_path_not_in_root() {
-        let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
-
-        let other_root = tempfile::tempdir().unwrap();
-
-        let origin = other_root.as_ref().join("origin");
-        fs::create_dir(origin.as_path()).await.unwrap();
-
-        let destination = root.as_ref().join("destination");
-
-        match fsm.rename_dir(origin, destination).await {
-            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[tokio::test]
-    async fn rename_dir_should_yield_error_if_destination_path_not_in_root() {
-        let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
-
-        let other_root = tempfile::tempdir().unwrap();
-
-        let origin = root.as_ref().join("origin");
-        fs::create_dir(origin.as_path()).await.unwrap();
-
-        let destination = other_root.as_ref().join("destination");
-
-        match fsm.rename_dir(origin, destination).await {
-            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[tokio::test]
     async fn rename_dir_should_yield_error_if_origin_path_does_not_exist() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let origin = root.as_ref().join("origin");
         let destination = root.as_ref().join("destination");
@@ -424,7 +320,7 @@ mod tests {
     #[tokio::test]
     async fn rename_dir_should_yield_error_if_origin_path_is_not_a_directory() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         // Make origin a file instead of directory
         let origin_file =
@@ -441,7 +337,7 @@ mod tests {
     #[tokio::test]
     async fn rename_dir_should_yield_error_if_contains_open_files() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let origin = root.as_ref().join("origin");
         fs::create_dir(origin.as_path()).await.unwrap();
@@ -466,7 +362,7 @@ mod tests {
     #[tokio::test]
     async fn rename_dir_should_return_success_if_renamed_directory() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let origin = root.as_ref().join("origin");
         fs::create_dir(origin.as_path()).await.unwrap();
@@ -480,20 +376,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dir_entries_should_yield_error_if_path_not_in_root() {
-        let root = tempfile::tempdir().unwrap();
-        let fsm = FileSystemManager::with_root(root.as_ref());
-
-        match fsm.dir_entries(tempfile::tempdir().unwrap()).await {
-            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[tokio::test]
     async fn dir_entries_should_yield_error_if_path_not_a_directory() {
         let root = tempfile::tempdir().unwrap();
-        let fsm = FileSystemManager::with_root(root.as_ref());
+        let fsm = FileSystemManager::new();
 
         let file = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
 
@@ -507,7 +392,7 @@ mod tests {
     async fn dir_entries_should_return_a_list_of_immediate_entries_in_a_directory(
     ) {
         let root = tempfile::tempdir().unwrap();
-        let fsm = FileSystemManager::with_root(root.as_ref());
+        let fsm = FileSystemManager::new();
 
         let file = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
         let dir = tempfile::tempdir_in(root.as_ref()).unwrap();
@@ -554,30 +439,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_dir_should_yield_error_if_path_not_in_root() {
-        let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
-
-        let dir_path = tempfile::tempdir().unwrap();
-
-        match fsm.remove_dir(dir_path.as_ref(), false).await {
-            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-
-        let dir_path = tempfile::tempdir().unwrap();
-
-        match fsm.remove_dir(dir_path.as_ref(), true).await {
-            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[tokio::test]
     async fn remove_dir_should_yield_error_if_directory_not_empty_and_flag_not_set(
     ) {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         // NOTE: Must be kept around so that the file exists when removing dir
         let _file = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
@@ -591,7 +456,7 @@ mod tests {
     #[tokio::test]
     async fn remove_dir_should_yield_error_if_open_files_exist_in_directory() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         fsm.open_file(root.as_ref().join("test-file"), true, true, true)
             .await
@@ -608,7 +473,7 @@ mod tests {
     #[tokio::test]
     async fn remove_dir_should_return_success_if_removed_directory() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let _ = tempfile::tempfile_in(root.as_ref()).unwrap();
 
@@ -619,25 +484,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn open_file_should_yield_error_if_path_not_in_root() {
-        let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
-
-        let other_root = tempfile::tempdir().unwrap();
-
-        match fsm
-            .open_file(other_root.as_ref().join("test-file"), true, true, true)
-            .await
-        {
-            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[tokio::test]
     async fn open_file_should_yield_error_if_underlying_open_fails() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let not_a_file = tempfile::tempdir_in(root.as_ref()).unwrap();
 
@@ -650,7 +499,7 @@ mod tests {
     #[tokio::test]
     async fn open_file_should_return_existing_open_file_if_permissions_allow() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         // Open with absolute path
         let handle = fsm
@@ -672,11 +521,16 @@ mod tests {
             })
         );
 
-        // Open with relative path (read-only)
+        // Open with unresolved path (read-only)
         let handle_2 = fsm
-            .open_file("test-file", false, false, true)
+            .open_file(
+                root.as_ref().join(".").join("test-file"),
+                false,
+                false,
+                true,
+            )
             .await
-            .expect("Failed to open file");
+            .expect("Failed to open file for read");
 
         assert_eq!(
             fsm.file_cnt(),
@@ -699,7 +553,7 @@ mod tests {
         let handle_3 = fsm
             .open_file(root.as_ref().join("test-file"), false, true, false)
             .await
-            .expect("Failed to open file");
+            .expect("Failed to open file for write");
 
         assert_eq!(
             fsm.file_cnt(),
@@ -723,11 +577,11 @@ mod tests {
     async fn open_file_should_reopen_an_open_file_if_permissions_need_merging()
     {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         // Open write-only
         let handle = fsm
-            .open_file("test-file", true, true, false)
+            .open_file(root.as_ref().join("test-file"), true, true, false)
             .await
             .expect("Failed to create file");
 
@@ -748,7 +602,7 @@ mod tests {
 
         // Open read-only
         let handle_2 = fsm
-            .open_file("test-file", false, false, true)
+            .open_file(root.as_ref().join("test-file"), false, false, true)
             .await
             .expect("Failed to open file");
 
@@ -774,15 +628,15 @@ mod tests {
     async fn open_file_should_return_a_newly_opened_file_if_none_already_open()
     {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let handle = fsm
-            .open_file("test-file-1", true, true, true)
+            .open_file(root.as_ref().join("test-file-1"), true, true, true)
             .await
             .expect("Failed to create file 1");
 
         let handle_2 = fsm
-            .open_file("test-file-2", true, true, true)
+            .open_file(root.as_ref().join("test-file-2"), true, true, true)
             .await
             .expect("Failed to create file 2");
 
@@ -799,10 +653,10 @@ mod tests {
     #[tokio::test]
     async fn close_file_should_yield_error_if_no_file_open_with_id() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let handle = fsm
-            .open_file("test-file", true, true, true)
+            .open_file(root.as_ref().join("test-file"), true, true, true)
             .await
             .expect("Failed to create file");
 
@@ -818,10 +672,10 @@ mod tests {
     #[tokio::test]
     async fn close_file_should_yield_error_if_file_has_different_signature() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let handle = fsm
-            .open_file("test-file", true, true, true)
+            .open_file(root.as_ref().join("test-file"), true, true, true)
             .await
             .expect("Failed to create file");
 
@@ -837,10 +691,10 @@ mod tests {
     #[tokio::test]
     async fn close_fould_should_remove_file_from_manager_if_successful() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let handle = fsm
-            .open_file("test-file", true, true, true)
+            .open_file(root.as_ref().join("test-file"), true, true, true)
             .await
             .expect("Failed to create file");
 
@@ -851,44 +705,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rename_file_should_yield_error_if_origin_path_not_in_root() {
-        let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
-
-        let other_root = tempfile::tempdir().unwrap();
-
-        let origin =
-            tempfile::NamedTempFile::new_in(other_root.as_ref()).unwrap();
-
-        let destination = root.as_ref().join("destination");
-
-        match fsm.rename_file(origin, destination).await {
-            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[tokio::test]
-    async fn rename_file_should_yield_error_if_destination_path_not_in_root() {
-        let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
-
-        let other_root = tempfile::tempdir().unwrap();
-
-        let origin = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
-
-        let destination = other_root.as_ref().join("destination");
-
-        match fsm.rename_file(origin, destination).await {
-            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[tokio::test]
     async fn rename_file_should_yield_error_if_origin_path_does_not_exist() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let origin = root.as_ref().join("origin");
         let destination = root.as_ref().join("destination");
@@ -902,7 +721,7 @@ mod tests {
     #[tokio::test]
     async fn rename_file_should_yield_error_if_origin_path_is_not_a_file() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         // Make origin a directory instead of file
         let origin_dir = tempfile::tempdir_in(root.as_ref()).unwrap();
@@ -918,7 +737,7 @@ mod tests {
     #[tokio::test]
     async fn rename_file_should_yield_error_if_file_is_open() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let origin = root.as_ref().join("file");
         let _file = fsm
@@ -940,7 +759,7 @@ mod tests {
     #[tokio::test]
     async fn rename_file_should_return_success_if_renamed_file() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let origin = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
 
@@ -953,22 +772,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remove_file_should_yield_error_if_path_not_in_root() {
-        let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
-
-        let file_path = tempfile::NamedTempFile::new().unwrap();
-
-        match fsm.remove_file(file_path.as_ref()).await {
-            Err(x) if x.kind() == io::ErrorKind::PermissionDenied => (),
-            x => panic!("Unexpected result: {:?}", x),
-        }
-    }
-
-    #[tokio::test]
     async fn remove_file_should_yield_error_if_file_open() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let path = root.as_ref().join("test-file");
 
@@ -987,7 +793,7 @@ mod tests {
     #[tokio::test]
     async fn remove_file_should_return_success_if_removed_file() {
         let root = tempfile::tempdir().unwrap();
-        let mut fsm = FileSystemManager::with_root(root.as_ref());
+        let mut fsm = FileSystemManager::new();
 
         let file = tempfile::NamedTempFile::new_in(root.as_ref()).unwrap();
 

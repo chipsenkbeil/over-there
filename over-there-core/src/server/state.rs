@@ -1,7 +1,6 @@
 use super::{fs::FileSystemManager, proc::LocalProc};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
@@ -23,14 +22,10 @@ pub struct ServerState {
 impl ServerState {
     /// Produces new state where the server's fs-based operations are locked
     /// to the specified `root`
-    pub fn new(maybe_root: Option<PathBuf>) -> Self {
+    pub fn new() -> Self {
         Self {
             conns: Mutex::new(HashMap::default()),
-            fs_manager: Mutex::new(if let Some(root) = maybe_root {
-                FileSystemManager::with_root(root)
-            } else {
-                FileSystemManager::default()
-            }),
+            fs_manager: Mutex::new(FileSystemManager::default()),
             conn_files: Mutex::new(HashMap::default()),
             procs: Mutex::new(HashMap::default()),
             conn_procs: Mutex::new(HashMap::default()),
@@ -57,6 +52,6 @@ impl ServerState {
 
 impl Default for ServerState {
     fn default() -> Self {
-        Self::new(None)
+        Self::new()
     }
 }

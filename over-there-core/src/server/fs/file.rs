@@ -75,6 +75,14 @@ impl LocalFile {
         }
     }
 
+    /// Opens up a file at `path`. Will create the file if `create is true,
+    /// otherwise will fail if missing.
+    ///
+    /// - Read permission is set by `read`.
+    /// - Write permission is set by `write`.
+    ///
+    /// Internally, the path will be canonicalized to a resolved, absolute
+    /// path that can be used as reference when examining the local file.
     pub async fn open(
         path: impl AsRef<Path>,
         create: bool,

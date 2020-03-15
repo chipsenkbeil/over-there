@@ -206,12 +206,10 @@ where
         .buffer(internal_buffer_size)
         .packet_ttl(packet_ttl);
 
-    if !cmd.no_root {
-        let root = cmd.root_or_default();
-        debug!("Server root: {}", root.to_string_lossy().to_string());
-        config.root(root);
-    } else {
-        debug!("Server root: <None>");
+    // Change our process's current working directory if specified
+    if let Some(path) = cmd.working_dir.as_ref() {
+        debug!("Server working dir: {}", path.to_string_lossy().to_string());
+        std::env::set_current_dir(path)?;
     }
 
     config
