@@ -44,6 +44,10 @@ where
     /// Internal buffer for cross-thread messaging
     #[builder(default = "1000")]
     buffer: usize,
+
+    /// Interval at which cleanup of dangling resources is performed
+    #[builder(default = "Duration::from_secs(60)")]
+    cleanup_interval: Duration,
 }
 
 impl<A, B> Server<A, B>
@@ -56,8 +60,7 @@ where
         let handle = Handle::current();
         let state = Arc::new(state::ServerState::default());
 
-        // TODO: Provide config option for cleanup period (how often check occurs)
-        handle.spawn(cleanup_loop(Arc::clone(&state), Duration::from_secs(60)));
+        handle.spawn(cleanup_loop(Arc::clone(&state), self.cleanup_interval));
 
         match self.transport.clone() {
             Transport::Tcp(addrs) => {
