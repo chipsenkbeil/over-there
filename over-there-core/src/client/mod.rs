@@ -8,7 +8,7 @@ pub use connected::ConnectedClient;
 
 use crate::{
     event::{AddrEventManager, EventManager},
-    msg::{content::io::proc::*, Msg},
+    msg::{content::*, Msg},
     Transport,
 };
 use derive_builder::Builder;

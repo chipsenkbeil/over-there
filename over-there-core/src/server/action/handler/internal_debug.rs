@@ -1,5 +1,5 @@
 use crate::{
-    msg::content::{internal_debug::InternalDebugArgs, Content},
+    msg::content::{Content, InternalDebugArgs},
     server::{action::ActionError, state::ServerState},
 };
 use log::debug;

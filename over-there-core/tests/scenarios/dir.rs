@@ -21,12 +21,14 @@ pub async fn async_test(mut client: ConnectedClient) {
                 .to_string(),
         )
         .await
-        .expect("Failed to create file");
+        .expect("Failed to create file")
+        .into();
 
     let dir_contents = client
         .ask_list_dir_contents(root_str.clone())
         .await
-        .expect("Failed to get dir contents");
+        .expect("Failed to get dir contents")
+        .entries;
     assert_eq!(dir_contents.len(), 1);
 
     // Moving the directory should fail
@@ -57,7 +59,8 @@ pub async fn async_test(mut client: ConnectedClient) {
     let dir_contents = client
         .ask_list_dir_contents(root_str_2.clone())
         .await
-        .expect("Failed to get renamed dir contents");
+        .expect("Failed to get renamed dir contents")
+        .entries;
     assert_eq!(dir_contents.len(), 1);
 
     // Finally remove the renamed dir

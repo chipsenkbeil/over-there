@@ -1,8 +1,5 @@
 use crate::{
-    msg::content::{
-        capabilities::{CapabilitiesArgs, Capability},
-        Content,
-    },
+    msg::content::{CapabilitiesArgs, Capability, Content},
     server::action::ActionError,
 };
 use log::debug;

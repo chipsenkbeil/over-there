@@ -1,5 +1,5 @@
 use crate::{
-    msg::content::{version::VersionArgs, Content},
+    msg::content::{Content, VersionArgs},
     server::action::ActionError,
 };
 use log::debug;

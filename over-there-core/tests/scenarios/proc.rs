@@ -8,7 +8,8 @@ pub async fn async_test(mut client: ConnectedClient) {
     let proc = client
         .ask_exec_proc(String::from("echo"), vec![String::from("hello")])
         .await
-        .unwrap();
+        .unwrap()
+        .into();
     let output =
         wait_for_nonempty_output(&mut client, &proc, OUTPUT_TIMEOUT).await;
     assert_eq!(output, "hello\n");
@@ -17,7 +18,8 @@ pub async fn async_test(mut client: ConnectedClient) {
     let proc = client
         .ask_exec_proc(String::from("cat"), vec![])
         .await
-        .unwrap();
+        .expect("Failed to run cat")
+        .into();
     client.ask_write_stdin(&proc, b"test\n").await.unwrap();
 
     let output =
@@ -68,7 +70,11 @@ async fn wait_for_nonempty_output(
     let start = Instant::now();
 
     while start.elapsed() < timeout {
-        let output = client.ask_get_stdout(&proc).await.unwrap();
+        let output = client
+            .ask_get_stdout(&proc)
+            .await
+            .expect("Failed to get stdout")
+            .output;
         let output = String::from_utf8(output).unwrap();
         if !output.is_empty() {
             return output;

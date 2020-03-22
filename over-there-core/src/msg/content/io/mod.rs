@@ -1,5 +1,8 @@
-pub mod fs;
-pub mod proc;
+mod fs;
+mod proc;
+
+pub use fs::*;
+pub use proc::*;
 
 use over_there_utils::serializers;
 use serde::{Deserialize, Serialize};

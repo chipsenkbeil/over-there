@@ -1,4 +1,4 @@
-use super::ProcStatusArgs;
+use super::{ProcStartedArgs, ProcStatusArgs};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RemoteProcStatus {
@@ -31,5 +31,11 @@ impl RemoteProc {
 
     pub fn id(&self) -> u32 {
         self.id
+    }
+}
+
+impl From<ProcStartedArgs> for RemoteProc {
+    fn from(args: ProcStartedArgs) -> Self {
+        Self { id: args.id }
     }
 }

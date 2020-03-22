@@ -1,5 +1,5 @@
 use over_there_core::{
-    content::custom::CustomArgs, AskError, ConnectedClient, Content,
+    content::CustomArgs, AskError, ConnectedClient, Content,
 };
 use std::time::Duration;
 

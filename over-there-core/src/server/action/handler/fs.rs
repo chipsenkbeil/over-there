@@ -1,8 +1,5 @@
 use crate::{
-    msg::content::{
-        io::{fs::*, IoErrorArgs},
-        Content,
-    },
+    msg::content::*,
     server::{
         action::ActionError,
         fs::{LocalDirEntry, LocalFileError, LocalFileHandle},
@@ -40,7 +37,14 @@ where
     {
         Ok(LocalFileHandle { id, sig }) => {
             state.touch_file_id(id).await;
-            respond(Content::FileOpened(FileOpenedArgs { id, sig })).await
+            respond(Content::FileOpened(FileOpenedArgs {
+                id,
+                sig,
+                path: args.path.clone(),
+                read: args.read_access,
+                write: args.write_access,
+            }))
+            .await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
@@ -207,8 +211,9 @@ where
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.read_all(args.sig).await {
-            Ok(data) => {
-                respond(Content::FileContents(FileContentsArgs { data })).await
+            Ok(contents) => {
+                respond(Content::FileContents(FileContentsArgs { contents }))
+                    .await
             }
             Err(LocalFileError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
@@ -241,7 +246,7 @@ where
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => {
-            match local_file.write_all(args.sig, &args.data).await {
+            match local_file.write_all(args.sig, &args.contents).await {
                 Ok(_) => {
                     respond(Content::FileWritten(FileWrittenArgs {
                         sig: local_file.sig(),
@@ -404,7 +409,7 @@ mod tests {
         do_open_file(
             Arc::clone(&state),
             &DoOpenFileArgs {
-                path: tmp_path,
+                path: tmp_path.clone(),
                 create_if_missing: true,
                 write_access: true,
                 read_access: true,
@@ -422,6 +427,9 @@ mod tests {
                 let x = state.fs_manager.lock().await;
                 let local_file = x.get(args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig());
+                assert_eq!(args.path, tmp_path);
+                assert!(args.write);
+                assert!(args.read);
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -438,7 +446,7 @@ mod tests {
         do_open_file(
             Arc::clone(&state),
             &DoOpenFileArgs {
-                path: tmp_file_path,
+                path: tmp_file_path.clone(),
                 create_if_missing: false,
                 write_access: true,
                 read_access: true,
@@ -456,6 +464,9 @@ mod tests {
                 let x = state.fs_manager.lock().await;
                 let local_file = x.get(args.id).unwrap();
                 assert_eq!(args.sig, local_file.sig());
+                assert_eq!(args.path, tmp_file_path);
+                assert!(args.write);
+                assert!(args.read);
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -1012,12 +1023,12 @@ mod tests {
     async fn do_read_file_should_send_contents_if_read_successful() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
-        let file_data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let file_contents = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let mut file = tempfile::NamedTempFile::new().unwrap();
 
         use std::io::Write;
-        file.write_all(&file_data).unwrap();
+        file.write_all(&file_contents).unwrap();
         file.flush().unwrap();
 
         let handle = state
@@ -1038,8 +1049,8 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileContents(FileContentsArgs { data }) => {
-                assert_eq!(data, file_data);
+            Content::FileContents(FileContentsArgs { contents }) => {
+                assert_eq!(contents, file_contents);
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -1150,7 +1161,7 @@ mod tests {
     async fn do_write_file_should_send_success_if_write_successful() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
-        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let contents = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let mut file = tempfile::NamedTempFile::new().unwrap();
 
@@ -1169,7 +1180,7 @@ mod tests {
             &DoWriteFileArgs {
                 id,
                 sig,
-                data: data.clone(),
+                contents: contents.clone(),
             },
             |c| {
                 content = Some(c);
@@ -1187,11 +1198,11 @@ mod tests {
                 file.seek(SeekFrom::Start(0)).unwrap();
 
                 use std::io::Read;
-                let mut file_data = Vec::new();
-                file.read_to_end(&mut file_data).unwrap();
+                let mut file_contents = Vec::new();
+                file.read_to_end(&mut file_contents).unwrap();
 
                 assert_eq!(
-                    data, file_data,
+                    contents, file_contents,
                     "File does not match written content"
                 );
             }
@@ -1203,7 +1214,7 @@ mod tests {
     async fn do_write_file_should_send_error_if_not_writeable() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
-        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let contents = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let file = tempfile::NamedTempFile::new().unwrap();
 
@@ -1219,7 +1230,7 @@ mod tests {
 
         do_write_file(
             Arc::clone(&state),
-            &DoWriteFileArgs { id, sig, data },
+            &DoWriteFileArgs { id, sig, contents },
             |c| {
                 content = Some(c);
                 async { Ok(()) }
@@ -1241,7 +1252,7 @@ mod tests {
     async fn do_write_file_should_send_error_if_file_sig_has_changed() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
-        let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let contents = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let file = tempfile::NamedTempFile::new().unwrap();
 
@@ -1260,7 +1271,7 @@ mod tests {
             &DoWriteFileArgs {
                 id,
                 sig: sig + 1,
-                data: data.clone(),
+                contents: contents.clone(),
             },
             |c| {
                 content = Some(c);

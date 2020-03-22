@@ -1,3 +1,5 @@
+use crate::msg::content::FileOpenedArgs;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteFile {
     pub(crate) id: u32,
@@ -12,5 +14,15 @@ impl RemoteFile {
 
     pub fn path(&self) -> &str {
         &self.path
+    }
+}
+
+impl From<FileOpenedArgs> for RemoteFile {
+    fn from(args: FileOpenedArgs) -> Self {
+        Self {
+            id: args.id,
+            sig: args.sig,
+            path: args.path,
+        }
     }
 }

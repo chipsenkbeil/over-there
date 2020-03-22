@@ -15,14 +15,16 @@ pub async fn async_test(mut client: ConnectedClient) {
     let dir_contents = client
         .ask_list_dir_contents(dir_path.clone())
         .await
-        .expect("Failed to get empty dir contents");
+        .expect("Failed to get empty dir contents")
+        .entries;
     assert_eq!(dir_contents.len(), 0);
 
     // Open/create file with read & write access
     let mut file = client
         .ask_open_file(file_path.clone())
         .await
-        .expect("Failed to open file");
+        .expect("Failed to open file")
+        .into();
     client
         .ask_write_file(&mut file, b"Hello!\nThis is a test!\nGoodbye!")
         .await
@@ -31,7 +33,8 @@ pub async fn async_test(mut client: ConnectedClient) {
     let dir_contents = client
         .ask_list_dir_contents(dir_path.clone())
         .await
-        .expect("Failed to get dir contents");
+        .expect("Failed to get dir contents")
+        .entries;
     assert_eq!(dir_contents.len(), 1);
 
     let file_path_2 = format!("{}.2", file_path.clone());
@@ -43,11 +46,18 @@ pub async fn async_test(mut client: ConnectedClient) {
     let mut file = client
         .ask_open_file(file_path_2.clone())
         .await
-        .expect("Failed to open renamed file");
+        .expect("Failed to open renamed file")
+        .into();
 
     let result = String::from(
-        std::str::from_utf8(&client.ask_read_file(&file).await.unwrap())
-            .expect("Failed to read renamed file"),
+        std::str::from_utf8(
+            &client
+                .ask_read_file(&file)
+                .await
+                .expect("Failed to read file")
+                .contents,
+        )
+        .expect("Failed to read renamed file"),
     );
     assert_eq!(result, "Hello!\nThis is a test!\nGoodbye!");
 
@@ -59,6 +69,7 @@ pub async fn async_test(mut client: ConnectedClient) {
     let dir_contents = client
         .ask_list_dir_contents(dir_path)
         .await
-        .expect("Failed to get dir contents");
+        .expect("Failed to get dir contents")
+        .entries;
     assert_eq!(dir_contents.len(), 0);
 }

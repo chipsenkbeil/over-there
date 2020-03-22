@@ -74,6 +74,9 @@ impl From<String> for DoOpenFileArgs {
 pub struct FileOpenedArgs {
     pub id: u32,
     pub sig: u32,
+    pub path: String,
+    pub read: bool,
+    pub write: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -133,14 +136,14 @@ pub struct DoReadFileArgs {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FileContentsArgs {
-    pub data: Vec<u8>,
+    pub contents: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoWriteFileArgs {
     pub id: u32,
     pub sig: u32,
-    pub data: Vec<u8>,
+    pub contents: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
