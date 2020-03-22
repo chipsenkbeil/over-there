@@ -1,9 +1,10 @@
 use crate::Content;
 use derive_more::Display;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io;
 
-#[derive(Debug, Display, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Display, PartialEq, Eq)]
 pub enum TellError {
     EncodingFailed,
     SendFailed,
@@ -21,7 +22,7 @@ impl From<AskError> for Option<TellError> {
     }
 }
 
-#[derive(Debug, Display, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Display, PartialEq, Eq)]
 pub enum AskError {
     #[display(fmt = "Failed: {}", msg)]
     Failure {
@@ -48,12 +49,16 @@ impl From<TellError> for AskError {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Serialize, Deserialize, Debug, Display)]
 pub enum FileAskError {
     #[display(fmt = "{}", "_0")]
     GeneralAskFailed(AskError),
 
     #[display(fmt = "IO Error: {}", "_0")]
+    #[serde(
+        serialize_with = "over_there_utils::serializers::io_error::serialize",
+        deserialize_with = "over_there_utils::serializers::io_error::deserialize"
+    )]
     IoError(io::Error),
 
     #[display(fmt = "File signature changed: {}", id)]

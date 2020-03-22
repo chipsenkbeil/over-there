@@ -6,7 +6,9 @@ pub mod internal_debug;
 pub mod version;
 
 use super::CommonOpts;
+use crate::format::FormatOption;
 use clap::Clap;
+use strum::VariantNames;
 
 #[derive(Clap, Debug)]
 pub enum Subcommand {
@@ -80,6 +82,15 @@ pub struct ClientCommand {
     /// instead of IPv4 in the event that both are yielded from a DNS resolution
     #[clap(short = "6", long)]
     pub ipv6: bool,
+
+    #[clap(
+        short, 
+        long, 
+        parse(try_from_str), 
+        possible_values = &FormatOption::VARIANTS, 
+        default_value = "Human"
+    )]
+    pub format: FormatOption,
 
     #[clap(flatten)]
     pub opts: CommonOpts,

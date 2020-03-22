@@ -1,6 +1,8 @@
 mod builder;
+pub mod format;
 mod opts;
 
+use format::FormatOption;
 use log::info;
 use opts::{
     client::{self, ClientCommand},
@@ -14,11 +16,34 @@ use std::time::{Duration, Instant};
 
 pub use opts::Opts;
 
+#[derive(Debug, derive_more::Display, serde::Serialize, serde::Deserialize)]
+struct SerError {
+    error: String,
+}
+
+impl std::error::Error for SerError {}
+
+impl From<Box<dyn Error>> for SerError {
+    fn from(x: Box<dyn Error>) -> Self {
+        Self {
+            error: format!("{}", x),
+        }
+    }
+}
+
 /// Primary entrypoint to run the executable based on input options
 pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     match opts.command {
         Command::Server(s) => run_server(s).await?,
-        Command::Client(c) => run_client(c).await?,
+        Command::Client(c) => match (c.format, run_client(c).await) {
+            (FormatOption::Human, Err(x)) => return Err(x),
+            (f, Err(x)) => {
+                format::format_println(f, SerError::from(x), |_| {
+                    Err("Cannot write human-readable stderr to stdout".into())
+                })?
+            }
+            _ => (),
+        },
     };
 
     Ok(())
@@ -76,101 +101,148 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
 
     match &cmd.command {
         client::Subcommand::Version(_) => {
-            println!("{}", client.ask_version().await?)
+            format::format_println(
+                cmd.format,
+                client.ask_version().await?,
+                |x| Ok(x.version),
+            )?;
         }
         client::Subcommand::Capabilities(_) => {
-            println!("{:?}", client.ask_capabilities().await?)
+            format::format_println(
+                cmd.format,
+                client.ask_capabilities().await?,
+                |x| Ok(format!("{:?}", x)),
+            )?;
         }
-        client::Subcommand::ListRootDir(_) => println!(
-            "{}",
-            client
-                .ask_list_root_dir_contents()
-                .await?
-                .iter()
-                .map(|e| {
-                    format!(
-                        "[{}{}{}] {}",
-                        if e.is_file { "F" } else { "" },
-                        if e.is_dir { "D" } else { "" },
-                        if e.is_symlink { "S" } else { "" },
-                        e.path,
-                    )
-                })
-                .collect::<Vec<String>>()
-                .join("\n")
-        ),
+        client::Subcommand::ListRootDir(_) => {
+            format::format_println(
+                cmd.format,
+                client.ask_list_root_dir_contents().await?,
+                |x| {
+                    Ok(x.entries
+                        .iter()
+                        .map(|e| {
+                            format!(
+                                "[{}{}{}] {}",
+                                if e.is_file { "F" } else { "" },
+                                if e.is_dir { "D" } else { "" },
+                                if e.is_symlink { "S" } else { "" },
+                                e.path,
+                            )
+                        })
+                        .collect::<Vec<String>>()
+                        .join("\n"))
+                },
+            )?;
+        }
         client::Subcommand::ListDir(c) => {
-            println!(
-                "{}",
-                client
-                    .ask_list_dir_contents(c.path.clone())
-                    .await?
-                    .iter()
-                    .map(|e| {
-                        format!(
-                            "[{}{}{}] {}",
-                            if e.is_file { "F" } else { "" },
-                            if e.is_dir { "D" } else { "" },
-                            if e.is_symlink { "S" } else { "" },
-                            e.path,
-                        )
-                    })
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            );
+            format::format_println(
+                cmd.format,
+                client.ask_list_dir_contents(c.path.clone()).await?,
+                |x| {
+                    Ok(x.entries
+                        .iter()
+                        .map(|e| {
+                            format!(
+                                "[{}{}{}] {}",
+                                if e.is_file { "F" } else { "" },
+                                if e.is_dir { "D" } else { "" },
+                                if e.is_symlink { "S" } else { "" },
+                                e.path,
+                            )
+                        })
+                        .collect::<Vec<String>>()
+                        .join("\n"))
+                },
+            )?;
         }
         client::Subcommand::CreateDir(c) => {
-            client.ask_create_dir(c.path.clone(), c.parents).await?;
-            println!("Created {}", c.path);
+            format::format_println(
+                cmd.format,
+                client.ask_create_dir(c.path.clone(), c.parents).await?,
+                |_| Ok(format!("Created {}", c.path)),
+            )?;
         }
         client::Subcommand::MoveDir(c) => {
-            client.ask_rename_dir(c.from.clone(), c.to.clone()).await?;
-            println!("Moved {} to {}", c.from, c.to);
+            format::format_println(
+                cmd.format,
+                client.ask_rename_dir(c.from.clone(), c.to.clone()).await?,
+                |_| Ok(format!("Moved {} to {}", c.from, c.to)),
+            )?;
         }
         client::Subcommand::RemoveDir(c) => {
-            client.ask_remove_dir(c.path.clone(), c.non_empty).await?;
-            println!("Removed {}", c.path);
+            format::format_println(
+                cmd.format,
+                client.ask_remove_dir(c.path.clone(), c.non_empty).await?,
+                |_| Ok(format!("Removed {}", c.path)),
+            )?;
         }
         client::Subcommand::WriteFile(c) => {
-            let mut file = client.ask_open_file(c.path.clone()).await?;
-            println!(
-                "{:?}",
-                client.ask_write_file(&mut file, c.contents.as_ref()).await
-            );
+            let mut file = client.ask_open_file(c.path.clone()).await?.into();
+            format::format_println(
+                cmd.format,
+                client
+                    .ask_write_file(&mut file, c.contents.as_ref())
+                    .await?,
+                |x| Ok(format!("{:?}", x)),
+            )?;
         }
         client::Subcommand::ReadFile(c) => {
-            let file = client.ask_open_file(c.path.clone()).await?;
-            let bytes = client.ask_read_file(&file).await?;
-            println!(
-                "{}",
-                String::from_utf8(bytes)
-                    .expect("Failed to translate file back to string")
-            );
+            let file = client.ask_open_file(c.path.clone()).await?.into();
+            format::format_println(
+                cmd.format,
+                client.ask_read_file(&file).await?,
+                |x| Ok(String::from_utf8(x.contents)?),
+            )?;
         }
         client::Subcommand::MoveFile(c) => {
-            client
-                .ask_rename_unopened_file(c.from.clone(), c.to.clone())
-                .await?;
-            println!("Moved {} to {}", c.from, c.to);
+            format::format_println(
+                cmd.format,
+                client
+                    .ask_rename_unopened_file(c.from.clone(), c.to.clone())
+                    .await?,
+                |_| Ok(format!("Moved {} to {}", c.from, c.to)),
+            )?;
         }
         client::Subcommand::RemoveFile(c) => {
-            client.ask_remove_unopened_file(c.path.clone()).await?;
-            println!("Removed {}", c.path);
+            format::format_println(
+                cmd.format,
+                client.ask_remove_unopened_file(c.path.clone()).await?,
+                |_| Ok(format!("Removed {}", c.path)),
+            )?;
         }
         client::Subcommand::Exec(c) => {
             let proc = client
                 .ask_exec_proc(c.command.clone(), c.args.clone())
-                .await?;
-            process_proc(client, c.stdin, c.post_exit_duration, proc).await;
+                .await?
+                .into();
+            process_proc(
+                client,
+                c.stdin,
+                c.post_exit_duration,
+                proc,
+                cmd.format,
+            )
+            .await;
         }
         client::Subcommand::ReattachExec(c) => {
             let proc = RemoteProc::shallow(c.id);
-            process_proc(client, c.stdin, c.post_exit_duration, proc).await;
+            process_proc(
+                client,
+                c.stdin,
+                c.post_exit_duration,
+                proc,
+                cmd.format,
+            )
+            .await;
         }
-        client::Subcommand::InternalDebug(_) => println!(
-            "{}",
-            String::from_utf8_lossy(&client.ask_internal_debug().await?)
-        ),
+        client::Subcommand::InternalDebug(_) => {
+            format::format_println(
+                cmd.format,
+                client.ask_internal_debug().await?,
+                |x| Ok(format!("{}", String::from_utf8_lossy(&x.output))),
+            )?;
+        }
     };
 
     Ok(())
@@ -181,6 +253,7 @@ async fn process_proc(
     send_stdin: bool,
     post_exit_duration: Duration,
     proc: RemoteProc,
+    format: FormatOption,
 ) {
     let stdin = io::stdin();
     let mut exit_instant: Option<Instant> = None;
@@ -209,20 +282,32 @@ async fn process_proc(
             }
         }
 
-        let contents = client
+        let stdout_args = client
             .ask_get_stdout(&proc)
             .await
             .expect("Failed to get stdout");
-        if !contents.is_empty() {
-            println!("{}", String::from_utf8_lossy(&contents));
+        if !stdout_args.output.is_empty() {
+            format::format_println(format, stdout_args, |x| {
+                Ok(format!("{}", String::from_utf8_lossy(&x.output)))
+            })
+            .expect("Failed to format stdout");
         }
 
-        let contents = client
+        let stderr_args = client
             .ask_get_stderr(&proc)
             .await
             .expect("Failed to get stderr");
-        if !contents.is_empty() {
-            eprintln!("{}", String::from_utf8_lossy(&contents));
+        if !stderr_args.output.is_empty() {
+            match format {
+                FormatOption::Human => eprintln!(
+                    "{}",
+                    String::from_utf8_lossy(&stderr_args.output)
+                ),
+                _ => format::format_println(format, stderr_args, |_| {
+                    Err("Cannot write human-readable stderr to stdout".into())
+                })
+                .expect("Failed to format stderr"),
+            }
         }
 
         // Mark ready for exit if proc has exited

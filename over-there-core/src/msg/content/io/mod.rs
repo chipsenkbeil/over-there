@@ -57,18 +57,7 @@ impl From<io::Error> for IoErrorArgs {
     fn from(error: io::Error) -> Self {
         let error_kind = error.kind();
         let os_code = error.raw_os_error();
-
-        // NOTE: Internally, Rust uses sys::os::error_string(code) to get a
-        //       relevant message based on an Os error code; however, this is
-        //       not exposed externally. Instead, the options are debug and
-        //       format printing, the latter of which yields
-        //       "<message> (os error <code>)" as the output
-        let description = if os_code.is_some() {
-            format!("{}", error)
-        } else {
-            use std::error::Error;
-            error.description().to_string()
-        };
+        let description = format!("{}", error);
 
         Self {
             description,
