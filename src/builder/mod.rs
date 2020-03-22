@@ -82,8 +82,8 @@ async fn build_client_and_connect<A, B>(
     bicrypter: B,
 ) -> io::Result<ConnectedClient>
 where
-    A: Authenticator + Send + Clone + Default + 'static,
-    B: Bicrypter + Send + Clone + Default + 'static,
+    A: Authenticator + Send + Sync + Clone + Default + 'static,
+    B: Bicrypter + Send + Sync + Clone + Default + 'static,
 {
     let internal_buffer_size = cmd.opts.internal_buffer_size;
     let packet_ttl = cmd.opts.packet_ttl;
@@ -183,8 +183,8 @@ async fn build_server_and_listen<A, B>(
     bicrypter: B,
 ) -> io::Result<ListeningServer>
 where
-    A: Authenticator + Send + Clone + Default + 'static,
-    B: Bicrypter + Send + Clone + Default + 'static,
+    A: Authenticator + Send + Sync + Clone + Default + 'static,
+    B: Bicrypter + Send + Sync + Clone + Default + 'static,
 {
     let internal_buffer_size = cmd.opts.internal_buffer_size;
     let packet_ttl = cmd.opts.packet_ttl;
@@ -220,6 +220,6 @@ where
                 format!("Invalid server config: {}", x),
             )
         })?
-        .listen()
+        .cloneable_listen()
         .await
 }
