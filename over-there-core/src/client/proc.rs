@@ -23,6 +23,12 @@ pub struct RemoteProc {
 }
 
 impl RemoteProc {
+    /// Creates a new remote reference without validating anything about
+    /// the process running or even existing
+    pub fn shallow(id: u32) -> Self {
+        Self { id }
+    }
+
     pub fn id(&self) -> u32 {
         self.id
     }
