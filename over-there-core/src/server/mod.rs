@@ -52,11 +52,39 @@ where
 
 impl<A, B> Server<A, B>
 where
+    A: Authenticator + Send + Sync + 'static,
+    B: Bicrypter + Send + Sync + 'static,
+{
+    /// Starts actively listening for msgs via the specified transport medium
+    ///
+    /// Will fail if using TCP transport as requires Clone; should instead
+    /// use `cloneable_listen` if using TCP
+    pub async fn listen(self) -> io::Result<ListeningServer> {
+        let handle = Handle::current();
+        let state = Arc::new(state::ServerState::default());
+
+        handle.spawn(cleanup_loop(Arc::clone(&state), self.cleanup_interval));
+
+        match self.transport.clone() {
+            Transport::Tcp(_) => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Authenticator or Bicrypter is not clonable",
+            )),
+            Transport::Udp(addrs) => {
+                build_and_listen_udp_server(self, state, &addrs).await
+            }
+        }
+    }
+}
+
+impl<A, B> Server<A, B>
+where
     A: Authenticator + Send + Sync + Clone + 'static,
     B: Bicrypter + Send + Sync + Clone + 'static,
 {
-    /// Starts actively listening for msgs via the specified transport medium
-    pub async fn listen(self) -> io::Result<ListeningServer> {
+    /// Starts actively listening for msgs via the specified transport medium,
+    /// using cloneable methods for Authenticator and Bicrypter operations
+    pub async fn cloneable_listen(self) -> io::Result<ListeningServer> {
         let handle = Handle::current();
         let state = Arc::new(state::ServerState::default());
 

@@ -58,7 +58,7 @@ async fn start_tcp_client_and_server() -> TestBench {
         .transport(Transport::Tcp(wire::net::make_local_ipv4_addr_list()))
         .build()
         .expect("Failed to build server config")
-        .listen()
+        .cloneable_listen()
         .await
         .expect("Failed to listen");
 
