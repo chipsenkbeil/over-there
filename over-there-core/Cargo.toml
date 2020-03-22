@@ -38,6 +38,11 @@ over-there-wire = { path = "../over-there-wire" }
 version = "0.2.13"
 features = ["fs", "io-util", "macros", "process", "sync", "time", "tcp", "udp"]
 
+[dependencies.derive_more]
+version = "0.99.3"
+default-features = false
+features = ["display"]
+
 [dev-dependencies]
 tokio = { version = "0.2.13", features = ["test-util"] }
 env_logger = "0.7.1"
