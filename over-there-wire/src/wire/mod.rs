@@ -72,7 +72,7 @@ where
         udp::UdpSocketWire::new(self, socket)
     }
 
-    pub fn split(
+    pub fn arc_split(
         self,
     ) -> (
         InboundWire<

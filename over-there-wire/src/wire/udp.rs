@@ -26,7 +26,7 @@ where
         Self { wire, socket }
     }
 
-    pub fn split(
+    pub fn arc_split(
         self,
     ) -> (
         UdpSocketInboundWire<
@@ -40,7 +40,7 @@ where
     ) {
         let Self { wire, socket } = self;
         let (r, s) = socket.split();
-        let (iw, ow) = wire.split();
+        let (iw, ow) = wire.arc_split();
 
         (iw.with_udp_socket(r), ow.with_udp_socket(s))
     }

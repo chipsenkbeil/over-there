@@ -35,7 +35,7 @@ where
         }
     }
 
-    pub fn split(
+    pub fn arc_split(
         self,
     ) -> (
         TcpStreamInboundWire<
@@ -53,7 +53,7 @@ where
             remote_addr,
         } = self;
         let (r, w) = io::split(stream);
-        let (iw, ow) = wire.split();
+        let (iw, ow) = wire.arc_split();
 
         (iw.with_tcp_stream(r, remote_addr), ow.with_tcp_stream(w))
     }
