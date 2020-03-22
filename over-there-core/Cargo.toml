@@ -35,10 +35,10 @@ over-there-utils = { path = "../over-there-utils" }
 over-there-wire = { path = "../over-there-wire" }
 
 [dependencies.tokio]
-version = "0.2.11"
+version = "0.2.13"
 features = ["fs", "io-util", "macros", "process", "sync", "time", "tcp", "udp"]
 
 [dev-dependencies]
-tokio = { version = "0.2.11", features = ["test-util"] }
+tokio = { version = "0.2.13", features = ["test-util"] }
 env_logger = "0.7.1"
 tempfile = "3.1.0"

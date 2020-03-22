@@ -5,9 +5,8 @@ pub mod file;
 pub mod internal_debug;
 pub mod version;
 
-use super::{parsers, CommonOpts};
+use super::CommonOpts;
 use clap::Clap;
-use std::net::SocketAddr;
 
 #[derive(Clap, Debug)]
 pub enum Subcommand {
@@ -45,9 +44,13 @@ pub struct ClientCommand {
     #[clap(subcommand)]
     pub command: Subcommand,
 
-    #[clap(parse(try_from_str = parsers::parse_socket_addr))]
     /// Address (<host>:<port>) of server to connect to
-    pub addr: SocketAddr,
+    pub addr: String,
+
+    /// If provided, will attempt to resolve the address of a server as IPv6
+    /// instead of IPv4 in the event that both are yielded from a DNS resolution
+    #[clap(short = "6", long)]
+    pub ipv6: bool,
 
     #[clap(flatten)]
     pub opts: CommonOpts,

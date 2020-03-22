@@ -91,7 +91,6 @@ where
     let stream = {
         let mut stream = None;
         for addr in addrs.iter() {
-            // TODO: Use DNS resolver to evaluate addresses
             match TcpStream::connect(addr).await {
                 Ok(s) => {
                     stream = Some(s);
@@ -148,7 +147,6 @@ where
     let (socket, remote_addr) = {
         let mut socket_and_addr = None;
         for addr in addrs.iter() {
-            // TODO: Use DNS resolver to evaluate addresses
             match wire::net::udp::connect(*addr) {
                 Ok(s) => {
                     socket_and_addr = Some((s, *addr));
@@ -182,7 +180,7 @@ where
     let (tx, rx) = mpsc::channel(client.buffer);
     let event_handle = handle.spawn(udp_event_loop(Arc::clone(&state), rx));
     let addr_event_manager = AddrEventManager::for_udp_socket(
-        handle.clone(),
+        handle,
         client.buffer,
         socket,
         wire,

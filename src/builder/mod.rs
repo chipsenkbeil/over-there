@@ -8,6 +8,7 @@ use over_there_core::{
 };
 use over_there_wire::{Authenticator, Bicrypter};
 use std::io;
+use tokio::net;
 
 pub async fn start_client(cmd: &ClientCommand) -> io::Result<ConnectedClient> {
     match (
@@ -87,7 +88,22 @@ where
 {
     let internal_buffer_size = cmd.opts.internal_buffer_size;
     let packet_ttl = cmd.opts.packet_ttl;
-    let addrs = vec![cmd.addr];
+
+    // Attempt to resolve provided address
+    let maybe_resolved_addr = net::lookup_host(cmd.addr.clone())
+        .await?
+        .find(|x| x.is_ipv6() == cmd.ipv6);
+
+    debug!(
+        "Resolved {} to {}",
+        cmd.addr,
+        maybe_resolved_addr
+            .as_ref()
+            .map(|x| x.to_string())
+            .unwrap_or_default()
+    );
+
+    let addrs = maybe_resolved_addr.map(|x| vec![x]).unwrap_or_default();
     let transport = match cmd.opts.transport {
         types::Transport::Tcp => Transport::Tcp(addrs),
         types::Transport::Udp => Transport::Udp(addrs),
