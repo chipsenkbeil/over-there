@@ -34,11 +34,11 @@ pub struct Opts {
 
 #[derive(Clap, Debug)]
 pub struct CommonOpts {
-    #[clap(long, parse(try_from_str = parsers::parse_duration), default_value = "5")]
+    #[clap(long, parse(try_from_str = parsers::parse_duration_secs), default_value = "5")]
     /// Timeout (in seconds) used when communicating across the network
     pub timeout: Duration,
 
-    #[clap(long, parse(try_from_str = parsers::parse_duration), default_value = "300")]
+    #[clap(long, parse(try_from_str = parsers::parse_duration_secs), default_value = "300")]
     /// Time-to-live (in seconds) for collecting all packets in a msg
     pub packet_ttl: Duration,
 

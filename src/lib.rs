@@ -10,6 +10,7 @@ use opts::{
 use over_there_core::{ConnectedClient, RemoteProc};
 use std::error::Error;
 use std::io;
+use std::time::{Duration, Instant};
 
 pub use opts::Opts;
 
@@ -160,11 +161,11 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             let proc = client
                 .ask_exec_proc(c.command.clone(), c.args.clone())
                 .await?;
-            process_proc(client, c.stdin, proc).await;
+            process_proc(client, c.stdin, c.post_exit_duration, proc).await;
         }
         client::Subcommand::ReattachExec(c) => {
             let proc = RemoteProc::shallow(c.id);
-            process_proc(client, c.stdin, proc).await;
+            process_proc(client, c.stdin, c.post_exit_duration, proc).await;
         }
         client::Subcommand::InternalDebug(_) => println!(
             "{}",
@@ -178,11 +179,18 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
 async fn process_proc(
     mut client: ConnectedClient,
     send_stdin: bool,
+    post_exit_duration: Duration,
     proc: RemoteProc,
 ) {
     let stdin = io::stdin();
+    let mut exit_instant: Option<Instant> = None;
 
-    loop {
+    // Continue running as long as we haven't exceeded our post-exit duration
+    // after the remote process exited
+    while exit_instant
+        .map(|inst| inst.elapsed() < post_exit_duration)
+        .unwrap_or(true)
+    {
         if send_stdin {
             use io::BufRead;
             let mut handle = stdin.lock();
@@ -217,13 +225,15 @@ async fn process_proc(
             eprintln!("{}", String::from_utf8_lossy(&contents));
         }
 
-        // Exit the loop if the proc has exited
-        let status = client
-            .ask_proc_status(&proc)
-            .await
-            .expect("Failed to get proc status");
-        if !status.is_alive {
-            break;
+        // Mark ready for exit if proc has exited
+        if exit_instant.is_none() {
+            let status = client
+                .ask_proc_status(&proc)
+                .await
+                .expect("Failed to get proc status");
+            if !status.is_alive {
+                exit_instant = Some(Instant::now());
+            }
         }
     }
 }

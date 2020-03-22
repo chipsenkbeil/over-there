@@ -18,7 +18,7 @@ pub struct ServerCommand {
 
     #[clap(
         long, 
-        parse(try_from_str = parsers::parse_duration), 
+        parse(try_from_str = parsers::parse_duration_secs), 
         default_value = "60",
     )]
     /// Time (in seconds) between runs of the cleanup process
@@ -26,7 +26,7 @@ pub struct ServerCommand {
 
     #[clap(
         long, 
-        parse(try_from_str = parsers::parse_duration), 
+        parse(try_from_str = parsers::parse_duration_secs), 
         default_value = "1800",
     )]
     /// Time (in seconds) to keep file open with no activity before closing
@@ -34,7 +34,7 @@ pub struct ServerCommand {
 
     #[clap(
         long, 
-        parse(try_from_str = parsers::parse_duration), 
+        parse(try_from_str = parsers::parse_duration_secs), 
         default_value = "3600",
     )]
     /// Time (in seconds) to keep process running with no remote communication
@@ -43,7 +43,7 @@ pub struct ServerCommand {
 
     #[clap(
         long, 
-        parse(try_from_str = parsers::parse_duration), 
+        parse(try_from_str = parsers::parse_duration_secs), 
         default_value = "300",
     )]
     /// Time (in seconds) to keep dead process status available before removing
