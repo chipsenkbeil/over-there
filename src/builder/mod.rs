@@ -219,6 +219,10 @@ where
         .authenticator(authenticator)
         .bicrypter(bicrypter)
         .transport(transport)
+        .cleanup_interval(cmd.cleanup_interval)
+        .file_ttl(cmd.untouched_file_ttl)
+        .proc_ttl(cmd.untouched_proc_ttl)
+        .dead_proc_ttl(cmd.dead_proc_ttl)
         .buffer(internal_buffer_size)
         .packet_ttl(packet_ttl);
 

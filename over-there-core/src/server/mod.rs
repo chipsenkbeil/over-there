@@ -48,6 +48,18 @@ where
     /// Interval at which cleanup of dangling resources is performed
     #[builder(default = "Duration::from_secs(60)")]
     cleanup_interval: Duration,
+
+    /// TTL for an untouched, open file before it is closed during cleanup
+    #[builder(default = "state::constants::DEFAULT_FILE_TTL")]
+    file_ttl: Duration,
+
+    /// TTL for an untouched, running process before it is killed during cleanup
+    #[builder(default = "state::constants::DEFAULT_PROC_TTL")]
+    proc_ttl: Duration,
+
+    /// TTL for an untouched, dead process before it is removed during cleanup
+    #[builder(default = "state::constants::DEFAULT_DEAD_PROC_TTL")]
+    dead_proc_ttl: Duration,
 }
 
 impl<A, B> Server<A, B>
@@ -61,7 +73,11 @@ where
     /// use `cloneable_listen` if using TCP
     pub async fn listen(self) -> io::Result<ListeningServer> {
         let handle = Handle::current();
-        let state = Arc::new(state::ServerState::default());
+        let state = Arc::new(state::ServerState::new(
+            self.file_ttl,
+            self.proc_ttl,
+            self.dead_proc_ttl,
+        ));
 
         handle.spawn(cleanup_loop(Arc::clone(&state), self.cleanup_interval));
 
@@ -86,7 +102,11 @@ where
     /// using cloneable methods for Authenticator and Bicrypter operations
     pub async fn cloneable_listen(self) -> io::Result<ListeningServer> {
         let handle = Handle::current();
-        let state = Arc::new(state::ServerState::default());
+        let state = Arc::new(state::ServerState::new(
+            self.file_ttl,
+            self.proc_ttl,
+            self.dead_proc_ttl,
+        ));
 
         handle.spawn(cleanup_loop(Arc::clone(&state), self.cleanup_interval));
 
@@ -149,6 +169,7 @@ where
     Ok(ListeningServer {
         addr,
         addr_event_manager,
+        state,
         event_handle,
     })
 }
@@ -202,6 +223,7 @@ where
     Ok(ListeningServer {
         addr,
         addr_event_manager,
+        state,
         event_handle,
     })
 }
