@@ -29,12 +29,12 @@ pub struct ServerState {
 
     /// Mapping of file id -> file on same machine as server
     pub fs_manager: Mutex<FileSystemManager>,
-    file_ids: Mutex<HashSet<TtlValue<u32>>>,
+    pub(super) file_ids: Mutex<HashSet<TtlValue<u32>>>,
     file_ttl: Duration,
 
     /// Mapping of proc id -> proc on same machine as server
     pub procs: Mutex<HashMap<u32, LocalProc>>,
-    proc_ids: Mutex<HashSet<TtlValue<u32>>>,
+    pub(super) proc_ids: Mutex<HashSet<TtlValue<u32>>>,
     proc_ttl: Duration,
     pub(crate) dead_proc_ttl: Duration,
 
@@ -143,7 +143,7 @@ impl ServerState {
     }
 
     /// Updates the state to reflect that the server is shutting down
-    pub fn shutdown(&mut self) {
+    pub fn shutdown(&self) {
         self.running.store(false, Ordering::Relaxed);
     }
 

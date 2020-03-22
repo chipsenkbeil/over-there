@@ -245,3 +245,93 @@ async fn cleanup_loop(state: Arc<state::ServerState>, period: Duration) {
         time::delay_for(period).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cleanup_loop_should_evict_unused_files_every_period() {
+        let state = Arc::new(state::ServerState::default());
+
+        // Touch some file ids so we can verify that the loop will remove
+        // some of them, but don't bother opening them as full evict is
+        // tested elsewhere
+        state
+            .touch_file_id_with_ttl(0, Duration::from_micros(5))
+            .await;
+        state
+            .touch_file_id_with_ttl(1, Duration::from_secs(60))
+            .await;
+
+        // Run loop with a very short period so we can ensure we check quickly
+        Handle::current()
+            .spawn(cleanup_loop(Arc::clone(&state), Duration::from_millis(1)));
+
+        // Ensure that we've waited long enough for some files to be evicted
+        time::delay_for(Duration::from_millis(10)).await;
+
+        // Verify expected files were evicted
+        let file_ids = state.file_ids.lock().await;
+        assert!(!file_ids.contains(&From::from(0)), "File not evicted");
+        assert!(
+            file_ids.contains(&From::from(1)),
+            "File unexpectedly evicted"
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_loop_should_evict_unused_processes_every_period() {
+        let state = Arc::new(state::ServerState::default());
+
+        // Touch some proc ids so we can verify that the loop will remove
+        // some of them, but don't bother spawning them as full evict is
+        // tested elsewhere
+        state
+            .touch_proc_id_with_ttl(0, Duration::from_micros(5))
+            .await;
+        state
+            .touch_proc_id_with_ttl(1, Duration::from_secs(60))
+            .await;
+
+        // Run loop with a very short period so we ensure we check quickly
+        Handle::current()
+            .spawn(cleanup_loop(Arc::clone(&state), Duration::from_millis(1)));
+
+        // Ensure that we've waited long enough for some procs to be evicted
+        time::delay_for(Duration::from_millis(10)).await;
+
+        // Verify expected files were evicted
+        let proc_ids = state.proc_ids.lock().await;
+        assert!(!proc_ids.contains(&From::from(0)), "Proc not evicted");
+        assert!(
+            proc_ids.contains(&From::from(1)),
+            "Proc unexpectedly evicted"
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_loop_should_only_run_if_state_marked_running() {
+        let state = Arc::new(state::ServerState::default());
+
+        // Shutdown before we even start to ensure that cleanup never happens
+        state.shutdown();
+
+        let state = Arc::new(state::ServerState::default());
+
+        state.touch_file_id_with_ttl(0, Duration::new(0, 0)).await;
+        state.touch_proc_id_with_ttl(0, Duration::new(0, 0)).await;
+
+        Handle::current()
+            .spawn(cleanup_loop(Arc::clone(&state), Duration::from_millis(1)));
+
+        assert!(
+            state.file_ids.lock().await.contains(&From::from(0)),
+            "File unexpectedly evicted"
+        );
+        assert!(
+            state.proc_ids.lock().await.contains(&From::from(0)),
+            "Proc unexpectedly evicted"
+        );
+    }
+}
