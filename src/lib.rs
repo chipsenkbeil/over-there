@@ -330,6 +330,16 @@ async fn process_proc(
                 .await
                 .expect("Failed to get proc status");
             if !status.is_alive {
+                format_content_println!(
+                    format,
+                    Content::ProcStatus(status),
+                    Err(format!(
+                        "Proc {} exited with code {}",
+                        status.id,
+                        status.exit_code.unwrap_or_default(),
+                    )),
+                )
+                .expect("Failed to format status");
                 exit_instant = Some(Instant::now());
             }
         }

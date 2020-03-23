@@ -62,7 +62,10 @@ where
 
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => match local_proc.write_stdin(&args.input).await {
-            Ok(_) => respond(Content::StdinWritten(StdinWrittenArgs)).await,
+            Ok(_) => {
+                respond(Content::StdinWritten(StdinWrittenArgs { id: args.id }))
+                    .await
+            }
             Err(x) => respond(Content::IoError(From::from(x))).await,
         },
         None => {
@@ -87,11 +90,15 @@ where
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => match local_proc.read_stdout().await {
             Ok(output) => {
-                respond(Content::StdoutContents(StdoutContentsArgs { output }))
-                    .await
+                respond(Content::StdoutContents(StdoutContentsArgs {
+                    id: args.id,
+                    output,
+                }))
+                .await
             }
             Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
                 respond(Content::StdoutContents(StdoutContentsArgs {
+                    id: args.id,
                     output: vec![],
                 }))
                 .await
@@ -120,11 +127,15 @@ where
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => match local_proc.read_stderr().await {
             Ok(output) => {
-                respond(Content::StderrContents(StderrContentsArgs { output }))
-                    .await
+                respond(Content::StderrContents(StderrContentsArgs {
+                    id: args.id,
+                    output,
+                }))
+                .await
             }
             Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
                 respond(Content::StderrContents(StderrContentsArgs {
+                    id: args.id,
                     output: vec![],
                 }))
                 .await
@@ -452,7 +463,11 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::StdoutContents(StdoutContentsArgs { output }) => {
+            Content::StdoutContents(StdoutContentsArgs {
+                id: arg_id,
+                output,
+            }) => {
+                assert_eq!(arg_id, id, "Wrong id returned");
                 assert_eq!(output, b"test\n");
             }
             x => panic!("Bad content: {:?}", x),
@@ -489,7 +504,11 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::StdoutContents(StdoutContentsArgs { output }) => {
+            Content::StdoutContents(StdoutContentsArgs {
+                id: arg_id,
+                output,
+            }) => {
+                assert_eq!(arg_id, id, "Wrong id returned");
                 assert!(output.is_empty());
             }
             x => panic!("Bad content: {:?}", x),
@@ -546,7 +565,11 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::StderrContents(StderrContentsArgs { output }) => {
+            Content::StderrContents(StderrContentsArgs {
+                id: arg_id,
+                output,
+            }) => {
+                assert_eq!(arg_id, id, "Wrong id returned");
                 assert!(output.len() > 0);
             }
             x => panic!("Bad content: {:?}", x),
@@ -583,7 +606,11 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::StderrContents(StderrContentsArgs { output }) => {
+            Content::StderrContents(StderrContentsArgs {
+                id: arg_id,
+                output,
+            }) => {
+                assert_eq!(arg_id, id, "Wrong id returned");
                 assert!(output.is_empty());
             }
             x => panic!("Bad content: {:?}", x),

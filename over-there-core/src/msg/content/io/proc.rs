@@ -21,7 +21,9 @@ pub struct DoWriteStdinArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct StdinWrittenArgs;
+pub struct StdinWrittenArgs {
+    pub id: u32,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoGetStdoutArgs {
@@ -30,6 +32,7 @@ pub struct DoGetStdoutArgs {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct StdoutContentsArgs {
+    pub id: u32,
     pub output: Vec<u8>,
 }
 
@@ -40,6 +43,7 @@ pub struct DoGetStderrArgs {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct StderrContentsArgs {
+    pub id: u32,
     pub output: Vec<u8>,
 }
 

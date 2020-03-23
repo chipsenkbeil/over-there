@@ -7,7 +7,9 @@ pub struct DoCreateDirArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DirCreatedArgs {}
+pub struct DirCreatedArgs {
+    pub path: String,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoRenameDirArgs {
@@ -16,7 +18,10 @@ pub struct DoRenameDirArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DirRenamedArgs {}
+pub struct DirRenamedArgs {
+    pub from: String,
+    pub to: String,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoRemoveDirArgs {
@@ -25,7 +30,9 @@ pub struct DoRemoveDirArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct DirRemovedArgs {}
+pub struct DirRemovedArgs {
+    pub path: String,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoListDirContentsArgs {
@@ -34,13 +41,8 @@ pub struct DoListDirContentsArgs {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DirContentsListArgs {
+    pub path: String,
     pub entries: Vec<DirEntry>,
-}
-
-impl From<Vec<DirEntry>> for DirContentsListArgs {
-    fn from(entries: Vec<DirEntry>) -> Self {
-        Self { entries }
-    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -86,7 +88,9 @@ pub struct DoCloseFileArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FileClosedArgs {}
+pub struct FileClosedArgs {
+    pub id: u32,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoRenameUnopenedFileArgs {
@@ -95,7 +99,10 @@ pub struct DoRenameUnopenedFileArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct UnopenedFileRenamedArgs {}
+pub struct UnopenedFileRenamedArgs {
+    pub from: String,
+    pub to: String,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoRenameFileArgs {
@@ -106,6 +113,7 @@ pub struct DoRenameFileArgs {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FileRenamedArgs {
+    pub id: u32,
     pub sig: u32,
 }
 
@@ -115,7 +123,9 @@ pub struct DoRemoveUnopenedFileArgs {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct UnopenedFileRemovedArgs {}
+pub struct UnopenedFileRemovedArgs {
+    pub path: String,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct DoRemoveFileArgs {
@@ -125,6 +135,7 @@ pub struct DoRemoveFileArgs {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FileRemovedArgs {
+    pub id: u32,
     pub sig: u32,
 }
 
@@ -136,6 +147,7 @@ pub struct DoReadFileArgs {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FileContentsArgs {
+    pub id: u32,
     pub contents: Vec<u8>,
 }
 
@@ -148,10 +160,12 @@ pub struct DoWriteFileArgs {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FileWrittenArgs {
+    pub id: u32,
     pub sig: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FileSigChangedArgs {
+    pub id: u32,
     pub sig: u32,
 }

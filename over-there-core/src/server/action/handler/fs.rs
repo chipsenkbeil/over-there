@@ -70,7 +70,7 @@ where
     match state.fs_manager.lock().await.close_file(handle) {
         Ok(_) => {
             state.remove_file_id(args.id).await;
-            respond(Content::FileClosed(FileClosedArgs {})).await
+            respond(Content::FileClosed(FileClosedArgs { id: args.id })).await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
@@ -95,8 +95,11 @@ where
         .await
     {
         Ok(_) => {
-            respond(Content::UnopenedFileRenamed(UnopenedFileRenamedArgs {}))
-                .await
+            respond(Content::UnopenedFileRenamed(UnopenedFileRenamedArgs {
+                from: args.from.clone(),
+                to: args.to.clone(),
+            }))
+            .await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
@@ -118,12 +121,14 @@ where
         Some(local_file) => match local_file.rename(args.sig, &args.to).await {
             Ok(_) => {
                 respond(Content::FileRenamed(FileRenamedArgs {
+                    id: args.id,
                     sig: local_file.sig(),
                 }))
                 .await
             }
             Err(LocalFileError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
+                    id: args.id,
                     sig: local_file.sig(),
                 }))
                 .await
@@ -152,8 +157,10 @@ where
 
     match state.fs_manager.lock().await.remove_file(&args.path).await {
         Ok(_) => {
-            respond(Content::UnopenedFileRemoved(UnopenedFileRemovedArgs {}))
-                .await
+            respond(Content::UnopenedFileRemoved(UnopenedFileRemovedArgs {
+                path: args.path.clone(),
+            }))
+            .await
         }
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
@@ -176,12 +183,14 @@ where
             Ok(_) => {
                 state.remove_file_id(args.id).await;
                 respond(Content::FileRemoved(FileRemovedArgs {
+                    id: args.id,
                     sig: local_file.sig(),
                 }))
                 .await
             }
             Err(LocalFileError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
+                    id: args.id,
                     sig: local_file.sig(),
                 }))
                 .await
@@ -212,11 +221,15 @@ where
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.read_all(args.sig).await {
             Ok(contents) => {
-                respond(Content::FileContents(FileContentsArgs { contents }))
-                    .await
+                respond(Content::FileContents(FileContentsArgs {
+                    id: args.id,
+                    contents,
+                }))
+                .await
             }
             Err(LocalFileError::SigMismatch) => {
                 respond(Content::FileSigChanged(FileSigChangedArgs {
+                    id: args.id,
                     sig: local_file.sig(),
                 }))
                 .await
@@ -249,12 +262,14 @@ where
             match local_file.write_all(args.sig, &args.contents).await {
                 Ok(_) => {
                     respond(Content::FileWritten(FileWrittenArgs {
+                        id: args.id,
                         sig: local_file.sig(),
                     }))
                     .await
                 }
                 Err(LocalFileError::SigMismatch) => {
                     respond(Content::FileSigChanged(FileSigChangedArgs {
+                        id: args.id,
                         sig: local_file.sig(),
                     }))
                     .await
@@ -289,7 +304,12 @@ where
         .create_dir(&args.path, args.include_components)
         .await
     {
-        Ok(_) => respond(Content::DirCreated(DirCreatedArgs {})).await,
+        Ok(_) => {
+            respond(Content::DirCreated(DirCreatedArgs {
+                path: args.path.clone(),
+            }))
+            .await
+        }
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
@@ -312,7 +332,13 @@ where
         .rename_dir(&args.from, &args.to)
         .await
     {
-        Ok(_) => respond(Content::DirRenamed(DirRenamedArgs {})).await,
+        Ok(_) => {
+            respond(Content::DirRenamed(DirRenamedArgs {
+                from: args.from.clone(),
+                to: args.to.clone(),
+            }))
+            .await
+        }
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
@@ -335,7 +361,12 @@ where
         .remove_dir(&args.path, args.non_empty)
         .await
     {
-        Ok(_) => respond(Content::DirRemoved(DirRemovedArgs {})).await,
+        Ok(_) => {
+            respond(Content::DirRemoved(DirRemovedArgs {
+                path: args.path.clone(),
+            }))
+            .await
+        }
         Err(x) => respond(Content::IoError(From::from(x))).await,
     }
 }
@@ -357,7 +388,11 @@ where
                 local_entries.into_iter().map(DirEntry::try_from).collect();
             match entries {
                 Ok(entries) => {
-                    respond(Content::DirContentsList(From::from(entries))).await
+                    respond(Content::DirContentsList(DirContentsListArgs {
+                        path: args.path.clone(),
+                        entries,
+                    }))
+                    .await
                 }
                 Err(x) => respond(Content::IoError(From::from(x))).await,
             }
@@ -597,7 +632,9 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileClosed(FileClosedArgs {}) => (),
+            Content::FileClosed(FileClosedArgs { id: arg_id }) => {
+                assert_eq!(arg_id, id)
+            }
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -663,16 +700,22 @@ mod tests {
         .unwrap();
 
         assert!(
-            fs::metadata(from_path_str).await.is_err(),
+            fs::metadata(from_path_str.clone()).await.is_err(),
             "File not renamed"
         );
         assert!(
-            fs::metadata(to_path_str).await.is_ok(),
+            fs::metadata(to_path_str.clone()).await.is_ok(),
             "File renamed incorrectly"
         );
 
         match content.unwrap() {
-            Content::UnopenedFileRenamed(UnopenedFileRenamedArgs {}) => (),
+            Content::UnopenedFileRenamed(UnopenedFileRenamedArgs {
+                from,
+                to,
+            }) => {
+                assert_eq!(from, from_path_str);
+                assert_eq!(to, to_path_str);
+            }
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -766,8 +809,9 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs { sig }) => {
-                assert_eq!(sig, handle.sig)
+            Content::FileSigChanged(FileSigChangedArgs { id, sig }) => {
+                assert_eq!(id, handle.id);
+                assert_eq!(sig, handle.sig);
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -815,10 +859,13 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::FileRenamed(FileRenamedArgs { sig }) => assert_ne!(
-                handle.sig, sig,
-                "Signature returned is not different"
-            ),
+            Content::FileRenamed(FileRenamedArgs { id, sig }) => {
+                assert_eq!(handle.id, id, "Wrong id returned");
+                assert_ne!(
+                    handle.sig, sig,
+                    "Signature returned is not different"
+                );
+            }
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -890,7 +937,9 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::UnopenedFileRemoved(UnopenedFileRemovedArgs {}) => (),
+            Content::UnopenedFileRemoved(UnopenedFileRemovedArgs { path }) => {
+                assert_eq!(path, file.as_ref().to_string_lossy().to_string());
+            }
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -970,8 +1019,9 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs { sig }) => {
-                assert_eq!(sig, handle.sig)
+            Content::FileSigChanged(FileSigChangedArgs { id, sig }) => {
+                assert_eq!(id, handle.id);
+                assert_eq!(sig, handle.sig);
             }
             x => panic!("Bad content: {:?}", x),
         }
@@ -1011,10 +1061,13 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::FileRemoved(FileRemovedArgs { sig }) => assert_ne!(
-                handle.sig, sig,
-                "Signature returned is not different"
-            ),
+            Content::FileRemoved(FileRemovedArgs { id, sig }) => {
+                assert_eq!(handle.id, id, "Wrong id returned");
+                assert_ne!(
+                    handle.sig, sig,
+                    "Signature returned is not different"
+                );
+            }
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -1049,7 +1102,11 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileContents(FileContentsArgs { contents }) => {
+            Content::FileContents(FileContentsArgs {
+                id: arg_id,
+                contents,
+            }) => {
+                assert_eq!(id, arg_id, "Wrong id returned");
                 assert_eq!(contents, file_contents);
             }
             x => panic!("Bad content: {:?}", x),
@@ -1150,7 +1207,11 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs { sig: cur_sig }) => {
+            Content::FileSigChanged(FileSigChangedArgs {
+                id: cur_id,
+                sig: cur_sig,
+            }) => {
+                assert_eq!(cur_id, id);
                 assert_eq!(cur_sig, sig);
             }
             x => panic!("Bad content: {:?}", x),
@@ -1191,7 +1252,11 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileWritten(FileWrittenArgs { sig: new_sig }) => {
+            Content::FileWritten(FileWrittenArgs {
+                id: cur_id,
+                sig: new_sig,
+            }) => {
+                assert_eq!(cur_id, id, "Wrong id returned");
                 assert_ne!(new_sig, sig);
 
                 use std::io::{Seek, SeekFrom};
@@ -1282,7 +1347,11 @@ mod tests {
         .unwrap();
 
         match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs { sig: cur_sig }) => {
+            Content::FileSigChanged(FileSigChangedArgs {
+                id: cur_id,
+                sig: cur_sig,
+            }) => {
+                assert_eq!(cur_id, id, "Wrong id returned");
                 assert_eq!(cur_sig, sig);
             }
             x => panic!("Bad content: {:?}", x),
@@ -1354,7 +1423,13 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::DirCreated(DirCreatedArgs {}) => (),
+            Content::DirCreated(DirCreatedArgs { path }) => {
+                assert_eq!(
+                    path,
+                    dir_path.to_string_lossy().to_string(),
+                    "Wrong path returned"
+                );
+            }
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -1388,7 +1463,11 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::DirCreated(DirCreatedArgs {}) => (),
+            Content::DirCreated(DirCreatedArgs { path }) => assert_eq!(
+                path,
+                dir_path.to_string_lossy().to_string(),
+                "Wrong path returned"
+            ),
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -1486,7 +1565,18 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::DirRenamed(DirRenamedArgs {}) => (),
+            Content::DirRenamed(DirRenamedArgs { from, to }) => {
+                assert_eq!(
+                    from,
+                    from_dir.as_ref().to_string_lossy().to_string(),
+                    "Wrong from path returned"
+                );
+                assert_eq!(
+                    to,
+                    to_dir.to_string_lossy().to_string(),
+                    "Wrong to path returned"
+                );
+            }
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -1562,7 +1652,11 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::DirRemoved(DirRemovedArgs {}) => (),
+            Content::DirRemoved(DirRemovedArgs { path }) => assert_eq!(
+                path,
+                dir.as_ref().to_string_lossy().to_string(),
+                "Wrong path returned"
+            ),
             x => panic!("Bad content: {:?}", x),
         }
     }
@@ -1642,7 +1736,11 @@ mod tests {
         );
 
         match content.unwrap() {
-            Content::DirRemoved(DirRemovedArgs {}) => (),
+            Content::DirRemoved(DirRemovedArgs { path }) => assert_eq!(
+                path,
+                dir.as_ref().to_string_lossy().to_string(),
+                "Wrong path returned"
+            ),
             x => panic!("Bad content: {:?}", x),
         }
     }
