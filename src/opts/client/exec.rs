@@ -22,6 +22,10 @@ pub struct ExecCommand {
     /// not terminating the process if the client disconnects
     pub detached: bool,
 
+    #[clap(long)]
+    /// If provided, changes the current working directory for the new process
+    pub current_dir: Option<String>,
+
     #[clap(
         long,
         parse(try_from_str = parsers::parse_duration_millis),

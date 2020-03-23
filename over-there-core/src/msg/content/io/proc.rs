@@ -7,6 +7,9 @@ pub struct DoExecProcArgs {
     pub stdin: bool,
     pub stdout: bool,
     pub stderr: bool,
+
+    /// If provided, sets the current directory where the proc will be executed
+    pub current_dir: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]

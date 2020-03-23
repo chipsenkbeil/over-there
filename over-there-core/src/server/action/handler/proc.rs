@@ -25,18 +25,32 @@ where
         stdin,
         stdout,
         stderr,
+        current_dir,
     } = args;
 
     let make_pipe = |yes| if yes { Stdio::piped() } else { Stdio::null() };
 
-    match Command::new(command)
-        .args(args)
+    let mut cmd = Command::new(command);
+    cmd.args(args)
         .stdin(make_pipe(*stdin))
         .stdout(make_pipe(*stdout))
         .stderr(make_pipe(*stderr))
-        .kill_on_drop(true)
-        .spawn()
-    {
+        .kill_on_drop(true);
+
+    // If provided a directory to change to, set that with the command
+    if let Some(dir) = current_dir {
+        // NOTE: It is recommended to canonicalize the path before applying
+        //       it to ensure that it is absolute as platforms can apply
+        //       relative or absolute differently otherwise
+        match tokio::fs::canonicalize(dir).await {
+            Ok(dir) => {
+                cmd.current_dir(dir);
+            }
+            Err(x) => return respond(Content::IoError(From::from(x))).await,
+        }
+    }
+
+    match cmd.spawn() {
         Ok(child) => {
             let local_proc = LocalProc::new(child).spawn();
             let id = local_proc.id();
@@ -254,6 +268,7 @@ mod tests {
                 stdin: false,
                 stdout: false,
                 stderr: false,
+                current_dir: None,
             },
             |c| {
                 content = Some(c);
@@ -274,6 +289,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn do_exec_proc_should_set_current_dir_if_provided() {
+        let tempdir = tempfile::tempdir().expect("Failed to create temp dir");
+        let state = Arc::new(ServerState::default());
+        let mut content: Option<Content> = None;
+
+        do_exec_proc(
+            Arc::clone(&state),
+            &DoExecProcArgs {
+                command: String::from("touch"),
+                args: vec![String::from("test-file")],
+                stdin: false,
+                stdout: false,
+                stderr: false,
+                current_dir: Some(
+                    tempdir.as_ref().to_string_lossy().to_string(),
+                ),
+            },
+            |c| {
+                content = Some(c);
+                async { Ok(()) }
+            },
+        )
+        .await
+        .unwrap();
+
+        match content.unwrap() {
+            Content::ProcStarted(_) => (),
+            x => panic!("Bad content: {:?}", x),
+        }
+
+        // Give above some time to fully execute
+        tokio::time::delay_for(Duration::from_millis(50)).await;
+
+        let path = tempdir.as_ref().join("test-file");
+        assert!(path.exists());
+    }
+
+    #[tokio::test]
     async fn do_exec_proc_should_send_error_if_process_does_not_exist() {
         let state = Arc::new(ServerState::default());
         let mut content: Option<Content> = None;
@@ -286,6 +339,7 @@ mod tests {
                 stdin: false,
                 stdout: false,
                 stderr: false,
+                current_dir: None,
             },
             |c| {
                 content = Some(c);

@@ -431,19 +431,40 @@ impl ConnectedClient {
         command: String,
         args: Vec<String>,
     ) -> Result<ProcStartedArgs, ExecAskError> {
-        self.ask_exec_proc_with_streams(command, args, true, true, true)
+        self.ask_exec_proc_with_options(command, args, true, true, true, None)
             .await
+    }
+
+    /// Requests to execute a process on the server, providing support to
+    /// send lines of text via stdin and reading back lines of text via
+    /// stdout and stderr
+    pub async fn ask_exec_proc_with_current_dir(
+        &mut self,
+        command: String,
+        args: Vec<String>,
+        current_dir: String,
+    ) -> Result<ProcStartedArgs, ExecAskError> {
+        self.ask_exec_proc_with_options(
+            command,
+            args,
+            true,
+            true,
+            true,
+            Some(current_dir),
+        )
+        .await
     }
 
     /// Requests to execute a process on the server, indicating whether to
     /// ignore or use stdin, stdout, and stderr
-    pub async fn ask_exec_proc_with_streams(
+    pub async fn ask_exec_proc_with_options(
         &mut self,
         command: String,
         args: Vec<String>,
         stdin: bool,
         stdout: bool,
         stderr: bool,
+        current_dir: Option<String>,
     ) -> Result<ProcStartedArgs, ExecAskError> {
         let result = self
             .ask(Msg::from(Content::DoExecProc(DoExecProcArgs {
@@ -452,6 +473,7 @@ impl ConnectedClient {
                 stdin,
                 stdout,
                 stderr,
+                current_dir,
             })))
             .await;
 

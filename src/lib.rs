@@ -224,7 +224,14 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
         }
         client::Subcommand::Exec(c) => {
             let proc = client
-                .ask_exec_proc(c.command.clone(), c.args.clone())
+                .ask_exec_proc_with_options(
+                    c.command.clone(),
+                    c.args.clone(),
+                    true,
+                    true,
+                    true,
+                    c.current_dir.clone(),
+                )
                 .await?
                 .into();
             process_proc(
