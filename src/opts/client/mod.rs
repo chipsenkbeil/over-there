@@ -8,6 +8,7 @@ pub mod version;
 use super::CommonOpts;
 use crate::format::FormatOption;
 use clap::Clap;
+use std::path::PathBuf;
 use strum::VariantNames;
 
 #[derive(Clap, Debug)]
@@ -97,6 +98,16 @@ pub struct ClientCommand {
     /// formats will always yield a status output
     #[clap(long)]
     pub exit_print: bool,
+
+    /// If provided, will redirect stdout as a result of an operation to the
+    /// file specified by the provided path
+    #[clap(long)]
+    pub redirect_stdout: Option<PathBuf>,
+
+    /// If provided, will redirect stderr as a result of an operation to the
+    /// file specified by the provided path
+    #[clap(long)]
+    pub redirect_stderr: Option<PathBuf>,
 
     #[clap(flatten)]
     pub opts: CommonOpts,
