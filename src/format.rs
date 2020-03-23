@@ -1,3 +1,4 @@
+use over_there_core::Content;
 use serde::Serialize;
 use strum_macros::{EnumString, EnumVariantNames};
 
@@ -43,6 +44,19 @@ where
     Ok(text)
 }
 
+/// Creates a `String` using the given `format_option` and `content`,
+/// falling back to the `fallback` function to render human-readable text.
+pub fn format_content<F>(
+    format_option: FormatOption,
+    content: Content,
+    fallback: F,
+) -> FormatResult
+where
+    F: FnOnce(Content) -> FormatResult,
+{
+    format(format_option, content, fallback)
+}
+
 /// Formats `serializeable_data` using the given `format_option`, falling back
 /// to the `fallback` function to render human-readable text, and prints to
 /// stdout with a newline.
@@ -60,4 +74,18 @@ where
     println!("{}", text);
 
     Ok(())
+}
+
+/// Formats `content` using the given `format_option`, falling back
+/// to the `fallback` function to render human-readable text, and prints to
+/// stdout with a newline.
+pub fn format_content_println<F>(
+    format_option: FormatOption,
+    content: Content,
+    fallback: F,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: FnOnce(Content) -> FormatResult,
+{
+    format_println(format_option, content, fallback)
 }
