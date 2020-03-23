@@ -86,10 +86,8 @@ where
     A: Authenticator + Send + Sync + Clone + Default + 'static,
     B: Bicrypter + Send + Sync + Clone + Default + 'static,
 {
-    let internal_buffer_size = cmd.opts.internal_buffer_size;
-    let packet_ttl = cmd.opts.packet_ttl;
-
-    // Attempt to resolve provided address
+    // Attempt to resolve provided address, filtering out IPv4 if looking for
+    // IPv6 and vice versa, selecting very first match in resolution
     let maybe_resolved_addr = net::lookup_host(cmd.addr.clone())
         .await?
         .find(|x| x.is_ipv6() == cmd.ipv6);
@@ -113,8 +111,8 @@ where
         .authenticator(authenticator)
         .bicrypter(bicrypter)
         .transport(transport)
-        .buffer(internal_buffer_size)
-        .packet_ttl(packet_ttl)
+        .buffer(cmd.opts.internal_buffer_size)
+        .packet_ttl(cmd.opts.packet_ttl)
         .build()
         .map_err(|x| {
             io::Error::new(
@@ -202,8 +200,6 @@ where
     A: Authenticator + Send + Sync + Clone + Default + 'static,
     B: Bicrypter + Send + Sync + Clone + Default + 'static,
 {
-    let internal_buffer_size = cmd.opts.internal_buffer_size;
-    let packet_ttl = cmd.opts.packet_ttl;
     let addrs = over_there_wire::net::make_addr_list(
         cmd.addr.ip(),
         vec![cmd.addr.port()],
@@ -223,8 +219,8 @@ where
         .file_ttl(cmd.untouched_file_ttl)
         .proc_ttl(cmd.untouched_proc_ttl)
         .dead_proc_ttl(cmd.dead_proc_ttl)
-        .buffer(internal_buffer_size)
-        .packet_ttl(packet_ttl);
+        .buffer(cmd.opts.internal_buffer_size)
+        .packet_ttl(cmd.opts.packet_ttl);
 
     // Change our process's current working directory if specified
     if let Some(path) = cmd.working_dir.as_ref() {
