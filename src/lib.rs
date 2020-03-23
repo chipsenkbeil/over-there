@@ -9,27 +9,12 @@ use opts::{
     server::ServerCommand,
     Command,
 };
-use over_there_core::{ConnectedClient, RemoteProc};
+use over_there_core::{content::ErrorArgs, ConnectedClient, RemoteProc};
 use std::error::Error;
 use std::io;
 use std::time::{Duration, Instant};
 
 pub use opts::Opts;
-
-#[derive(Debug, derive_more::Display, serde::Serialize, serde::Deserialize)]
-struct SerError {
-    error: String,
-}
-
-impl std::error::Error for SerError {}
-
-impl From<Box<dyn Error>> for SerError {
-    fn from(x: Box<dyn Error>) -> Self {
-        Self {
-            error: format!("{}", x),
-        }
-    }
-}
 
 /// Primary entrypoint to run the executable based on input options
 pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
@@ -38,7 +23,8 @@ pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
         Command::Client(c) => match (c.format, run_client(c).await) {
             (FormatOption::Human, Err(x)) => return Err(x),
             (f, Err(x)) => {
-                format::format_println(f, SerError::from(x), |_| {
+                let x: ErrorArgs = x.into();
+                format::format_println(f, x, |_| {
                     Err("Cannot write human-readable stderr to stdout".into())
                 })?
             }

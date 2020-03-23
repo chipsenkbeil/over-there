@@ -17,11 +17,11 @@ pub enum FormatOption {
     Sexpression,
 }
 
-/// Creates a `String` using the given `format_option` and `args`, falling
-/// back to the `fallback` function to render human-readable text.
+/// Creates a `String` using the given `format_option` and `serializable_data`,
+/// falling back to the `fallback` function to render human-readable text.
 pub fn format<T, F>(
     format_option: FormatOption,
-    args: T,
+    serializable_data: T,
     fallback: F,
 ) -> FormatResult
 where
@@ -30,30 +30,32 @@ where
 {
     let text = match format_option {
         #[cfg(feature = "format-json")]
-        FormatOption::Json => serde_json::to_string(&args)?,
+        FormatOption::Json => serde_json::to_string(&serializable_data)?,
 
         #[cfg(feature = "format-sexpression")]
-        FormatOption::Sexpression => serde_lexpr::to_string(&args)?,
+        FormatOption::Sexpression => {
+            serde_lexpr::to_string(&serializable_data)?
+        }
 
-        FormatOption::Human => fallback(args)?,
+        FormatOption::Human => fallback(serializable_data)?,
     };
 
     Ok(text)
 }
 
-/// Formats `args` using the given `format_option`, falling back to the
-/// `fallback` function to render human-readable text, and prints to
+/// Formats `serializeable_data` using the given `format_option`, falling back
+/// to the `fallback` function to render human-readable text, and prints to
 /// stdout with a newline.
 pub fn format_println<T, F>(
     format_option: FormatOption,
-    args: T,
+    serializeable_data: T,
     fallback: F,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     T: Serialize,
     F: FnOnce(T) -> FormatResult,
 {
-    let text = format(format_option, args, fallback)?;
+    let text = format(format_option, serializeable_data, fallback)?;
 
     println!("{}", text);
 

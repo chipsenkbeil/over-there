@@ -37,11 +37,6 @@ over-there-core = { path = "./over-there-core" }
 over-there-utils = { path = "./over-there-utils" }
 over-there-wire = { path = "./over-there-wire" }
 
-[dependencies.derive_more]
-version = "0.99.3"
-default-features = false
-features = ["display"]
-
 [dependencies.tokio]
 version = "0.2.13"
 default-features = false
