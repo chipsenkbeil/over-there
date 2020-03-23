@@ -92,6 +92,12 @@ pub struct ClientCommand {
     )]
     pub format: FormatOption,
 
+    /// If provided, will print out exit information when an exec process
+    /// exits (or is killed) if using human-readable format; all other
+    /// formats will always yield a status output
+    #[clap(long)]
+    pub exit_print: bool,
+
     #[clap(flatten)]
     pub opts: CommonOpts,
 }

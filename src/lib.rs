@@ -233,6 +233,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                 c.post_exit_duration,
                 proc,
                 cmd.format,
+                cmd.exit_print,
             )
             .await;
         }
@@ -244,6 +245,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                 c.post_exit_duration,
                 proc,
                 cmd.format,
+                cmd.exit_print,
             )
             .await;
         }
@@ -266,6 +268,7 @@ async fn process_proc(
     post_exit_duration: Duration,
     proc: RemoteProc,
     format: FormatOption,
+    exit_print: bool,
 ) {
     let stdin = io::stdin();
     let mut exit_instant: Option<Instant> = None;
@@ -330,15 +333,22 @@ async fn process_proc(
                 .await
                 .expect("Failed to get proc status");
             if !status.is_alive {
-                format_content_println!(
-                    format,
-                    Content::ProcStatus(status),
-                    Err(format!(
-                        "Proc {} exited with code {}",
-                        status.id,
-                        status.exit_code.unwrap_or_default(),
-                    )),
-                )
+                match format {
+                    FormatOption::Human if exit_print => {
+                        eprintln!(
+                            "Proc {} exited with code {}",
+                            status.id,
+                            status.exit_code.unwrap_or_default(),
+                        );
+                        Ok(())
+                    }
+                    FormatOption::Human => Ok(()),
+                    f => format::format_content_println(
+                        f,
+                        Content::ProcStatus(status),
+                        |_| Err("unreachable!".into()),
+                    ),
+                }
                 .expect("Failed to format status");
                 exit_instant = Some(Instant::now());
             }
