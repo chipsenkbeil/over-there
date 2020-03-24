@@ -10,15 +10,15 @@ use tokio::sync::Mutex;
 pub mod constants {
     use std::time::Duration;
 
-    /// Default file ttl (time since last touched) before until closing (30 min)
-    pub const DEFAULT_FILE_TTL: Duration = Duration::from_secs(60 * 30);
+    /// Default file ttl (time since last touched) before until closing (2.5 min)
+    pub const DEFAULT_FILE_TTL: Duration = Duration::from_secs(60 * 2.5 as u64);
 
-    /// Default proc ttl (time since last touched) before until killing (60 min)
-    pub const DEFAULT_PROC_TTL: Duration = Duration::from_secs(60 * 60);
+    /// Default proc ttl (time since last touched) before until killing (5 min)
+    pub const DEFAULT_PROC_TTL: Duration = Duration::from_secs(60 * 5);
 
     /// Default proc ttl (time since last touched) since a proc has exited
-    /// before removing from queriable state (5 min)
-    pub const DEFAULT_DEAD_PROC_TTL: Duration = Duration::from_secs(60 * 5);
+    /// before removing from queriable state (30 sec)
+    pub const DEFAULT_DEAD_PROC_TTL: Duration = Duration::from_secs(30);
 }
 
 #[derive(Debug)]

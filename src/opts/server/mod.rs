@@ -27,25 +27,27 @@ pub struct ServerCommand {
     #[clap(
         long, 
         parse(try_from_str = parsers::parse_duration_secs), 
-        default_value = "1800",
+        default_value = "150",
     )]
-    /// Time (in seconds) to keep file open with no activity before closing
+    /// Minimum time (in seconds) to keep file open with no activity before
+    /// closing
     pub untouched_file_ttl: Duration,
-
-    #[clap(
-        long, 
-        parse(try_from_str = parsers::parse_duration_secs), 
-        default_value = "3600",
-    )]
-    /// Time (in seconds) to keep process running with no remote communication
-    /// before killing
-    pub untouched_proc_ttl: Duration,
 
     #[clap(
         long, 
         parse(try_from_str = parsers::parse_duration_secs), 
         default_value = "300",
     )]
-    /// Time (in seconds) to keep dead process status available before removing
+    /// Minimum time (in seconds) to keep process running with no remote
+    /// communication before killing
+    pub untouched_proc_ttl: Duration,
+
+    #[clap(
+        long, 
+        parse(try_from_str = parsers::parse_duration_secs), 
+        default_value = "30",
+    )]
+    /// Minimum time (in seconds) to keep dead process status available before
+    /// removing
     pub dead_proc_ttl: Duration,
 }
