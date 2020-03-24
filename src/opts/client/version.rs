@@ -1,5 +1,5 @@
 use clap::Clap;
 
-#[derive(Clap, Debug)]
 /// Retrieve the version of the server
+#[derive(Clap, Debug)]
 pub struct VersionCommand {}

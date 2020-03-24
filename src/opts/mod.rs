@@ -9,9 +9,11 @@ use strum::VariantNames;
 
 #[derive(Clap, Debug)]
 pub enum Command {
+    /// Launches a client to talk to a server
     #[clap(name = "client")]
     Client(client::ClientCommand),
 
+    /// Launches a server to listen for incoming requests
     #[clap(name = "server")]
     Server(server::ServerCommand),
 }
@@ -34,19 +36,20 @@ pub struct Opts {
 
 #[derive(Clap, Debug)]
 pub struct CommonOpts {
-    #[clap(long, parse(try_from_str = parsers::parse_duration_secs), default_value = "5")]
     /// Timeout (in seconds) used when communicating across the network
+    #[clap(long, parse(try_from_str = parsers::parse_duration_secs), default_value = "5")]
     pub timeout: Duration,
 
-    #[clap(long, parse(try_from_str = parsers::parse_duration_secs), default_value = "300")]
     /// Time-to-live (in seconds) for collecting all packets in a msg
+    #[clap(long, parse(try_from_str = parsers::parse_duration_secs), default_value = "300")]
     pub packet_ttl: Duration,
 
-    #[clap(long, default_value = "1000")]
     /// Maximum size of internal message passing between reader, writer, and
     /// executor loops
+    #[clap(long, default_value = "1000")]
     pub internal_buffer_size: usize,
 
+    /// Transportation medium used in communication between client and server
     #[clap(
         short = "t", 
         long, 
@@ -56,6 +59,7 @@ pub struct CommonOpts {
     )]
     pub transport: types::Transport,
 
+    /// Type of encryption to use with incoming and outgoing msgs
     #[clap(
         short = "e", 
         long, 
@@ -63,13 +67,13 @@ pub struct CommonOpts {
         possible_values = &types::Encryption::VARIANTS, 
         default_value = "None"
     )]
-    /// Type of encryption to use with incoming and outgoing msgs
     pub encryption: types::Encryption,
 
-    #[clap(long = "ekey")]
     /// Key to use with encryption
+    #[clap(long = "ekey")]
     pub encryption_key: Option<String>,
 
+    /// Type of authentication to use with incoming and outgoing msgs
     #[clap(
         short = "a",
         long,
@@ -77,10 +81,9 @@ pub struct CommonOpts {
         possible_values = &types::Authentication::VARIANTS,
         default_value = "None"
     )]
-    /// Type of authentication to use with incoming and outgoing msgs
     pub authentication: types::Authentication,
 
-    #[clap(long = "akey")]
     /// Key to use with encryption
+    #[clap(long = "akey")]
     pub authentication_key: Option<String>,
 }

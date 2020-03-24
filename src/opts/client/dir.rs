@@ -1,49 +1,49 @@
 use clap::Clap;
 
-#[derive(Clap, Debug)]
 /// List files and directories at the root of the server
+#[derive(Clap, Debug)]
 pub struct ListRootDirCommand {}
 
-#[derive(Clap, Debug)]
 /// List files and directories at the specified path
+#[derive(Clap, Debug)]
 pub struct ListDirCommand {
-    #[clap(parse(try_from_str))]
     /// Path to the directory whose contents to list
+    #[clap(parse(try_from_str))]
     pub path: String,
 }
 
-#[derive(Clap, Debug)]
 /// Creates a directory at the specified path on the server
+#[derive(Clap, Debug)]
 pub struct CreateDirCommand {
-    #[clap(parse(try_from_str))]
     /// Path to the directory to create
+    #[clap(parse(try_from_str))]
     pub path: String,
 
-    #[clap(short, long)]
     /// If provided, will make parent directories as needed
+    #[clap(short, long)]
     pub parents: bool,
 }
 
-#[derive(Clap, Debug)]
 /// Moves a directory at the specified path on the server to the new path
+#[derive(Clap, Debug)]
 pub struct MoveDirCommand {
-    #[clap(parse(try_from_str))]
     /// Origin path of the directory to move
+    #[clap(parse(try_from_str))]
     pub from: String,
 
-    #[clap(parse(try_from_str))]
     /// Destination path of the directory to move
+    #[clap(parse(try_from_str))]
     pub to: String,
 }
 
-#[derive(Clap, Debug)]
 /// Removes a directory at the specified path on the server
+#[derive(Clap, Debug)]
 pub struct RemoveDirCommand {
-    #[clap(parse(try_from_str))]
     /// Path of the directory to remove
+    #[clap(parse(try_from_str))]
     pub path: String,
 
-    #[clap(long)]
     /// If provided, will remove directory even if not empty
+    #[clap(long)]
     pub non_empty: bool,
 }

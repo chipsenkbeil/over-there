@@ -70,8 +70,8 @@ pub enum Subcommand {
     InternalDebug(internal_debug::InternalDebugCommand),
 }
 
-#[derive(Clap, Debug)]
 /// Perform some operation as the client to some remote server instance
+#[derive(Clap, Debug)]
 pub struct ClientCommand {
     #[clap(subcommand)]
     pub command: Subcommand,
@@ -84,6 +84,7 @@ pub struct ClientCommand {
     #[clap(short = "6", long)]
     pub ipv6: bool,
 
+    /// Specifies the format of output from the client
     #[clap(
         short, 
         long, 

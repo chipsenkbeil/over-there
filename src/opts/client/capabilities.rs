@@ -1,5 +1,5 @@
 use clap::Clap;
 
-#[derive(Clap, Debug)]
 /// Retrieve the capabilities of the server
+#[derive(Clap, Debug)]
 pub struct CapabilitiesCommand {}

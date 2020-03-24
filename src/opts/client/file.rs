@@ -1,41 +1,41 @@
 use clap::Clap;
 
-#[derive(Clap, Debug)]
 /// Writes a file on the server
+#[derive(Clap, Debug)]
 pub struct WriteFileCommand {
-    #[clap(parse(try_from_str))]
     /// Path to the file
+    #[clap(parse(try_from_str))]
     pub path: String,
 
-    #[clap(parse(try_from_str))]
     /// Content to write to the file
+    #[clap(parse(try_from_str))]
     pub contents: String,
 }
 
-#[derive(Clap, Debug)]
 /// Reads a file on the server
+#[derive(Clap, Debug)]
 pub struct ReadFileCommand {
-    #[clap(parse(try_from_str))]
     /// Path to the file
+    #[clap(parse(try_from_str))]
     pub path: String,
 }
 
-#[derive(Clap, Debug)]
 /// Moves a file at the specified path on the server to the new path
+#[derive(Clap, Debug)]
 pub struct MoveFileCommand {
-    #[clap(parse(try_from_str))]
     /// Origin path of the file to move
+    #[clap(parse(try_from_str))]
     pub from: String,
 
-    #[clap(parse(try_from_str))]
     /// Destination path of the file to move
+    #[clap(parse(try_from_str))]
     pub to: String,
 }
 
-#[derive(Clap, Debug)]
 /// Removes a file at the specified path on the server
+#[derive(Clap, Debug)]
 pub struct RemoveFileCommand {
-    #[clap(parse(try_from_str))]
     /// Path of the file to remove
+    #[clap(parse(try_from_str))]
     pub path: String,
 }
