@@ -1,10 +1,12 @@
 [package]
 name = "over-there-utils"
-version = "0.1.0"
-authors = ["Chip Senkbeil <chipsenkbeil@fb.com>"]
+description = "Utility library for use with other over-there libraries"
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version = "0.1.0"
+authors = ["Chip Senkbeil <chip@senkbeil.org>"]
+license = "MIT OR Apache-2.0"
+homepage = "https://over-there.dev"
+repository = "https://github.com/chipsenkbeil/over-there/tree/master/over-there-utils"
 
 [dependencies]
 serde = { version = "1.0.103", features = ["derive"] }

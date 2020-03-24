@@ -13,11 +13,12 @@ where
     debug!("do_get_capabilities");
     respond(Content::Capabilities(CapabilitiesArgs {
         capabilities: vec![
-            // TODO: Custom
+            #[cfg(feature = "custom")]
+            Capability::Custom,
             #[cfg(feature = "exec")]
             Capability::Exec,
             #[cfg(feature = "file-system")]
-            Capability::File,
+            Capability::FileSystem,
             #[cfg(feature = "forward")]
             Capability::Forward,
         ],
@@ -44,8 +45,9 @@ mod tests {
             content.unwrap(),
             Content::Capabilities(CapabilitiesArgs {
                 capabilities: vec![
+                    Capability::Custom,
                     Capability::Exec,
-                    Capability::File,
+                    Capability::FileSystem,
                     Capability::Forward
                 ],
             })

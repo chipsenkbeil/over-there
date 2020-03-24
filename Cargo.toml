@@ -1,9 +1,15 @@
 [package]
 name = "over-there"
-description = "Tool to enable file editing, software management, and execution remotely from \"over there.\""
+description = "Tool to enable file editing, software management, and execution remotely \"over there.\""
+edition = "2018"
 version = "0.1.0"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
-edition = "2018"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+homepage = "https://over-there.io"
+repository = "https://github.com/chipsenkbeil/over-there"
+categories = ["command-line-utilities"]
+keywords = ["cli", "network", "client", "server", "remote"]
 
 [workspace]
 members = [

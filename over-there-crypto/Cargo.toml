@@ -1,14 +1,20 @@
 [package]
 name = "over-there-crypto"
+description = "Cryptographic library for use with other over-there libraries"
+edition = "2018"
 version = "0.1.0"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
-edition = "2018"
+license = "MIT OR Apache-2.0"
+homepage = "https://over-there.dev"
+repository = "https://github.com/chipsenkbeil/over-there/tree/master/over-there-crypto"
+categories = ["cryptography"]
+keywords = ["api", "crypto", "encryption", "security"]
 
 [dependencies]
 rand = "0.7.3"
 aead = "0.2.0"
-aes-gcm = "0.3.0"
-aes-gcm-siv = "0.3.0"
+aes-gcm = "0.5.0"
+aes-gcm-siv = "0.4.1"
 aes-siv = "0.2.0"
 lru = "0.4.3"
 serde = { version = "1.0.103", features = ["derive"] }

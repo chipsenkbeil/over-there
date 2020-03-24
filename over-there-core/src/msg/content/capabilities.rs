@@ -2,8 +2,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum Capability {
+    /// Can send custom binary blobs
+    Custom,
+
     /// Can do file operations
-    File,
+    FileSystem,
 
     /// Can execute programs
     Exec,
