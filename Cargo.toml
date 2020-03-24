@@ -2,7 +2,7 @@
 name = "over-there"
 description = "Tool to enable file editing, software management, and execution remotely \"over there.\""
 edition = "2018"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
@@ -37,11 +37,11 @@ strum_macros = "0.17.1"
 serde = { version = "1.0.103", features = ["derive"] }
 serde_json = { version = "1.0.48", optional = true }
 serde-lexpr = { version = "0.1.1", optional = true }
-over-there-auth = { path = "./over-there-auth", version = "0.1.0" }
-over-there-crypto = { path = "./over-there-crypto", version = "0.1.0" }
-over-there-core = { path = "./over-there-core", version = "0.1.0" }
-over-there-utils = { path = "./over-there-utils", version = "0.1.0" }
-over-there-wire = { path = "./over-there-wire", version = "0.1.0" }
+over-there-auth = { path = "./over-there-auth", version = "0.1.0-alpha.1" }
+over-there-crypto = { path = "./over-there-crypto", version = "0.1.0-alpha.1" }
+over-there-core = { path = "./over-there-core", version = "0.1.0-alpha.1" }
+over-there-utils = { path = "./over-there-utils", version = "0.1.0-alpha.1" }
+over-there-wire = { path = "./over-there-wire", version = "0.1.0-alpha.1" }
 
 [dependencies.tokio]
 version = "0.2.13"

@@ -2,7 +2,7 @@
 name = "over-there-derive"
 description = "Macro library for use with other over-there libraries"
 edition = "2018"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 license = "MIT OR Apache-2.0"
 homepage = "https://over-there.dev"

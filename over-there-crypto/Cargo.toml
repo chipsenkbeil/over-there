@@ -2,7 +2,7 @@
 name = "over-there-crypto"
 description = "Cryptographic library for use with other over-there libraries"
 edition = "2018"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 license = "MIT OR Apache-2.0"
 homepage = "https://over-there.dev"
@@ -19,4 +19,4 @@ aes-siv = "0.2.0"
 lru = "0.4.3"
 serde = { version = "1.0.103", features = ["derive"] }
 serde-big-array = "0.2.0"
-over-there-derive = { path = "../over-there-derive", version = "0.1.0" }
+over-there-derive = { path = "../over-there-derive", version = "0.1.0-alpha.1" }

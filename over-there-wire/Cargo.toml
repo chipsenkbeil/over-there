@@ -2,7 +2,7 @@
 name = "over-there-wire"
 description = "Wire transport library for use with other over-there libraries"
 edition = "2018"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 license = "MIT OR Apache-2.0"
 homepage = "https://over-there.dev"
@@ -16,10 +16,10 @@ log = "0.4.8"
 rand = "0.7.3"
 futures-io = "0.3.4"
 tokio = { version = "0.2.13", features = ["io-util", "tcp", "udp"] }
-over-there-auth = { path = "../over-there-auth", version = "0.1.0" }
-over-there-crypto = { path = "../over-there-crypto", version = "0.1.0" }
-over-there-derive = { path = "../over-there-derive", version = "0.1.0" }
-over-there-utils = { path = "../over-there-utils", version = "0.1.0" }
+over-there-auth = { path = "../over-there-auth", version = "0.1.0-alpha.1" }
+over-there-crypto = { path = "../over-there-crypto", version = "0.1.0-alpha.1" }
+over-there-derive = { path = "../over-there-derive", version = "0.1.0-alpha.1" }
+over-there-utils = { path = "../over-there-utils", version = "0.1.0-alpha.1" }
 
 [dev-dependencies]
 env_logger = "0.7.1"
