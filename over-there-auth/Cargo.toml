@@ -5,7 +5,6 @@ edition = "2018"
 version = "0.1.0"
 authors = ["Chip Senkbeil <chip@senkbeil.org>"]
 license = "MIT OR Apache-2.0"
-readme = "README.md"
 homepage = "https://over-there.dev"
 repository = "https://github.com/chipsenkbeil/over-there/tree/master/over-there-auth"
 categories = ["authentication"]
@@ -16,4 +15,4 @@ hmac = "0.7.1"
 sha2 = "0.8.1"
 serde = { version = "1.0.103", features = ["derive"] }
 serde-big-array = "0.2.0"
-over-there-utils = { path = "../over-there-utils" }
+over-there-utils = { path = "../over-there-utils", version = "0.1.0" }

@@ -10,4 +10,4 @@ repository = "https://github.com/chipsenkbeil/over-there/tree/master/over-there-
 
 [dependencies]
 serde = { version = "1.0.103", features = ["derive"] }
-over-there-derive = { path = "../over-there-derive" }
+over-there-derive = { path = "../over-there-derive", version = "0.1.0" }
