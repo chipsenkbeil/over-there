@@ -1,7 +1,12 @@
 mod handler;
 
 use crate::{
-    msg::{content::Content, Header, Msg, MsgError},
+    msg::{
+        content::{
+            Content, ErrorArgs, LazilyTransformedContent, SequenceResultsArgs,
+        },
+        Header, Msg, MsgError,
+    },
     server::state::ServerState,
 };
 use log::trace;
@@ -11,11 +16,12 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 
 #[derive(Debug, Error)]
 pub enum ActionError {
     MsgError(MsgError),
+    NestedSequenceFound,
     RespondFailed,
     Unknown,
 }
@@ -73,7 +79,7 @@ impl Executor<Vec<u8>> {
         let origin_sender = self.origin_sender;
         let addr = origin_sender.addr;
 
-        Self::execute_impl(state, msg, addr, move |content: Content| {
+        Self::execute_impl(state, msg.content, addr, move |content: Content| {
             trace!("Response: {:?}", content);
             Self::respond(content, header, origin_sender)
         })
@@ -114,7 +120,7 @@ impl Executor<(Vec<u8>, SocketAddr)> {
         let origin_sender = self.origin_sender;
         let addr = origin_sender.addr;
 
-        Self::execute_impl(state, msg, addr, move |content: Content| {
+        Self::execute_impl(state, msg.content, addr, move |content: Content| {
             trace!("Response: {:?}", content);
             Self::respond(content, header, origin_sender)
         })
@@ -140,7 +146,7 @@ impl<T> Executor<T> {
     /// Evaluate a message's content and potentially respond using the provided responder
     async fn execute_impl<F, R>(
         state: Arc<ServerState>,
-        msg: Msg,
+        mut content: Content,
         origin: SocketAddr,
         do_respond: F,
     ) -> Result<(), ActionError>
@@ -148,10 +154,33 @@ impl<T> Executor<T> {
         F: FnOnce(Content) -> R,
         R: Future<Output = Result<(), ActionError>>,
     {
-        trace!("Executing msg: {:?}", msg);
+        trace!("Executing content: {:?}", content);
         update_origin_last_touched(Arc::clone(&state), origin).await;
 
-        match &msg.content {
+        match &mut content {
+            Content::DoSequence(args) => {
+                Self::execute_sequence(
+                    state,
+                    args.operations.drain(..).collect(),
+                    do_respond,
+                )
+                .await
+            }
+            _ => Self::execute_impl_normal(state, content, do_respond).await,
+        }
+    }
+
+    /// Evaluate content that does not contain other content (e.g. sequence)
+    async fn execute_impl_normal<F, R>(
+        state: Arc<ServerState>,
+        content: Content,
+        do_respond: F,
+    ) -> Result<(), ActionError>
+    where
+        F: FnOnce(Content) -> R,
+        R: Future<Output = Result<(), ActionError>>,
+    {
+        match &content {
             Content::Heartbeat => {
                 handler::heartbeat::heartbeat(do_respond).await
             }
@@ -221,8 +250,80 @@ impl<T> Executor<T> {
                 handler::internal_debug::internal_debug(state, args, do_respond)
                     .await
             }
+            Content::DoSequence(_) => Err(ActionError::NestedSequenceFound),
             _ => Err(ActionError::Unknown),
         }
+    }
+
+    /// Evaluate a sequence of requests by executing the first, piping its
+    /// output response to the second, and repeat until completed or an error
+    /// occurs
+    ///
+    /// If
+    async fn execute_sequence<F, R>(
+        state: Arc<ServerState>,
+        operations: Vec<LazilyTransformedContent>,
+        do_respond: F,
+    ) -> Result<(), ActionError>
+    where
+        F: FnOnce(Content) -> R,
+        R: Future<Output = Result<(), ActionError>>,
+    {
+        let (mut tx, mut rx) = tokio::sync::mpsc::channel(operations.len());
+        let mut results: Vec<Content> = Vec::new();
+
+        for op in operations.iter() {
+            // Transform our operation using the previous content
+            // if available, or do no transformation at all
+            let op_content = match rx.try_recv() {
+                Ok(c) => {
+                    // Perform the transformation
+                    let x = op.transform_with_base(&c);
+
+                    // Now that we're done, store the previous outgoing
+                    // content as one of our results
+                    results.push(c);
+
+                    x
+                }
+                _ => Ok(op.clone().into_raw_content()),
+            };
+
+            // If the transformation failed, send a generic error
+            // message back to the client and conclude the action
+            if let Err(x) = op_content {
+                return do_respond(Content::Error(ErrorArgs {
+                    msg: format!("Sequencing failed: {}", x),
+                }))
+                .await;
+            }
+
+            // Execute the operation -- note that we don't allow nested sequencing
+            let mut tx_2 = tx.clone();
+            let do_respond = move |content: Content| {
+                use futures::TryFutureExt;
+                async move {
+                    tx_2.send(content)
+                        .map_err(|_| ActionError::RespondFailed)
+                        .await
+                }
+            };
+            let result = Self::execute_impl_normal(
+                Arc::clone(&state),
+                op_content.unwrap(),
+                do_respond,
+            )
+            .await;
+
+            if result.is_err() {
+                return result;
+            }
+        }
+
+        // With all operations complete, we want to send a response back with
+        // them included
+        do_respond(Content::SequenceResults(SequenceResultsArgs { results }))
+            .await
     }
 }
 

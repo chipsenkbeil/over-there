@@ -15,7 +15,7 @@ pub enum Capability {
     Forward,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
 pub struct CapabilitiesArgs {
     pub capabilities: Vec<Capability>,
 }

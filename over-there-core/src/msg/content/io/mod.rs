@@ -19,6 +19,16 @@ pub struct IoErrorArgs {
     pub error_kind: io::ErrorKind,
 }
 
+impl Default for IoErrorArgs {
+    fn default() -> Self {
+        Self {
+            description: Default::default(),
+            os_code: Default::default(),
+            error_kind: io::ErrorKind::Other,
+        }
+    }
+}
+
 impl IoErrorArgs {
     pub fn invalid_file_id(id: u32) -> Self {
         Self {

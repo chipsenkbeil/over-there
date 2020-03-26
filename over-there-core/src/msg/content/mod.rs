@@ -1,17 +1,23 @@
+mod batch;
 mod capabilities;
 mod custom;
 mod error;
 mod forward;
 mod internal_debug;
 mod io;
+mod sequence;
+mod transform;
 mod version;
 
+pub use batch::*;
 pub use capabilities::*;
 pub use custom::*;
 pub use error::*;
 pub use forward::*;
 pub use internal_debug::*;
 pub use io::*;
+pub use sequence::*;
+pub use transform::*;
 pub use version::*;
 
 use serde::{Deserialize, Serialize};
@@ -170,6 +176,18 @@ pub enum Content {
     /// This will be returned upon a generic error being encountered on the
     /// server (like an HTTP 500 error)
     Error(ErrorArgs),
+
+    /// This will be sent to execute a collection of operations sequentially
+    DoSequence(DoSequenceArgs),
+
+    /// This will be returned upon successfully evaluating a sequence of operations
+    SequenceResults(SequenceResultsArgs),
+
+    /// This will be sent to execute a collection of operations in parallel
+    DoBatch(DoBatchArgs),
+
+    /// This will be returned upon successfully evaluating a batch of operations in parallel
+    BatchResults(BatchResultsArgs),
 
     /// This will be sent to either the client or server and the msg will be
     /// passed along to the associated address (if possible)

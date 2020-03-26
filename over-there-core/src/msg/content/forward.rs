@@ -7,3 +7,15 @@ pub struct ForwardArgs {
     pub address: SocketAddr,
     pub msg: Box<Msg>,
 }
+
+impl Default for ForwardArgs {
+    fn default() -> Self {
+        Self {
+            address: SocketAddr::V4(std::net::SocketAddrV4::new(
+                std::net::Ipv4Addr::UNSPECIFIED,
+                0,
+            )),
+            msg: Box::new(Msg::from(super::Content::Heartbeat)),
+        }
+    }
+}
