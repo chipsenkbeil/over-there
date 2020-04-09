@@ -16,12 +16,11 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 #[derive(Debug, Error)]
 pub enum ActionError {
     MsgError(MsgError),
-    NestedSequenceFound,
     RespondFailed,
     Unknown,
 }
