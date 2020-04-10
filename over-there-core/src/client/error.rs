@@ -5,18 +5,18 @@ use std::error::Error;
 use std::io;
 
 #[derive(Serialize, Deserialize, Debug, Display, PartialEq, Eq)]
-pub enum TellError {
+pub enum SendError {
     EncodingFailed,
     SendFailed,
 }
 
-impl Error for TellError {}
+impl Error for SendError {}
 
-impl From<AskError> for Option<TellError> {
+impl From<AskError> for Option<SendError> {
     fn from(error: AskError) -> Self {
         match error {
-            AskError::EncodingFailed => Some(TellError::EncodingFailed),
-            AskError::SendFailed => Some(TellError::SendFailed),
+            AskError::EncodingFailed => Some(SendError::EncodingFailed),
+            AskError::SendFailed => Some(SendError::SendFailed),
             _ => None,
         }
     }
@@ -40,11 +40,11 @@ pub enum AskError {
 
 impl Error for AskError {}
 
-impl From<TellError> for AskError {
-    fn from(error: TellError) -> Self {
+impl From<SendError> for AskError {
+    fn from(error: SendError) -> Self {
         match error {
-            TellError::EncodingFailed => Self::EncodingFailed,
-            TellError::SendFailed => Self::SendFailed,
+            SendError::EncodingFailed => Self::EncodingFailed,
+            SendError::SendFailed => Self::SendFailed,
         }
     }
 }

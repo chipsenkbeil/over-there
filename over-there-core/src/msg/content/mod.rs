@@ -26,7 +26,19 @@ use serde::{Deserialize, Serialize};
 #[serde(untagged)]
 pub enum Content {
     Request(Request),
-    Response(Response),
+    Reply(Reply),
+}
+
+impl From<Request> for Content {
+    fn from(request: Request) -> Self {
+        Self::Request(request)
+    }
+}
+
+impl From<Reply> for Content {
+    fn from(reply: Reply) -> Self {
+        Self::Reply(reply)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -160,155 +172,135 @@ pub enum Request {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "type", content = "payload")]
-pub enum Response {
+pub enum Reply {
     // ------------------------------------------------------------------------
     // Heartbeats are used to ensure remote instances are alive
-    #[serde(rename = "heartbeat_response")]
+    #[serde(rename = "heartbeat_reply")]
     Heartbeat,
 
     // ------------------------------------------------------------------------
     // Version information to ensure that we don't have
     // conflicting functionality
-    #[serde(rename = "version_response")]
+    #[serde(rename = "version_reply")]
     Version(VersionArgs),
 
     // ------------------------------------------------------------------------
     // Capability information to convey what is available remotely, which
     // can differ based on enabled features at compile time
-    #[serde(rename = "capabilities_response")]
+    #[serde(rename = "capabilities_reply")]
     Capabilities(CapabilitiesArgs),
 
     // ------------------------------------------------------------------------
     // Dir-based operations such as creating and listing entries
     /// This will be returned upon creating a directory
-    #[serde(rename = "create_dir_response")]
-    DirCreated(DirCreatedArgs),
+    #[serde(rename = "create_dir_reply")]
+    DirCreated(Result<DirCreatedArgs, FileError>),
 
     /// This will be returned upon renaming a directory
-    #[serde(rename = "rename_dir_response")]
-    DirRenamed(DirRenamedArgs),
+    #[serde(rename = "rename_dir_reply")]
+    DirRenamed(Result<DirRenamedArgs, FileError>),
 
     /// This will be returned upon removing a directory
-    #[serde(rename = "remove_dir_response")]
-    DirRemoved(DirRemovedArgs),
+    #[serde(rename = "remove_dir_reply")]
+    DirRemoved(Result<DirRemovedArgs, FileError>),
 
     /// This will be returned upon collecting the list of files and directories
     /// at the provided path
-    #[serde(rename = "list_dir_contents_response")]
-    DirContentsList(DirContentsListArgs),
+    #[serde(rename = "list_dir_contents_reply")]
+    DirContentsList(Result<DirContentsListArgs, FileError>),
 
     // ------------------------------------------------------------------------
     // File-based operations such as reading and writing
     /// This will be returned upon a file being opened or refreshed
-    #[serde(rename = "open_file_response")]
-    FileOpened(FileOpenedArgs),
+    #[serde(rename = "open_file_reply")]
+    FileOpened(Result<FileOpenedArgs, FileError>),
 
     /// This will be returned upon a file being closed
-    #[serde(rename = "close_file_response")]
-    FileClosed(FileClosedArgs),
+    #[serde(rename = "close_file_reply")]
+    FileClosed(Result<FileClosedArgs, FileError>),
 
     /// This will be returned upon renaming a file
-    #[serde(rename = "rename_unopened_file_response")]
-    UnopenedFileRenamed(UnopenedFileRenamedArgs),
+    #[serde(rename = "rename_unopened_file_reply")]
+    UnopenedFileRenamed(Result<UnopenedFileRenamedArgs, FileError>),
 
     /// This will be returned upon renaming an open file
-    #[serde(rename = "rename_file_response")]
-    FileRenamed(FileRenamedArgs),
+    #[serde(rename = "rename_file_reply")]
+    FileRenamed(Result<FileRenamedArgs, FileError>),
 
     /// This will be returned upon removing a file
-    #[serde(rename = "remove_unopened_file_response")]
-    UnopenedFileRemoved(UnopenedFileRemovedArgs),
+    #[serde(rename = "remove_unopened_file_reply")]
+    UnopenedFileRemoved(Result<UnopenedFileRemovedArgs, FileError>),
 
     /// This will be returned upon removing an open file
-    #[serde(rename = "remove_file_response")]
-    FileRemoved(FileRemovedArgs),
+    #[serde(rename = "remove_file_reply")]
+    FileRemoved(Result<FileRemovedArgs, FileError>),
 
     /// This will be returned upon reading a file's contents
-    #[serde(rename = "read_file_response")]
-    FileContents(FileContentsArgs),
+    #[serde(rename = "read_file_reply")]
+    FileContents(Result<FileContentsArgs, FileError>),
 
     /// This will be returned upon writing a file's contents
     /// Contains the updated signature for the file
-    #[serde(rename = "write_file_response")]
-    FileWritten(FileWrittenArgs),
-
-    /// If a file operation fails due to the signature changing,
-    /// this will be returned
-    // TODO: How do I handle these cases? These are errors, so do
-    //       the arguments of all variants need to support Result
-    //       which can contain error types?
-    #[serde(rename = "file_sig_changed")]
-    FileSigChanged(FileSigChangedArgs),
+    #[serde(rename = "write_file_reply")]
+    FileWritten(Result<FileWrittenArgs, FileError>),
 
     // ------------------------------------------------------------------------
     // Program execution operations such as running and streaming
     /// This will be returned upon starting a process on the server, indicating
     /// success and providing an id for sending stdin and receiving stdout/stderr
-    #[serde(rename = "exec_proc_response")]
-    ProcStarted(ProcStartedArgs),
+    #[serde(rename = "exec_proc_reply")]
+    ProcStarted(Result<ProcStartedArgs, ExecError>),
 
     /// This will be returned upon successfully writing to stdin
-    #[serde(rename = "write_stdin_response")]
-    StdinWritten(StdinWrittenArgs),
+    #[serde(rename = "write_stdin_reply")]
+    StdinWritten(Result<StdinWrittenArgs, ExecError>),
 
     /// This will be returned upon receiving stdout from a remote process on
     /// the server, if enabled when first executing
-    #[serde(rename = "get_stdout_response")]
-    StdoutContents(StdoutContentsArgs),
+    #[serde(rename = "get_stdout_reply")]
+    StdoutContents(Result<StdoutContentsArgs, ExecError>),
 
     /// This will be returned upon receiving stderr from a remote process on
     /// the server, if enabled when first executing
-    #[serde(rename = "get_stderr_response")]
-    StderrContents(StderrContentsArgs),
+    #[serde(rename = "get_stderr_reply")]
+    StderrContents(Result<StderrContentsArgs, ExecError>),
+
+    /// This will be returned upon attempting to kill a process
+    // TODO: This is returned for two different types, killing a proc
+    //       and requesting status; should I make a duplicate for the proc
+    //       kill that has proc kill args?
+    #[serde(rename = "kill_proc_reply")]
+    ProcKilled(Result<ProcKilledArgs, ExecError>),
 
     /// This will be returned reporting the status of the process, indicating
     /// if still running or if has completed (and the exit code)
     // TODO: This is returned for two different types, killing a proc
     //       and requesting status; should I make a duplicate for the proc
     //       kill that has proc kill args?
-    #[serde(rename = "get_proc_status_response")]
-    ProcStatus(ProcStatusArgs),
+    #[serde(rename = "get_proc_status_reply")]
+    ProcStatus(Result<ProcStatusArgs, ExecError>),
 
     // ------------------------------------------------------------------------
     // Miscellaneous, adhoc messages
-    /// This will be returned upon encountering a generic IO error
-    // TODO: Similar to the sig mismatch error above, this is also an error
-    //       that could be returned for any of these responses; do we need to
-    //       separate these into their own Error enum that is used as the
-    //       error in a response? Do we change things like Forward(ForwardArgs) ->
-    //       Forward(Result<ForwardArgs, Error>)?
-    #[serde(rename = "io_error")]
-    IoError(IoErrorArgs),
-
-    /// This will be returned upon a generic error being encountered on the
-    /// server (like an HTTP 500 error)
-    // TODO: Similar to the sig mismatch error above, this is also an error
-    //       that could be returned for any of these responses; do we need to
-    //       separate these into their own Error enum that is used as the
-    //       error in a response? Do we change things like Forward(ForwardArgs) ->
-    //       Forward(Result<ForwardArgs, Error>)?
-    #[serde(rename = "error")]
-    Error(ErrorArgs),
-
     /// This will be returned upon successfully evaluating a sequence of operations
-    #[serde(rename = "sequence_response")]
+    #[serde(rename = "sequence_reply")]
     SequenceResults(SequenceResultsArgs),
 
     /// This will be returned upon successfully evaluating a batch of operations in parallel
-    #[serde(rename = "batch_response")]
+    #[serde(rename = "batch_reply")]
     BatchResults(BatchResultsArgs),
 
     /// This will be sent to either the client or server and the msg will be
     /// passed along to the associated address (if possible)
-    #[serde(rename = "forward_response")]
+    #[serde(rename = "forward_reply")]
     Forward(ForwardArgs),
 
     /// This will be sent in either direction to provide a custom content
     /// that would be evaluated through user-implemented handlers
-    #[serde(rename = "custom_response")]
-    Custom(CustomArgs),
+    #[serde(rename = "custom_reply")]
+    Custom(Result<CustomArgs, ErrorArgs>),
 
     /// For debugging purposes when needing to query the state of client/server
-    #[serde(rename = "internal_debug_response")]
-    InternalDebug(InternalDebugArgs),
+    #[serde(rename = "internal_debug_reply")]
+    InternalDebug(Result<InternalDebugArgs, ErrorArgs>),
 }

@@ -1,5 +1,5 @@
 use super::{
-    error::{AskError, ExecAskError, FileAskError, TellError},
+    error::{AskError, ExecAskError, FileAskError, SendError},
     file::RemoteFile,
     proc::RemoteProc,
     state::ClientState,
@@ -55,31 +55,32 @@ impl ConnectedClient {
     }
 
     /// Generic ask of the server that is expecting a response
-    pub async fn ask(&mut self, msg: Msg) -> Result<Msg, AskError> {
+    pub async fn ask(&mut self, request: Request) -> Result<Reply, AskError> {
         let timeout = self.timeout;
-        let (tx, rx) = oneshot::channel::<Result<Msg, AskError>>();
+        let (tx, rx) = oneshot::channel::<Result<Reply, AskError>>();
+        let msg = Msg::from(request);
 
         // Assign a synchronous callback that uses the oneshot channel to
         // get back the result
         self.state.lock().await.callback_manager.add_callback(
             msg.header.id,
-            |msg| {
-                let result = if let Content::Error(args) = &msg.content {
+            |reply| {
+                let result = if let Error(args) = &reply {
                     tx.send(Err(AskError::Failure {
                         msg: args.msg.to_string(),
                     }))
                 } else {
-                    tx.send(Ok(msg.clone()))
+                    tx.send(Ok(reply.clone()))
                 };
 
                 if result.is_err() {
-                    error!("Failed to trigger callback: {:?}", msg);
+                    error!("Failed to trigger callback: {:?}", reply);
                 }
             },
         );
 
         // Send the msg and report back an error if it occurs
-        self.tell(msg).await.map_err(AskError::from)?;
+        self.send_msg(msg).await.map_err(AskError::from)?;
 
         tokio::time::timeout(timeout, rx)
             .await
@@ -88,18 +89,22 @@ impl ConnectedClient {
     }
 
     /// Sends a msg to the server, not expecting a response
-    pub async fn tell(&mut self, msg: Msg) -> Result<(), TellError> {
+    pub async fn tell(&mut self, request: Request) -> Result<(), SendError> {
+        self.send_msg(Msg::from(request)).await
+    }
+
+    async fn send_msg(&mut self, msg: Msg) -> Result<(), SendError> {
         trace!("Sending to {}: {:?}", self.remote_addr, msg);
 
-        let data = msg.to_vec().map_err(|_| TellError::EncodingFailed)?;
+        let data = msg.to_vec().map_err(|_| SendError::EncodingFailed)?;
         match &mut self.event_manager {
             Either::Left(m) => {
-                m.send(data).await.map_err(|_| TellError::SendFailed)
+                m.send(data).await.map_err(|_| SendError::SendFailed)
             }
             Either::Right(m) => m
                 .send_to(data, self.remote_addr)
                 .await
-                .map_err(|_| TellError::SendFailed),
+                .map_err(|_| SendError::SendFailed),
         }
     }
 

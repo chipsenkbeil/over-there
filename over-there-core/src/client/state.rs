@@ -1,5 +1,5 @@
 use super::file::RemoteFile;
-use crate::msg::Msg;
+use crate::msg::content::Reply;
 use over_there_utils::CallbackManager;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -15,7 +15,7 @@ pub struct ClientState {
     /// Contains mapping of ids to remote files
     pub files: HashMap<u32, RemoteFile>,
 
-    pub callback_manager: CallbackManager<Msg>,
+    pub callback_manager: CallbackManager<Reply>,
 }
 
 impl Default for ClientState {
