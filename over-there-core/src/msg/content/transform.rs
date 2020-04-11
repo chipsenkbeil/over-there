@@ -94,12 +94,13 @@ mod tests {
 
     #[test]
     fn transform_with_base_should_fail_if_rule_value_not_found() {
-        let raw_content = Content::DoReadFile(Default::default());
-        let base_content = Content::FileOpened(FileOpenedArgs {
+        let raw_content =
+            Content::from(Request::DoReadFile(Default::default()));
+        let base_content = Content::from(Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        });
+        }));
 
         let lazy_content = LazilyTransformedContent {
             raw_content: raw_content.clone(),
@@ -120,10 +121,11 @@ mod tests {
 
     #[test]
     fn transform_with_base_should_fail_if_rule_value_not_scalar() {
-        let raw_content = Content::DoReadFile(Default::default());
-        let base_content = Content::Custom(CustomArgs {
+        let raw_content =
+            Content::from(Request::DoReadFile(Default::default()));
+        let base_content = Content::from(Reply::Custom(CustomArgs {
             data: vec![0, 1, 2],
-        });
+        }));
 
         let lazy_content = LazilyTransformedContent {
             raw_content: raw_content.clone(),
@@ -144,12 +146,12 @@ mod tests {
 
     #[test]
     fn transform_with_base_should_fail_if_rule_value_not_same_type_as_path() {
-        let raw_content = Content::Error(Default::default());
-        let base_content = Content::FileOpened(FileOpenedArgs {
+        let raw_content = Content::from(Reply::Error(Default::default()));
+        let base_content = Content::from(Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        });
+        }));
 
         let lazy_content = LazilyTransformedContent {
             raw_content: raw_content.clone(),
@@ -170,12 +172,13 @@ mod tests {
 
     #[test]
     fn transform_with_base_should_return_raw_content_if_rule_path_missing() {
-        let raw_content = Content::DoReadFile(Default::default());
-        let base_content = Content::FileOpened(FileOpenedArgs {
+        let raw_content =
+            Content::from(Request::DoReadFile(Default::default()));
+        let base_content = Content::from(Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        });
+        }));
 
         let lazy_content = LazilyTransformedContent {
             raw_content: raw_content.clone(),
@@ -198,12 +201,13 @@ mod tests {
 
     #[test]
     fn transform_with_base_should_succeed_if_able_to_replace_path_with_value() {
-        let raw_content = Content::DoReadFile(Default::default());
-        let base_content = Content::FileOpened(FileOpenedArgs {
+        let raw_content =
+            Content::from(Request::DoReadFile(Default::default()));
+        let base_content = Content::from(Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        });
+        }));
 
         let lazy_content = LazilyTransformedContent {
             raw_content: raw_content.clone(),
@@ -221,7 +225,7 @@ mod tests {
             .expect("Failed to transform");
 
         match transformed_content {
-            Content::DoReadFile(args) => {
+            Request::DoReadFile(args) => {
                 assert_eq!(args.id, 123);
                 assert_ne!(args.sig, 456);
             }
@@ -231,12 +235,13 @@ mod tests {
 
     #[test]
     fn transform_with_base_should_apply_rules_in_sequence() {
-        let raw_content = Content::DoReadFile(Default::default());
-        let base_content = Content::FileOpened(FileOpenedArgs {
+        let raw_content =
+            Content::from(Request::DoReadFile(Default::default()));
+        let base_content = Content::from(Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        });
+        }));
 
         let lazy_content = LazilyTransformedContent {
             raw_content: raw_content.clone(),
@@ -263,7 +268,7 @@ mod tests {
             .expect("Failed to transform");
 
         match transformed_content {
-            Content::DoReadFile(args) => {
+            Request::DoReadFile(args) => {
                 assert_eq!(args.id, 123);
                 assert_eq!(args.sig, 456);
             }

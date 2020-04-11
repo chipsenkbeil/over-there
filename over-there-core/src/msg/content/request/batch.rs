@@ -6,9 +6,3 @@ use serde::{Deserialize, Serialize};
 pub struct DoBatchArgs {
     pub operations: Vec<Content>,
 }
-
-/// Represents arguments to a response of executing a batch of operations
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct BatchResultsArgs {
-    pub results: Vec<Content>,
-}

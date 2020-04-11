@@ -2,9 +2,7 @@ mod handler;
 
 use crate::{
     msg::{
-        content::{
-            Content, ErrorArgs, LazilyTransformedContent, SequenceResultsArgs,
-        },
+        content::{Content, LazilyTransformedContent, Reply, Request},
         Header, Msg, MsgError,
     },
     server::state::ServerState,
@@ -22,6 +20,7 @@ use tokio::sync::mpsc;
 pub enum ActionError {
     MsgError(MsgError),
     RespondFailed,
+    UnexpectedContent,
     Unknown,
 }
 
@@ -78,19 +77,19 @@ impl Executor<Vec<u8>> {
         let origin_sender = self.origin_sender;
         let addr = origin_sender.addr;
 
-        Self::execute_impl(state, msg.content, addr, move |content: Content| {
-            trace!("Response: {:?}", content);
-            Self::respond(content, header, origin_sender)
+        Self::execute_impl(state, msg.content, addr, move |reply: Reply| {
+            trace!("Reply: {:?}", reply);
+            Self::respond(reply, header, origin_sender)
         })
         .await
     }
 
     async fn respond(
-        content: Content,
+        reply: Reply,
         parent_header: Header,
         mut origin_sender: OriginSender<Vec<u8>>,
     ) -> Result<(), ActionError> {
-        let new_msg = Msg::from((content, parent_header));
+        let new_msg = Msg::from((reply, parent_header));
         let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
 
         origin_sender
@@ -119,15 +118,15 @@ impl Executor<(Vec<u8>, SocketAddr)> {
         let origin_sender = self.origin_sender;
         let addr = origin_sender.addr;
 
-        Self::execute_impl(state, msg.content, addr, move |content: Content| {
-            trace!("Response: {:?}", content);
-            Self::respond(content, header, origin_sender)
+        Self::execute_impl(state, msg.content, addr, move |reply: Reply| {
+            trace!("Reply: {:?}", reply);
+            Self::respond(reply, header, origin_sender)
         })
         .await
     }
 
     async fn respond(
-        content: Content,
+        reply: Reply,
         parent_header: Header,
         mut origin_sender: OriginSender<(Vec<u8>, SocketAddr)>,
     ) -> Result<(), ActionError> {
@@ -150,106 +149,109 @@ impl<T> Executor<T> {
         do_respond: F,
     ) -> Result<(), ActionError>
     where
-        F: FnOnce(Content) -> R,
+        F: FnOnce(Reply) -> R,
         R: Future<Output = Result<(), ActionError>>,
     {
         trace!("Executing content: {:?}", content);
+        let request =
+            content.to_request().ok_or(ActionError::UnexpectedContent)?;
+
         update_origin_last_touched(Arc::clone(&state), origin).await;
 
-        match &mut content {
-            Content::DoSequence(args) => {
-                Self::execute_sequence(
-                    state,
-                    args.operations.drain(..).collect(),
-                    do_respond,
-                )
-                .await
-            }
-            _ => Self::execute_impl_normal(state, content, do_respond).await,
+        match &mut request {
+            // Content::DoSequence(args) => {
+            //     Self::execute_sequence(
+            //         state,
+            //         args.operations.drain(..).collect(),
+            //         do_respond,
+            //     )
+            //     .await
+            // }
+            _ => Self::execute_impl_normal(state, request, do_respond).await,
         }
     }
 
-    /// Evaluate content that does not contain other content (e.g. sequence)
+    /// Evaluate request that does not contain other request (e.g. sequence)
     async fn execute_impl_normal<F, R>(
         state: Arc<ServerState>,
-        content: Content,
+        request: Request,
         do_respond: F,
     ) -> Result<(), ActionError>
     where
-        F: FnOnce(Content) -> R,
+        F: FnOnce(Reply) -> R,
         R: Future<Output = Result<(), ActionError>>,
     {
-        match &content {
-            Content::Heartbeat => {
+        match &request {
+            Request::Heartbeat => {
                 handler::heartbeat::heartbeat(do_respond).await
             }
-            Content::DoGetVersion => {
+            Request::DoGetVersion => {
                 handler::version::do_get_version(do_respond).await
             }
-            Content::DoGetCapabilities => {
+            Request::DoGetCapabilities => {
                 handler::capabilities::do_get_capabilities(do_respond).await
             }
-            Content::DoOpenFile(args) => {
+            Request::DoOpenFile(args) => {
                 handler::fs::do_open_file(state, args, do_respond).await
             }
-            Content::DoCloseFile(args) => {
+            Request::DoCloseFile(args) => {
                 handler::fs::do_close_file(state, args, do_respond).await
             }
-            Content::DoRenameUnopenedFile(args) => {
+            Request::DoRenameUnopenedFile(args) => {
                 handler::fs::do_rename_unopened_file(state, args, do_respond)
                     .await
             }
-            Content::DoRenameFile(args) => {
+            Request::DoRenameFile(args) => {
                 handler::fs::do_rename_file(state, args, do_respond).await
             }
-            Content::DoRemoveUnopenedFile(args) => {
+            Request::DoRemoveUnopenedFile(args) => {
                 handler::fs::do_remove_unopened_file(state, args, do_respond)
                     .await
             }
-            Content::DoRemoveFile(args) => {
+            Request::DoRemoveFile(args) => {
                 handler::fs::do_remove_file(state, args, do_respond).await
             }
-            Content::DoReadFile(args) => {
+            Request::DoReadFile(args) => {
                 handler::fs::do_read_file(state, args, do_respond).await
             }
-            Content::DoWriteFile(args) => {
+            Request::DoWriteFile(args) => {
                 handler::fs::do_write_file(state, args, do_respond).await
             }
-            Content::DoCreateDir(args) => {
+            Request::DoCreateDir(args) => {
                 handler::fs::do_create_dir(state, args, do_respond).await
             }
-            Content::DoRenameDir(args) => {
+            Request::DoRenameDir(args) => {
                 handler::fs::do_rename_dir(state, args, do_respond).await
             }
-            Content::DoRemoveDir(args) => {
+            Request::DoRemoveDir(args) => {
                 handler::fs::do_remove_dir(state, args, do_respond).await
             }
-            Content::DoListDirContents(args) => {
+            Request::DoListDirRequests(args) => {
                 handler::fs::do_list_dir_contents(state, args, do_respond).await
             }
-            Content::DoExecProc(args) => {
+            Request::DoExecProc(args) => {
                 handler::proc::do_exec_proc(state, args, do_respond).await
             }
-            Content::DoWriteStdin(args) => {
+            Request::DoWriteStdin(args) => {
                 handler::proc::do_write_stdin(state, args, do_respond).await
             }
-            Content::DoGetStdout(args) => {
+            Request::DoGetStdout(args) => {
                 handler::proc::do_get_stdout(state, args, do_respond).await
             }
-            Content::DoGetStderr(args) => {
+            Request::DoGetStderr(args) => {
                 handler::proc::do_get_stderr(state, args, do_respond).await
             }
-            Content::DoGetProcStatus(args) => {
+            Request::DoGetProcStatus(args) => {
                 handler::proc::do_get_proc_status(state, args, do_respond).await
             }
-            Content::DoKillProc(args) => {
+            Request::DoKillProc(args) => {
                 handler::proc::do_kill_proc(state, args, do_respond).await
             }
-            Content::InternalDebug(args) => {
+            Request::InternalDebug(args) => {
                 handler::internal_debug::internal_debug(state, args, do_respond)
                     .await
             }
-            Content::DoSequence(_) => Err(ActionError::NestedSequenceFound),
+            Request::DoSequence(_) => Err(ActionError::NestedSequenceFound),
             _ => Err(ActionError::Unknown),
         }
     }
@@ -265,7 +267,7 @@ impl<T> Executor<T> {
         do_respond: F,
     ) -> Result<(), ActionError>
     where
-        F: FnOnce(Content) -> R,
+        F: FnOnce(Reply) -> R,
         R: Future<Output = Result<(), ActionError>>,
     {
         let (mut tx, mut rx) = tokio::sync::mpsc::channel(operations.len());
@@ -291,9 +293,9 @@ impl<T> Executor<T> {
             // If the transformation failed, send a generic error
             // message back to the client and conclude the action
             if let Err(x) = op_content {
-                return do_respond(Content::Error(ErrorArgs {
-                    msg: format!("Sequencing failed: {}", x),
-                }))
+                return do_respond(Reply::Error(
+                    format!("Sequencing failed: {}", x).into(),
+                ))
                 .await;
             }
 
