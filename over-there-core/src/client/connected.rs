@@ -6,7 +6,10 @@ use super::{
 };
 use crate::{
     event::{AddrEventManager, EventManager},
-    msg::{content::*, Msg},
+    msg::{
+        content::{reply, reply::ReplyError, request, Reply, Request},
+        Msg,
+    },
 };
 use log::{error, trace};
 use over_there_utils::Either;
@@ -65,10 +68,8 @@ impl ConnectedClient {
         self.state.lock().await.callback_manager.add_callback(
             msg.header.id,
             |reply| {
-                let result = if let Error(args) = &reply {
-                    tx.send(Err(AskError::Failure {
-                        msg: args.msg.to_string(),
-                    }))
+                let result = if let Reply::Error(x) = &reply {
+                    tx.send(Err(AskError::Failure { msg: x.to_string() }))
                 } else {
                     tx.send(Ok(reply.clone()))
                 };
@@ -109,10 +110,11 @@ impl ConnectedClient {
     }
 
     /// Requests the version from the server
-    pub async fn ask_version(&mut self) -> Result<VersionArgs, AskError> {
-        let msg = self.ask(Msg::from(Content::DoGetVersion)).await?;
-        match msg.content {
-            Content::Version(args) => Ok(args),
+    pub async fn ask_version(
+        &mut self,
+    ) -> Result<reply::VersionArgs, AskError> {
+        match self.ask(Request::Version).await? {
+            Reply::Version(args) => Ok(args),
             x => Err(make_ask_error(x)),
         }
     }
@@ -120,10 +122,9 @@ impl ConnectedClient {
     /// Requests the capabilities from the server
     pub async fn ask_capabilities(
         &mut self,
-    ) -> Result<CapabilitiesArgs, AskError> {
-        let msg = self.ask(Msg::from(Content::DoGetCapabilities)).await?;
-        match msg.content {
-            Content::Capabilities(args) => Ok(args),
+    ) -> Result<reply::CapabilitiesArgs, AskError> {
+        match self.ask(Request::Capabilities).await? {
+            Reply::Capabilities(args) => Ok(args),
             x => Err(make_ask_error(x)),
         }
     }
@@ -133,20 +134,20 @@ impl ConnectedClient {
         &mut self,
         path: String,
         include_components: bool,
-    ) -> Result<DirCreatedArgs, FileAskError> {
+    ) -> Result<reply::DirCreatedArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoCreateDir(DoCreateDirArgs {
+            .ask(Request::DoCreateDir(request::DoCreateDirArgs {
                 path,
                 include_components,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::DirCreated(args) => Ok(args),
+        match result.unwrap() {
+            Reply::DirCreated(args) => Ok(args),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -156,20 +157,17 @@ impl ConnectedClient {
         &mut self,
         from: String,
         to: String,
-    ) -> Result<DirRenamedArgs, FileAskError> {
+    ) -> Result<reply::DirRenamedArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRenameDir(DoRenameDirArgs {
-                from,
-                to,
-            })))
+            .ask(Request::DoRenameDir(request::DoRenameDirArgs { from, to }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::DirRenamed(args) => Ok(args),
+        match result.unwrap() {
+            Reply::DirRenamed(args) => Ok(args),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -179,20 +177,20 @@ impl ConnectedClient {
         &mut self,
         path: String,
         non_empty: bool,
-    ) -> Result<DirRemovedArgs, FileAskError> {
+    ) -> Result<reply::DirRemovedArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRemoveDir(DoRemoveDirArgs {
+            .ask(Request::DoRemoveDir(request::DoRemoveDirArgs {
                 path,
                 non_empty,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::DirRemoved(args) => Ok(args),
+        match result.unwrap() {
+            Reply::DirRemoved(args) => Ok(args),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -200,7 +198,7 @@ impl ConnectedClient {
     /// Requests to get a list of the root directory's contents on the server
     pub async fn ask_list_root_dir_contents(
         &mut self,
-    ) -> Result<DirContentsListArgs, FileAskError> {
+    ) -> Result<reply::DirContentsListArgs, FileAskError> {
         self.ask_list_dir_contents(String::from(".")).await
     }
 
@@ -208,19 +206,19 @@ impl ConnectedClient {
     pub async fn ask_list_dir_contents(
         &mut self,
         path: String,
-    ) -> Result<DirContentsListArgs, FileAskError> {
+    ) -> Result<reply::DirContentsListArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoListDirContents(
-                DoListDirContentsArgs { path },
-            )))
+            .ask(Request::DoListDirContents(request::DoListDirContentsArgs {
+                path,
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::DirContentsList(args) => Ok(args),
+        match result.unwrap() {
+            Reply::DirContentsList(args) => Ok(args),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -230,7 +228,7 @@ impl ConnectedClient {
     pub async fn ask_open_file(
         &mut self,
         path: String,
-    ) -> Result<FileOpenedArgs, FileAskError> {
+    ) -> Result<reply::FileOpenedArgs, FileAskError> {
         self.ask_open_file_with_options(path, true, true, true)
             .await
     }
@@ -242,22 +240,22 @@ impl ConnectedClient {
         create: bool,
         write: bool,
         read: bool,
-    ) -> Result<FileOpenedArgs, FileAskError> {
+    ) -> Result<reply::FileOpenedArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoOpenFile(DoOpenFileArgs {
+            .ask(Request::DoOpenFile(request::DoOpenFileArgs {
                 path: path.clone(),
                 create_if_missing: create,
                 write_access: write,
                 read_access: read,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::FileOpened(args) => Ok(args),
+        match result.unwrap() {
+            Reply::FileOpened(args) => Ok(args),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -266,20 +264,20 @@ impl ConnectedClient {
     pub async fn ask_close_file(
         &mut self,
         file: &RemoteFile,
-    ) -> Result<FileClosedArgs, FileAskError> {
+    ) -> Result<reply::FileClosedArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoCloseFile(DoCloseFileArgs {
+            .ask(Request::DoCloseFile(request::DoCloseFileArgs {
                 id: file.id,
                 sig: file.sig,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::FileClosed(args) => Ok(args),
+        match result.unwrap() {
+            Reply::FileClosed(args) => Ok(args),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -289,21 +287,21 @@ impl ConnectedClient {
         &mut self,
         file: &mut RemoteFile,
         to: String,
-    ) -> Result<FileRenamedArgs, FileAskError> {
+    ) -> Result<reply::FileRenamedArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRenameFile(DoRenameFileArgs {
+            .ask(Request::DoRenameFile(request::DoRenameFileArgs {
                 id: file.id,
                 sig: file.sig,
                 to,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::FileRenamed(args) => {
+        match result.unwrap() {
+            Reply::FileRenamed(args) => {
                 file.sig = args.sig;
                 Ok(args)
             }
@@ -316,19 +314,19 @@ impl ConnectedClient {
         &mut self,
         from: String,
         to: String,
-    ) -> Result<UnopenedFileRenamedArgs, FileAskError> {
+    ) -> Result<reply::UnopenedFileRenamedArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRenameUnopenedFile(
-                DoRenameUnopenedFileArgs { from, to },
-            )))
+            .ask(Request::DoRenameUnopenedFile(
+                request::DoRenameUnopenedFileArgs { from, to },
+            ))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::UnopenedFileRenamed(args) => Ok(args),
+        match result.unwrap() {
+            Reply::UnopenedFileRenamed(args) => Ok(args),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -337,20 +335,20 @@ impl ConnectedClient {
     pub async fn ask_remove_file(
         &mut self,
         file: &mut RemoteFile,
-    ) -> Result<FileRemovedArgs, FileAskError> {
+    ) -> Result<reply::FileRemovedArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRemoveFile(DoRemoveFileArgs {
+            .ask(Request::DoRemoveFile(request::DoRemoveFileArgs {
                 id: file.id,
                 sig: file.sig,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::FileRemoved(args) => {
+        match result.unwrap() {
+            Reply::FileRemoved(args) => {
                 file.sig = args.sig;
                 Ok(args)
             }
@@ -362,19 +360,19 @@ impl ConnectedClient {
     pub async fn ask_remove_unopened_file(
         &mut self,
         path: String,
-    ) -> Result<UnopenedFileRemovedArgs, FileAskError> {
+    ) -> Result<reply::UnopenedFileRemovedArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoRemoveUnopenedFile(
-                DoRemoveUnopenedFileArgs { path },
-            )))
+            .ask(Request::DoRemoveUnopenedFile(
+                request::DoRemoveUnopenedFileArgs { path },
+            ))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::UnopenedFileRemoved(args) => Ok(args),
+        match result.unwrap() {
+            Reply::UnopenedFileRemoved(args) => Ok(args),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -383,20 +381,20 @@ impl ConnectedClient {
     pub async fn ask_read_file(
         &mut self,
         file: &RemoteFile,
-    ) -> Result<FileContentsArgs, FileAskError> {
+    ) -> Result<reply::FileContentsArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoReadFile(DoReadFileArgs {
+            .ask(Request::DoReadFile(request::DoReadFileArgs {
                 id: file.id,
                 sig: file.sig,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::FileContents(args) => Ok(args),
+        match result.unwrap() {
+            Reply::FileContents(args) => Ok(args),
             x => Err(make_file_ask_error(x)),
         }
     }
@@ -406,21 +404,21 @@ impl ConnectedClient {
         &mut self,
         file: &mut RemoteFile,
         contents: &[u8],
-    ) -> Result<FileWrittenArgs, FileAskError> {
+    ) -> Result<reply::FileWrittenArgs, FileAskError> {
         let result = self
-            .ask(Msg::from(Content::DoWriteFile(DoWriteFileArgs {
+            .ask(Request::DoWriteFile(request::DoWriteFileArgs {
                 id: file.id,
                 sig: file.sig,
                 contents: contents.to_vec(),
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::FileWritten(args) => {
+        match result.unwrap() {
+            Reply::FileWritten(args) => {
                 file.sig = args.sig;
                 Ok(args)
             }
@@ -435,7 +433,7 @@ impl ConnectedClient {
         &mut self,
         command: String,
         args: Vec<String>,
-    ) -> Result<ProcStartedArgs, ExecAskError> {
+    ) -> Result<reply::ProcStartedArgs, ExecAskError> {
         self.ask_exec_proc_with_options(command, args, true, true, true, None)
             .await
     }
@@ -448,7 +446,7 @@ impl ConnectedClient {
         command: String,
         args: Vec<String>,
         current_dir: String,
-    ) -> Result<ProcStartedArgs, ExecAskError> {
+    ) -> Result<reply::ProcStartedArgs, ExecAskError> {
         self.ask_exec_proc_with_options(
             command,
             args,
@@ -470,24 +468,24 @@ impl ConnectedClient {
         stdout: bool,
         stderr: bool,
         current_dir: Option<String>,
-    ) -> Result<ProcStartedArgs, ExecAskError> {
+    ) -> Result<reply::ProcStartedArgs, ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoExecProc(DoExecProcArgs {
+            .ask(Request::DoExecProc(request::DoExecProcArgs {
                 command,
                 args,
                 stdin,
                 stdout,
                 stderr,
                 current_dir,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::ProcStarted(args) => Ok(args),
+        match result.unwrap() {
+            Reply::ProcStarted(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
@@ -497,20 +495,20 @@ impl ConnectedClient {
         &mut self,
         proc: &RemoteProc,
         input: &[u8],
-    ) -> Result<StdinWrittenArgs, ExecAskError> {
+    ) -> Result<reply::StdinWrittenArgs, ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoWriteStdin(DoWriteStdinArgs {
+            .ask(Request::DoWriteStdin(request::DoWriteStdinArgs {
                 id: proc.id,
                 input: input.to_vec(),
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::StdinWritten(args) => Ok(args),
+        match result.unwrap() {
+            Reply::StdinWritten(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
@@ -520,19 +518,19 @@ impl ConnectedClient {
     pub async fn ask_get_stdout(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<StdoutContentsArgs, ExecAskError> {
+    ) -> Result<reply::StdoutContentsArgs, ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoGetStdout(DoGetStdoutArgs {
+            .ask(Request::DoGetStdout(request::DoGetStdoutArgs {
                 id: proc.id,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::StdoutContents(args) => Ok(args),
+        match result.unwrap() {
+            Reply::StdoutContents(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
@@ -542,19 +540,19 @@ impl ConnectedClient {
     pub async fn ask_get_stderr(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<StderrContentsArgs, ExecAskError> {
+    ) -> Result<reply::StderrContentsArgs, ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoGetStderr(DoGetStderrArgs {
+            .ask(Request::DoGetStderr(request::DoGetStderrArgs {
                 id: proc.id,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::StderrContents(args) => Ok(args),
+        match result.unwrap() {
+            Reply::StderrContents(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
@@ -563,19 +561,19 @@ impl ConnectedClient {
     pub async fn ask_proc_status(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<ProcStatusArgs, ExecAskError> {
+    ) -> Result<reply::ProcStatusArgs, ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoGetProcStatus(DoGetProcStatusArgs {
+            .ask(Request::DoGetProcStatus(request::DoGetProcStatusArgs {
                 id: proc.id,
-            })))
+            }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::ProcStatus(args) => Ok(args),
+        match result.unwrap() {
+            Reply::ProcStatus(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
@@ -584,22 +582,20 @@ impl ConnectedClient {
     pub async fn ask_proc_kill(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<ProcStatusArgs, ExecAskError> {
+    ) -> Result<reply::ProcStatusArgs, ExecAskError> {
         let result = self
-            .ask(Msg::from(Content::DoKillProc(DoKillProcArgs {
-                id: proc.id,
-            })))
+            .ask(Request::DoKillProc(request::DoKillProcArgs { id: proc.id }))
             .await;
 
         if let Err(x) = result {
             return Err(From::from(x));
         }
 
-        match result.unwrap().content {
-            Content::ProcStatus(args) if args.is_alive => {
+        match result.unwrap() {
+            Reply::ProcStatus(args) if args.is_alive => {
                 Err(ExecAskError::FailedToKill)
             }
-            Content::ProcStatus(args) => Ok(args),
+            Reply::ProcStatus(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
@@ -607,37 +603,38 @@ impl ConnectedClient {
     /// Requests internal state of server
     pub async fn ask_internal_debug(
         &mut self,
-    ) -> Result<InternalDebugArgs, AskError> {
+    ) -> Result<reply::InternalDebugArgs, AskError> {
         let result = self
-            .ask(Msg::from(Content::InternalDebug(InternalDebugArgs {
+            .ask(Request::InternalDebug(request::InternalDebugArgs {
                 input: vec![],
-                output: vec![],
-            })))
+            }))
             .await?;
 
-        match result.content {
-            Content::InternalDebug(args) => Ok(args),
+        match result {
+            Reply::InternalDebug(args) => Ok(args),
             x => Err(make_ask_error(x)),
         }
     }
 }
 
-fn make_file_ask_error(x: Content) -> FileAskError {
+fn make_file_ask_error(x: Reply) -> FileAskError {
     match x {
-        Content::IoError(args) => FileAskError::IoError(args.into()),
+        Reply::Error(ReplyError::Io(args)) => {
+            FileAskError::IoError(args.into())
+        }
         x => From::from(make_ask_error(x)),
     }
 }
 
-fn make_exec_ask_error(x: Content) -> ExecAskError {
+fn make_exec_ask_error(x: Reply) -> ExecAskError {
     match x {
-        Content::IoError(args) => ExecAskError::IoError(args.into()),
+        Reply::Error(ReplyError::Io(args)) => {
+            ExecAskError::IoError(args.into())
+        }
         x => From::from(make_ask_error(x)),
     }
 }
 
-fn make_ask_error(x: Content) -> AskError {
-    match x {
-        content => AskError::InvalidResponse { content },
-    }
+fn make_ask_error(reply: Reply) -> AskError {
+    AskError::InvalidResponse { reply }
 }

@@ -7,14 +7,14 @@ pub use client::{
     error::AskError,
     error::ExecAskError,
     error::FileAskError,
-    error::TellError,
+    error::SendError,
     file::RemoteFile,
     proc::{RemoteProc, RemoteProcStatus},
     Client, ClientBuilder, ConnectedClient,
 };
 pub use event::{AddrEventManager, EventManager};
 pub use msg::{
-    content::{self, Content},
+    content::{self, reply, request, Content, Reply, Request},
     Msg, MsgError,
 };
 pub use server::{

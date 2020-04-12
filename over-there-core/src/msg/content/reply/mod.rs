@@ -172,6 +172,18 @@ pub enum ReplyError {
     FileSigChanged(FileSigChangedArgs),
 }
 
+impl ToString for ReplyError {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Generic(args) => args.msg,
+            Self::Io(args) => args.description,
+            Self::FileSigChanged(args) => {
+                format!("File {} signature changed", args.id)
+            }
+        }
+    }
+}
+
 impl From<String> for ReplyError {
     fn from(text: String) -> Self {
         Self::Generic(GenericErrorArgs::from(text))

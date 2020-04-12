@@ -1,4 +1,4 @@
-use crate::Content;
+use crate::Reply;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -28,9 +28,9 @@ pub enum AskError {
     Failure {
         msg: String,
     },
-    #[display(fmt = "Invalid Response: {:?}", content)]
+    #[display(fmt = "Invalid Response: {:?}", reply)]
     InvalidResponse {
-        content: Content,
+        reply: Reply,
     },
     Timeout,
     EncodingFailed,

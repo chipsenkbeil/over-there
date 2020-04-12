@@ -8,7 +8,7 @@ pub use connected::ConnectedClient;
 
 use crate::{
     event::{AddrEventManager, EventManager},
-    msg::{content::*, Msg},
+    msg::{content::Content, Msg},
     Transport,
 };
 use derive_builder::Builder;
@@ -111,7 +111,13 @@ where
     );
 
     let (tx, rx) = mpsc::channel(client.buffer);
-    let event_handle = handle.spawn(tcp_event_loop(Arc::clone(&state), rx));
+    let event_handle =
+        handle.spawn(event_loop(Arc::clone(&state), move || async move {
+            match rx.recv().await {
+                Some((msg, _, _)) => Some(msg),
+                None => None,
+            }
+        }));
     let event_manager = EventManager::for_tcp_stream(
         handle.clone(),
         client.buffer,
@@ -178,7 +184,13 @@ where
     );
 
     let (tx, rx) = mpsc::channel(client.buffer);
-    let event_handle = handle.spawn(udp_event_loop(Arc::clone(&state), rx));
+    let event_handle =
+        handle.spawn(event_loop(Arc::clone(&state), move || async move {
+            match rx.recv().await {
+                Some((msg, _, _)) => Some(msg),
+                None => None,
+            }
+        }));
     let addr_event_manager = AddrEventManager::for_udp_socket(
         handle,
         client.buffer,
@@ -196,42 +208,21 @@ where
     })
 }
 
-async fn tcp_event_loop(
-    state: Arc<Mutex<state::ClientState>>,
-    mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<Vec<u8>>)>,
-) {
-    while let Some((msg, _, _)) = rx.recv().await {
+async fn event_loop<F, R>(state: Arc<Mutex<state::ClientState>>, f: F)
+where
+    F: Fn() -> R,
+    R: std::future::Future<Output = Option<Msg>>,
+{
+    while let Some(msg) = f().await {
         // Update the last time we received a msg from the server
         state.lock().await.last_contact = Instant::now();
 
-        if let Some(header) = msg.parent_header.as_ref() {
-            state
+        match (msg.parent_header.as_ref(), &msg.content) {
+            (Some(header), Content::Reply(reply)) => state
                 .lock()
                 .await
                 .callback_manager
-                .invoke_callback(header.id, &msg)
-        }
-    }
-}
-
-async fn udp_event_loop(
-    state: Arc<Mutex<state::ClientState>>,
-    mut rx: mpsc::Receiver<(
-        Msg,
-        SocketAddr,
-        mpsc::Sender<(Vec<u8>, SocketAddr)>,
-    )>,
-) {
-    while let Some((msg, _, _)) = rx.recv().await {
-        // Update the last time we received a msg from the server
-        state.lock().await.last_contact = Instant::now();
-
-        if let Some(header) = msg.parent_header.as_ref() {
-            state
-                .lock()
-                .await
-                .callback_manager
-                .invoke_callback(header.id, &msg)
+                .invoke_callback(header.id, reply),
         }
     }
 }
