@@ -6,18 +6,18 @@ pub struct ProcStartedArgs {
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct StdinWrittenArgs {
+pub struct ProcStdinWrittenArgs {
     pub id: u32,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct StdoutContentsArgs {
+pub struct ProcStdoutContentsArgs {
     pub id: u32,
     pub output: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct StderrContentsArgs {
+pub struct ProcStderrContentsArgs {
     pub id: u32,
     pub output: Vec<u8>,
 }

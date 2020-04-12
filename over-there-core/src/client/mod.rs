@@ -1,6 +1,7 @@
 mod connected;
 pub mod error;
 pub mod file;
+mod inbound;
 pub mod proc;
 pub mod state;
 
@@ -8,7 +9,7 @@ pub use connected::ConnectedClient;
 
 use crate::{
     event::{AddrEventManager, EventManager},
-    msg::{content::Content, Msg},
+    msg::content::Content,
     Transport,
 };
 use derive_builder::Builder;
@@ -111,13 +112,10 @@ where
     );
 
     let (tx, rx) = mpsc::channel(client.buffer);
-    let event_handle =
-        handle.spawn(event_loop(Arc::clone(&state), move || async move {
-            match rx.recv().await {
-                Some((msg, _, _)) => Some(msg),
-                None => None,
-            }
-        }));
+    let event_handle = handle.spawn(event_loop(
+        Arc::clone(&state),
+        inbound::InboundMsgReader::new(rx),
+    ));
     let event_manager = EventManager::for_tcp_stream(
         handle.clone(),
         client.buffer,
@@ -184,13 +182,10 @@ where
     );
 
     let (tx, rx) = mpsc::channel(client.buffer);
-    let event_handle =
-        handle.spawn(event_loop(Arc::clone(&state), move || async move {
-            match rx.recv().await {
-                Some((msg, _, _)) => Some(msg),
-                None => None,
-            }
-        }));
+    let event_handle = handle.spawn(event_loop(
+        Arc::clone(&state),
+        inbound::InboundMsgReader::new(rx),
+    ));
     let addr_event_manager = AddrEventManager::for_udp_socket(
         handle,
         client.buffer,
@@ -208,21 +203,22 @@ where
     })
 }
 
-async fn event_loop<F, R>(state: Arc<Mutex<state::ClientState>>, f: F)
-where
-    F: Fn() -> R,
-    R: std::future::Future<Output = Option<Msg>>,
-{
-    while let Some(msg) = f().await {
+async fn event_loop<T>(
+    state: Arc<Mutex<state::ClientState>>,
+    mut r: inbound::InboundMsgReader<T>,
+) {
+    while let Some(msg) = r.next().await {
         // Update the last time we received a msg from the server
         state.lock().await.last_contact = Instant::now();
 
-        match (msg.parent_header.as_ref(), &msg.content) {
-            (Some(header), Content::Reply(reply)) => state
+        if let (Some(header), Content::Reply(reply)) =
+            (msg.parent_header.as_ref(), &msg.content)
+        {
+            state
                 .lock()
                 .await
                 .callback_manager
-                .invoke_callback(header.id, reply),
+                .invoke_callback(header.id, reply)
         }
     }
 }

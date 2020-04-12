@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoExecProcArgs {
+pub struct ExecProcArgs {
     pub command: String,
     pub args: Vec<String>,
     pub stdin: bool,
@@ -13,27 +13,27 @@ pub struct DoExecProcArgs {
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoWriteStdinArgs {
+pub struct WriteProcStdinArgs {
     pub id: u32,
     pub input: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoGetStdoutArgs {
+pub struct ReadProcStdoutArgs {
     pub id: u32,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoGetStderrArgs {
+pub struct ReadProcStderrArgs {
     pub id: u32,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoKillProcArgs {
+pub struct KillProcArgs {
     pub id: u32,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoGetProcStatusArgs {
+pub struct ReadProcStatusArgs {
     pub id: u32,
 }

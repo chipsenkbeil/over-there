@@ -2,7 +2,7 @@ pub mod reply;
 pub mod request;
 mod transform;
 
-pub use reply::Reply;
+pub use reply::{Reply, ReplyError};
 pub use request::Request;
 pub use transform::{
     LazilyTransformedContent, TransformContentError, TransformRule,
@@ -31,6 +31,13 @@ impl Content {
             Self::Reply(x) => Some(x),
         }
     }
+
+    pub fn to_reply_error(self) -> Option<ReplyError> {
+        match self.to_reply() {
+            Some(Reply::Error(x)) => Some(x),
+            _ => None,
+        }
+    }
 }
 
 impl From<Request> for Content {
@@ -42,5 +49,11 @@ impl From<Request> for Content {
 impl From<Reply> for Content {
     fn from(reply: Reply) -> Self {
         Self::Reply(reply)
+    }
+}
+
+impl From<ReplyError> for Content {
+    fn from(reply_error: ReplyError) -> Self {
+        Self::from(Reply::Error(reply_error))
     }
 }

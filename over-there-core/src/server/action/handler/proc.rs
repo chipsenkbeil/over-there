@@ -1,25 +1,20 @@
 use crate::{
-    msg::content::*,
-    server::{action::ActionError, proc::LocalProc, state::ServerState},
+    reply::*,
+    request::*,
+    server::{proc::LocalProc, state::ServerState},
 };
 use log::debug;
-use std::future::Future;
 use std::io;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::Command;
 
-pub async fn do_exec_proc<F, R>(
+pub async fn exec_proc(
     state: Arc<ServerState>,
-    args: &DoExecProcArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_exec_proc: {:?}", args);
-    let DoExecProcArgs {
+    args: &ExecProcArgs,
+) -> Result<ProcStartedArgs, io::Error> {
+    debug!("handler::exec_proc: {:?}", args);
+    let ExecProcArgs {
         command,
         args,
         stdin,
@@ -42,137 +37,89 @@ where
         // NOTE: It is recommended to canonicalize the path before applying
         //       it to ensure that it is absolute as platforms can apply
         //       relative or absolute differently otherwise
-        match tokio::fs::canonicalize(dir).await {
-            Ok(dir) => {
-                cmd.current_dir(dir);
-            }
-            Err(x) => return respond(Content::IoError(From::from(x))).await,
-        }
+        let dir = tokio::fs::canonicalize(dir).await?;
+        cmd.current_dir(dir);
     }
 
-    match cmd.spawn() {
-        Ok(child) => {
-            let local_proc = LocalProc::new(child).spawn();
-            let id = local_proc.id();
-            state.procs.lock().await.insert(id, local_proc);
-            state.touch_proc_id(id).await;
-            respond(Content::ProcStarted(ProcStartedArgs { id })).await
-        }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
-    }
+    let child = cmd.spawn()?;
+    let local_proc = LocalProc::new(child).spawn();
+    let id = local_proc.id();
+    state.procs.lock().await.insert(id, local_proc);
+    state.touch_proc_id(id).await;
+    Ok(ProcStartedArgs { id })
 }
 
-pub async fn do_write_stdin<F, R>(
+pub async fn write_proc_stdin(
     state: Arc<ServerState>,
-    args: &DoWriteStdinArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_write_stdin: {:?}", args);
+    args: &WriteProcStdinArgs,
+) -> Result<ProcStdinWrittenArgs, io::Error> {
+    debug!("handler::write_proc_stdin: {:?}", args);
     state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.get_mut(&args.id) {
-        Some(local_proc) => match local_proc.write_stdin(&args.input).await {
-            Ok(_) => {
-                respond(Content::StdinWritten(StdinWrittenArgs { id: args.id }))
-                    .await
-            }
-            Err(x) => respond(Content::IoError(From::from(x))).await,
-        },
-        None => {
-            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
-                .await
+        Some(local_proc) => {
+            let _ = local_proc.write_stdin(&args.input).await?;
+            Ok(ProcStdinWrittenArgs { id: args.id })
         }
+        None => Err(IoErrorArgs::invalid_proc_id(args.id).into()),
     }
 }
 
-pub async fn do_get_stdout<F, R>(
+pub async fn read_proc_stdout(
     state: Arc<ServerState>,
-    args: &DoGetStdoutArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_get_stdout: {:?}", args);
+    args: &ReadProcStdoutArgs,
+) -> Result<ProcStdoutContentsArgs, io::Error> {
+    debug!("handler::read_proc_stdout: {:?}", args);
     state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => match local_proc.read_stdout().await {
-            Ok(output) => {
-                respond(Content::StdoutContents(StdoutContentsArgs {
-                    id: args.id,
-                    output,
-                }))
-                .await
-            }
+            Ok(output) => Ok(ProcStdoutContentsArgs {
+                id: args.id,
+                output,
+            }),
             Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
-                respond(Content::StdoutContents(StdoutContentsArgs {
+                Ok(ProcStdoutContentsArgs {
                     id: args.id,
                     output: vec![],
-                }))
-                .await
+                })
             }
-            Err(x) => respond(Content::IoError(From::from(x))).await,
+            Err(x) => Err(x),
         },
-        None => {
-            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
-                .await
-        }
+        None => Err(IoErrorArgs::invalid_proc_id(args.id).into()),
     }
 }
 
-pub async fn do_get_stderr<F, R>(
+pub async fn read_proc_stderr(
     state: Arc<ServerState>,
-    args: &DoGetStderrArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_get_stderr: {:?}", args);
+    args: &ReadProcStderrArgs,
+) -> Result<ProcStderrContentsArgs, io::Error> {
+    debug!("handler::read_proc_stderr: {:?}", args);
     state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.get_mut(&args.id) {
         Some(local_proc) => match local_proc.read_stderr().await {
-            Ok(output) => {
-                respond(Content::StderrContents(StderrContentsArgs {
-                    id: args.id,
-                    output,
-                }))
-                .await
-            }
+            Ok(output) => Ok(ProcStderrContentsArgs {
+                id: args.id,
+                output,
+            }),
             Err(x) if x.kind() == io::ErrorKind::WouldBlock => {
-                respond(Content::StderrContents(StderrContentsArgs {
+                Ok(ProcStderrContentsArgs {
                     id: args.id,
                     output: vec![],
-                }))
-                .await
+                })
             }
-            Err(x) => respond(Content::IoError(From::from(x))).await,
+            Err(x) => Err(x),
         },
-        None => {
-            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
-                .await
-        }
+        None => Err(IoErrorArgs::invalid_proc_id(args.id).into()),
     }
 }
 
-pub async fn do_get_proc_status<F, R>(
+pub async fn read_proc_status(
     state: Arc<ServerState>,
-    args: &DoGetProcStatusArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_get_proc_status: {:?}", args);
+    args: &ReadProcStatusArgs,
+) -> Result<ProcStatusArgs, io::Error> {
+    debug!("handler::read_proc_status: {:?}", args);
     state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.get_mut(&args.id) {
@@ -184,63 +131,44 @@ where
                     .touch_proc_id_with_ttl(args.id, state.dead_proc_ttl)
                     .await;
 
-                respond(Content::ProcStatus(ProcStatusArgs {
+                Ok(ProcStatusArgs {
                     id: args.id,
                     is_alive: false,
                     exit_code: exit_status.exit_code,
-                }))
-                .await
+                })
             }
-            None => {
-                respond(Content::ProcStatus(ProcStatusArgs {
-                    id: args.id,
-                    is_alive: true,
-                    exit_code: None,
-                }))
-                .await
-            }
+            None => Ok(ProcStatusArgs {
+                id: args.id,
+                is_alive: true,
+                exit_code: None,
+            }),
         },
-        None => {
-            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
-                .await
-        }
+        None => Err(IoErrorArgs::invalid_proc_id(args.id).into()),
     }
 }
 
-pub async fn do_kill_proc<F, R>(
+pub async fn kill_proc(
     state: Arc<ServerState>,
-    args: &DoKillProcArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_kill_proc: {:?}", args);
+    args: &KillProcArgs,
+) -> Result<ProcKilledArgs, io::Error> {
+    debug!("handler::kill_proc: {:?}", args);
     state.touch_proc_id(args.id).await;
 
     match state.procs.lock().await.remove(&args.id) {
         // NOTE: We are killing and then WAITING for the process to die, which
         //       would block, but seems to be required in order to properly
         //       have the process clean up -- try_wait doesn't seem to work
-        Some(local_proc) => match local_proc.kill_and_wait().await {
-            Ok(output) => {
-                state.remove_proc_id(args.id).await;
+        Some(local_proc) => {
+            let output = local_proc.kill_and_wait().await?;
+            state.remove_proc_id(args.id).await;
 
-                // TODO: Send stdout/stderr msgs for any remaining content
-                respond(Content::ProcStatus(ProcStatusArgs {
-                    id: args.id,
-                    is_alive: false,
-                    exit_code: output.status.code(),
-                }))
-                .await
-            }
-            Err(x) => respond(Content::IoError(From::from(x))).await,
-        },
-        None => {
-            respond(Content::IoError(IoErrorArgs::invalid_proc_id(args.id)))
-                .await
+            // TODO: Send stdout/stderr msgs for any remaining content
+            Ok(ProcKilledArgs {
+                id: args.id,
+                exit_code: output.status.code(),
+            })
         }
+        None => Err(IoErrorArgs::invalid_proc_id(args.id).into()),
     }
 }
 

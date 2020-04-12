@@ -14,8 +14,11 @@ pub use client::{
 };
 pub use event::{AddrEventManager, EventManager};
 pub use msg::{
-    content::{self, reply, request, Content, Reply, Request},
-    Msg, MsgError,
+    content::{
+        reply, request, Content, LazilyTransformedContent, Reply, ReplyError,
+        Request,
+    },
+    Header, Msg, MsgError,
 };
 pub use server::{
     fs::{FileSystemManager, LocalDirEntry, LocalFile, LocalFileHandle},

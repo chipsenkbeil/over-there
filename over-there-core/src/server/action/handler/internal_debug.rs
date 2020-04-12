@@ -1,29 +1,16 @@
-use crate::{
-    msg::content::{Content, InternalDebugArgs},
-    server::{action::ActionError, state::ServerState},
-};
+use crate::{reply, request, server::state::ServerState};
 use log::debug;
-use std::future::Future;
 use std::sync::Arc;
 
-pub async fn internal_debug<F, R>(
+pub async fn internal_debug(
     state: Arc<ServerState>,
-    args: &InternalDebugArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
+    args: &request::InternalDebugArgs,
+) -> reply::InternalDebugArgs {
     debug!("internal_debug_request");
 
     let mut output = vec![];
 
     output.extend_from_slice(state.internal_debug().await.as_bytes());
 
-    respond(Content::InternalDebug(InternalDebugArgs {
-        input: args.input.clone(),
-        output,
-    }))
-    .await
+    reply::InternalDebugArgs { output }
 }

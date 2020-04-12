@@ -1,7 +1,7 @@
-use super::Content;
+use crate::Reply;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
 pub struct BatchArgs {
-    pub results: Vec<Content>,
+    pub results: Vec<Reply>,
 }

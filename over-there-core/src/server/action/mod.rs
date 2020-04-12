@@ -1,20 +1,21 @@
 mod handler;
 
 use crate::{
-    msg::{
-        content::{Content, LazilyTransformedContent, Reply, Request},
-        Header, Msg, MsgError,
-    },
-    server::state::ServerState,
+    server::state::ServerState, Content, Header, LazilyTransformedContent, Msg,
+    MsgError, Reply, ReplyError, Request,
 };
 use log::trace;
 use over_there_derive::Error;
 use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
+
+/// Represents the maximum depth to process nested sequential and batch operations
+pub const MAX_DEPTH: u8 = 5;
 
 #[derive(Debug, Error)]
 pub enum ActionError {
@@ -77,11 +78,9 @@ impl Executor<Vec<u8>> {
         let origin_sender = self.origin_sender;
         let addr = origin_sender.addr;
 
-        Self::execute_impl(state, msg.content, addr, move |reply: Reply| {
-            trace!("Reply: {:?}", reply);
-            Self::respond(reply, header, origin_sender)
-        })
-        .await
+        let reply =
+            validate_route_and_execute(state, msg.content, addr).await?;
+        Self::respond(reply, header, origin_sender).await
     }
 
     async fn respond(
@@ -89,7 +88,7 @@ impl Executor<Vec<u8>> {
         parent_header: Header,
         mut origin_sender: OriginSender<Vec<u8>>,
     ) -> Result<(), ActionError> {
-        let new_msg = Msg::from((reply, parent_header));
+        let new_msg = Msg::new(Content::Reply(reply), Some(parent_header));
         let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
 
         origin_sender
@@ -118,11 +117,9 @@ impl Executor<(Vec<u8>, SocketAddr)> {
         let origin_sender = self.origin_sender;
         let addr = origin_sender.addr;
 
-        Self::execute_impl(state, msg.content, addr, move |reply: Reply| {
-            trace!("Reply: {:?}", reply);
-            Self::respond(reply, header, origin_sender)
-        })
-        .await
+        let reply =
+            validate_route_and_execute(state, msg.content, addr).await?;
+        Self::respond(reply, header, origin_sender).await
     }
 
     async fn respond(
@@ -130,7 +127,7 @@ impl Executor<(Vec<u8>, SocketAddr)> {
         parent_header: Header,
         mut origin_sender: OriginSender<(Vec<u8>, SocketAddr)>,
     ) -> Result<(), ActionError> {
-        let new_msg = Msg::from((content, parent_header));
+        let new_msg = Msg::new(Content::Reply(reply), Some(parent_header));
         let data = new_msg.to_vec().map_err(ActionError::MsgError)?;
 
         origin_sender
@@ -140,191 +137,129 @@ impl Executor<(Vec<u8>, SocketAddr)> {
     }
 }
 
-impl<T> Executor<T> {
-    /// Evaluate a message's content and potentially respond using the provided responder
-    async fn execute_impl<F, R>(
-        state: Arc<ServerState>,
-        mut content: Content,
-        origin: SocketAddr,
-        do_respond: F,
-    ) -> Result<(), ActionError>
-    where
-        F: FnOnce(Reply) -> R,
-        R: Future<Output = Result<(), ActionError>>,
-    {
-        trace!("Executing content: {:?}", content);
-        let request =
-            content.to_request().ok_or(ActionError::UnexpectedContent)?;
+async fn validate_route_and_execute(
+    state: Arc<ServerState>,
+    mut content: Content,
+    origin: SocketAddr,
+) -> Result<Reply, ActionError> {
+    trace!("Executing content: {:?}", content);
 
-        update_origin_last_touched(Arc::clone(&state), origin).await;
+    let request = content.to_request().ok_or(ActionError::UnexpectedContent)?;
+    update_origin_last_touched(Arc::clone(&state), origin).await;
+    Ok(route_and_execute(state, request, MAX_DEPTH).await)
+}
 
-        match &mut request {
-            // Content::DoSequence(args) => {
-            //     Self::execute_sequence(
-            //         state,
-            //         args.operations.drain(..).collect(),
-            //         do_respond,
-            //     )
-            //     .await
-            // }
-            _ => Self::execute_impl_normal(state, request, do_respond).await,
-        }
+async fn route_and_execute(
+    state: Arc<ServerState>,
+    request: Request,
+    max_depth: u8,
+) -> Reply {
+    if max_depth == 0 {
+        return Reply::Error(ReplyError::from("Reached maximum nested depth"));
     }
 
-    /// Evaluate request that does not contain other request (e.g. sequence)
-    async fn execute_impl_normal<F, R>(
-        state: Arc<ServerState>,
-        request: Request,
-        do_respond: F,
-    ) -> Result<(), ActionError>
-    where
-        F: FnOnce(Reply) -> R,
-        R: Future<Output = Result<(), ActionError>>,
-    {
-        match &request {
-            Request::Heartbeat => {
-                handler::heartbeat::heartbeat(do_respond).await
-            }
-            Request::DoGetVersion => {
-                handler::version::do_get_version(do_respond).await
-            }
-            Request::DoGetCapabilities => {
-                handler::capabilities::do_get_capabilities(do_respond).await
-            }
-            Request::DoOpenFile(args) => {
-                handler::fs::do_open_file(state, args, do_respond).await
-            }
-            Request::DoCloseFile(args) => {
-                handler::fs::do_close_file(state, args, do_respond).await
-            }
-            Request::DoRenameUnopenedFile(args) => {
-                handler::fs::do_rename_unopened_file(state, args, do_respond)
-                    .await
-            }
-            Request::DoRenameFile(args) => {
-                handler::fs::do_rename_file(state, args, do_respond).await
-            }
-            Request::DoRemoveUnopenedFile(args) => {
-                handler::fs::do_remove_unopened_file(state, args, do_respond)
-                    .await
-            }
-            Request::DoRemoveFile(args) => {
-                handler::fs::do_remove_file(state, args, do_respond).await
-            }
-            Request::DoReadFile(args) => {
-                handler::fs::do_read_file(state, args, do_respond).await
-            }
-            Request::DoWriteFile(args) => {
-                handler::fs::do_write_file(state, args, do_respond).await
-            }
-            Request::DoCreateDir(args) => {
-                handler::fs::do_create_dir(state, args, do_respond).await
-            }
-            Request::DoRenameDir(args) => {
-                handler::fs::do_rename_dir(state, args, do_respond).await
-            }
-            Request::DoRemoveDir(args) => {
-                handler::fs::do_remove_dir(state, args, do_respond).await
-            }
-            Request::DoListDirRequests(args) => {
-                handler::fs::do_list_dir_contents(state, args, do_respond).await
-            }
-            Request::DoExecProc(args) => {
-                handler::proc::do_exec_proc(state, args, do_respond).await
-            }
-            Request::DoWriteStdin(args) => {
-                handler::proc::do_write_stdin(state, args, do_respond).await
-            }
-            Request::DoGetStdout(args) => {
-                handler::proc::do_get_stdout(state, args, do_respond).await
-            }
-            Request::DoGetStderr(args) => {
-                handler::proc::do_get_stderr(state, args, do_respond).await
-            }
-            Request::DoGetProcStatus(args) => {
-                handler::proc::do_get_proc_status(state, args, do_respond).await
-            }
-            Request::DoKillProc(args) => {
-                handler::proc::do_kill_proc(state, args, do_respond).await
-            }
-            Request::InternalDebug(args) => {
-                handler::internal_debug::internal_debug(state, args, do_respond)
-                    .await
-            }
-            Request::DoSequence(_) => Err(ActionError::NestedSequenceFound),
-            _ => Err(ActionError::Unknown),
+    match &request {
+        Request::Heartbeat => {
+            handler::heartbeat::heartbeat().await;
+            Reply::Heartbeat
         }
-    }
-
-    /// Evaluate a sequence of requests by executing the first, piping its
-    /// output response to the second, and repeat until completed or an error
-    /// occurs
-    ///
-    /// If
-    async fn execute_sequence<F, R>(
-        state: Arc<ServerState>,
-        operations: Vec<LazilyTransformedContent>,
-        do_respond: F,
-    ) -> Result<(), ActionError>
-    where
-        F: FnOnce(Reply) -> R,
-        R: Future<Output = Result<(), ActionError>>,
-    {
-        let (mut tx, mut rx) = tokio::sync::mpsc::channel(operations.len());
-        let mut results: Vec<Content> = Vec::new();
-
-        for op in operations.iter() {
-            // Transform our operation using the previous content
-            // if available, or do no transformation at all
-            let op_content = match rx.try_recv() {
-                Ok(c) => {
-                    // Perform the transformation
-                    let x = op.transform_with_base(&c);
-
-                    // Now that we're done, store the previous outgoing
-                    // content as one of our results
-                    results.push(c);
-
-                    x
-                }
-                _ => Ok(op.clone().into_raw_content()),
-            };
-
-            // If the transformation failed, send a generic error
-            // message back to the client and conclude the action
-            if let Err(x) = op_content {
-                return do_respond(Reply::Error(
-                    format!("Sequencing failed: {}", x).into(),
-                ))
-                .await;
-            }
-
-            // Execute the operation -- note that we don't allow nested sequencing
-            let mut tx_2 = tx.clone();
-            let do_respond = move |content: Content| {
-                use futures::TryFutureExt;
-                async move {
-                    tx_2.send(content)
-                        .map_err(|_| ActionError::RespondFailed)
-                        .await
-                }
-            };
-            let result = Self::execute_impl_normal(
-                Arc::clone(&state),
-                op_content.unwrap(),
-                do_respond,
-            )
-            .await;
-
-            if result.is_err() {
-                return result;
-            }
+        Request::Version => Reply::Version(handler::version::version().await),
+        Request::Capabilities => {
+            Reply::Capabilities(handler::capabilities::capabilities().await)
         }
-
-        // With all operations complete, we want to send a response back with
-        // them included
-        do_respond(Content::SequenceResults(SequenceResultsArgs { results }))
+        Request::OpenFile(args) => handler::fs::open_file(state, args)
             .await
+            .map(Reply::FileOpened)
+            .unwrap_or_else(Reply::from),
+        Request::CloseFile(args) => handler::fs::close_file(state, args)
+            .await
+            .map(Reply::FileClosed)
+            .unwrap_or_else(Reply::from),
+        Request::RenameUnopenedFile(args) => {
+            handler::fs::rename_unopened_file(state, args)
+                .await
+                .map(Reply::UnopenedFileRenamed)
+                .unwrap_or_else(Reply::from)
+        }
+        Request::RenameFile(args) => handler::fs::rename_file(state, args)
+            .await
+            .map(Reply::FileRenamed)
+            .unwrap_or_else(Reply::from),
+        Request::RemoveUnopenedFile(args) => {
+            handler::fs::remove_unopened_file(state, args)
+                .await
+                .map(Reply::UnopenedFileRemoved)
+                .unwrap_or_else(Reply::from)
+        }
+        Request::RemoveFile(args) => handler::fs::remove_file(state, args)
+            .await
+            .map(Reply::FileRemoved)
+            .unwrap_or_else(Reply::from),
+        Request::ReadFile(args) => handler::fs::read_file(state, args)
+            .await
+            .map(Reply::FileContents)
+            .unwrap_or_else(Reply::from),
+        Request::WriteFile(args) => handler::fs::write_file(state, args)
+            .await
+            .map(Reply::FileWritten)
+            .unwrap_or_else(Reply::from),
+        Request::CreateDir(args) => handler::fs::create_dir(state, args)
+            .await
+            .map(Reply::DirCreated)
+            .unwrap_or_else(Reply::from),
+        Request::RenameDir(args) => handler::fs::rename_dir(state, args)
+            .await
+            .map(Reply::DirRenamed)
+            .unwrap_or_else(Reply::from),
+        Request::RemoveDir(args) => handler::fs::remove_dir(state, args)
+            .await
+            .map(Reply::DirRemoved)
+            .unwrap_or_else(Reply::from),
+        Request::ListDirContents(args) => {
+            handler::fs::list_dir_contents(state, args)
+                .await
+                .map(Reply::DirContentsList)
+                .unwrap_or_else(Reply::from)
+        }
+        Request::ExecProc(args) => handler::proc::exec_proc(state, args)
+            .await
+            .map(Reply::ProcStarted)
+            .unwrap_or_else(Reply::from),
+        Request::WriteProcStdin(args) => {
+            handler::proc::write_proc_stdin(state, args)
+                .await
+                .map(Reply::ProcStdinWritten)
+                .unwrap_or_else(Reply::from)
+        }
+        Request::ReadProcStdout(args) => {
+            handler::proc::read_proc_stdout(state, args)
+                .await
+                .map(Reply::ProcStdoutContents)
+                .unwrap_or_else(Reply::from)
+        }
+        Request::ReadProcStderr(args) => {
+            handler::proc::read_proc_stderr(state, args)
+                .await
+                .map(Reply::ProcStderrContents)
+                .unwrap_or_else(Reply::from)
+        }
+        Request::ReadProcStatus(args) => {
+            handler::proc::read_proc_status(state, args)
+                .await
+                .map(Reply::ProcStatus)
+                .unwrap_or_else(Reply::from)
+        }
+        Request::KillProc(args) => handler::proc::kill_proc(state, args)
+            .await
+            .map(Reply::ProcKilled)
+            .unwrap_or_else(Reply::from),
+        Request::InternalDebug(args) => Reply::InternalDebug(
+            handler::internal_debug::internal_debug(state, args).await,
+        ),
+        Request::Sequence(_) => unimplemented!(),
+        Request::Batch(_) => unimplemented!(),
+        Request::Custom(_) => unimplemented!(),
+        Request::Forward(_) => unimplemented!(),
     }
 }
 

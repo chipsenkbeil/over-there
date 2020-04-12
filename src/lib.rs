@@ -9,7 +9,7 @@ use opts::{
     server::ServerCommand,
     Command,
 };
-use over_there_core::{ConnectedClient, Content, RemoteProc};
+use over_there_core::{ConnectedClient, Content, RemoteProc, Reply};
 use std::error::Error;
 use std::io;
 use std::path::PathBuf;
@@ -25,7 +25,7 @@ pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
             (FormatOption::Human, Err(x)) => return Err(x),
             (f, Err(x)) => format::format_content_println(
                 f,
-                Content::Error(x.into()),
+                Content::from(Reply::from(x)),
                 |_| Err("Cannot write human-readable stderr to stdout".into()),
             )?,
             _ => (),
@@ -148,7 +148,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::Version(x),
+                Content::from(Reply::Version(x)),
                 Ok(x.version),
             )?;
         }
@@ -157,7 +157,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::Capabilities(x),
+                Content::from(Reply::Capabilities(x)),
                 Ok(format!("{:?}", x)),
             )?;
         }
@@ -166,7 +166,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::DirContentsList(x),
+                Content::from(Reply::DirContentsList(x)),
                 Ok(x.entries
                     .iter()
                     .map(|e| {
@@ -187,7 +187,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::DirContentsList(x),
+                Content::from(Reply::DirContentsList(x)),
                 Ok(x.entries
                     .iter()
                     .map(|e| {
@@ -208,7 +208,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::DirCreated(x),
+                Content::from(Reply::DirCreated(x)),
                 Ok(format!("Created {}", c.path)),
             )?;
         }
@@ -217,7 +217,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::DirRenamed(x),
+                Content::from(Reply::DirRenamed(x)),
                 Ok(format!("Moved {} to {}", c.from, c.to)),
             )?;
         }
@@ -226,7 +226,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::DirRemoved(x),
+                Content::from(Reply::DirRemoved(x)),
                 Ok(format!("Removed {}", c.path)),
             )?;
         }
@@ -238,7 +238,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::FileWritten(x),
+                Content::from(Reply::FileWritten(x)),
                 Ok(format!("{:?}", x)),
             )?;
         }
@@ -248,7 +248,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::FileContents(x),
+                Content::from(Reply::FileContents(x)),
                 Ok(String::from_utf8(x.contents)?),
             )?;
         }
@@ -259,7 +259,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::UnopenedFileRenamed(x),
+                Content::from(Reply::UnopenedFileRenamed(x)),
                 Ok(format!("Moved {} to {}", c.from, c.to)),
             )?;
         }
@@ -268,7 +268,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::UnopenedFileRemoved(x),
+                Content::from(Reply::UnopenedFileRemoved(x)),
                 Ok(format!("Removed {}", c.path)),
             )?;
         }
@@ -315,7 +315,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             format_content_write!(
                 cmd.format,
                 cmd.redirect_stdout.as_ref(),
-                Content::InternalDebug(x),
+                Content::from(Reply::InternalDebug(x)),
                 Ok(format!("{}", String::from_utf8_lossy(&x.output))),
             )?;
         }
@@ -355,35 +355,35 @@ async fn process_proc(
 
             if !line.is_empty() {
                 client
-                    .ask_write_stdin(&proc, &line.into_bytes())
+                    .ask_write_proc_stdin(&proc, &line.into_bytes())
                     .await
                     .expect("Failed to write stdin");
             }
         }
 
         let stdout_args = client
-            .ask_get_stdout(&proc)
+            .ask_read_proc_stdout(&proc)
             .await
             .expect("Failed to get stdout");
         if !stdout_args.output.is_empty() {
             format_content_write!(
                 format,
                 stdout_path.as_ref(),
-                Content::StdoutContents(stdout_args),
+                Content::from(Reply::ProcStdoutContents(stdout_args)),
                 Ok(format!("{}", String::from_utf8_lossy(&stdout_args.output))),
             )
             .expect("Failed to format stdout");
         }
 
         let stderr_args = client
-            .ask_get_stderr(&proc)
+            .ask_read_proc_stderr(&proc)
             .await
             .expect("Failed to get stderr");
         if !stderr_args.output.is_empty() {
             format_content_write!(
                 format,
                 stderr_path.as_ref(),
-                Content::StderrContents(stderr_args),
+                Content::from(Reply::ProcStderrContents(stderr_args)),
                 Err(format!(
                     "{}",
                     String::from_utf8_lossy(&stderr_args.output)
@@ -395,7 +395,7 @@ async fn process_proc(
         // Mark ready for exit if proc has exited
         if exit_instant.is_none() {
             let status = client
-                .ask_proc_status(&proc)
+                .ask_read_proc_status(&proc)
                 .await
                 .expect("Failed to get proc status");
             if !status.is_alive {
@@ -403,7 +403,7 @@ async fn process_proc(
                     FormatOption::Human if exit_print => format_content_write!(
                         format,
                         stderr_path.as_ref(),
-                        Content::ProcStatus(status),
+                        Content::from(Reply::ProcStatus(status)),
                         Err(format!(
                             "Proc {} exited with code {}",
                             status.id,
@@ -414,7 +414,7 @@ async fn process_proc(
                     f => format_content_write!(
                         f,
                         stdout_path.as_ref(),
-                        Content::ProcStatus(status),
+                        Content::from(Reply::ProcStatus(status)),
                         Err("unreachable!".into()),
                     ),
                 }

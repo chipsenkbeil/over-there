@@ -1,17 +1,9 @@
-use crate::{
-    msg::content::{CapabilitiesArgs, Capability, Content},
-    server::action::ActionError,
-};
+use crate::reply::{CapabilitiesArgs, Capability};
 use log::debug;
-use std::future::Future;
 
-pub async fn do_get_capabilities<F, R>(respond: F) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_get_capabilities");
-    respond(Content::Capabilities(CapabilitiesArgs {
+pub async fn capabilities() -> CapabilitiesArgs {
+    debug!("handler::capabilities");
+    CapabilitiesArgs {
         capabilities: vec![
             #[cfg(feature = "custom")]
             Capability::Custom,
@@ -22,8 +14,7 @@ where
             #[cfg(feature = "forward")]
             Capability::Forward,
         ],
-    }))
-    .await
+    }
 }
 
 #[cfg(test)]
@@ -31,26 +22,17 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn do_get_capabilities_should_send_capabilities() {
-        let mut content: Option<Content> = None;
-
-        do_get_capabilities(|c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
-        .await
-        .unwrap();
+    async fn capabilities_should_return_capabilities() {
+        let results = capabilities().await;
 
         assert_eq!(
-            content.unwrap(),
-            Content::Capabilities(CapabilitiesArgs {
-                capabilities: vec![
-                    Capability::Custom,
-                    Capability::Exec,
-                    Capability::FileSystem,
-                    Capability::Forward
-                ],
-            })
+            results.capabilities,
+            vec![
+                Capability::Custom,
+                Capability::Exec,
+                Capability::FileSystem,
+                Capability::Forward
+            ],
         );
     }
 }

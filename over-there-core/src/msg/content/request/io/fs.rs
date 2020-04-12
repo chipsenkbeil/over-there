@@ -1,37 +1,37 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoCreateDirArgs {
+pub struct CreateDirArgs {
     pub path: String,
     pub include_components: bool,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoRenameDirArgs {
+pub struct RenameDirArgs {
     pub from: String,
     pub to: String,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoRemoveDirArgs {
+pub struct RemoveDirArgs {
     pub path: String,
     pub non_empty: bool,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoListDirContentsArgs {
+pub struct ListDirContentsArgs {
     pub path: String,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoOpenFileArgs {
+pub struct OpenFileArgs {
     pub path: String,
     pub create_if_missing: bool,
     pub write_access: bool,
     pub read_access: bool,
 }
 
-impl From<String> for DoOpenFileArgs {
+impl From<String> for OpenFileArgs {
     fn from(path: String) -> Self {
         Self {
             path,
@@ -43,43 +43,43 @@ impl From<String> for DoOpenFileArgs {
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoCloseFileArgs {
+pub struct CloseFileArgs {
     pub id: u32,
     pub sig: u32,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoRenameUnopenedFileArgs {
+pub struct RenameUnopenedFileArgs {
     pub from: String,
     pub to: String,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoRenameFileArgs {
+pub struct RenameFileArgs {
     pub id: u32,
     pub sig: u32,
     pub to: String,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoRemoveUnopenedFileArgs {
+pub struct RemoveUnopenedFileArgs {
     pub path: String,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoRemoveFileArgs {
+pub struct RemoveFileArgs {
     pub id: u32,
     pub sig: u32,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoReadFileArgs {
+pub struct ReadFileArgs {
     pub id: u32,
     pub sig: u32,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
-pub struct DoWriteFileArgs {
+pub struct WriteFileArgs {
     pub id: u32,
     pub sig: u32,
     pub contents: Vec<u8>,

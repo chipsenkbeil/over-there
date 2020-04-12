@@ -7,7 +7,11 @@ use super::{
 use crate::{
     event::{AddrEventManager, EventManager},
     msg::{
-        content::{reply, reply::ReplyError, request, Reply, Request},
+        content::{
+            reply::{self, *},
+            request::{self, *},
+            Reply, ReplyError, Request,
+        },
         Msg,
     },
 };
@@ -134,9 +138,9 @@ impl ConnectedClient {
         &mut self,
         path: String,
         include_components: bool,
-    ) -> Result<reply::DirCreatedArgs, FileAskError> {
+    ) -> Result<DirCreatedArgs, FileAskError> {
         let result = self
-            .ask(Request::DoCreateDir(request::DoCreateDirArgs {
+            .ask(Request::CreateDir(CreateDirArgs {
                 path,
                 include_components,
             }))
@@ -157,9 +161,9 @@ impl ConnectedClient {
         &mut self,
         from: String,
         to: String,
-    ) -> Result<reply::DirRenamedArgs, FileAskError> {
+    ) -> Result<DirRenamedArgs, FileAskError> {
         let result = self
-            .ask(Request::DoRenameDir(request::DoRenameDirArgs { from, to }))
+            .ask(Request::RenameDir(RenameDirArgs { from, to }))
             .await;
 
         if let Err(x) = result {
@@ -177,12 +181,9 @@ impl ConnectedClient {
         &mut self,
         path: String,
         non_empty: bool,
-    ) -> Result<reply::DirRemovedArgs, FileAskError> {
+    ) -> Result<DirRemovedArgs, FileAskError> {
         let result = self
-            .ask(Request::DoRemoveDir(request::DoRemoveDirArgs {
-                path,
-                non_empty,
-            }))
+            .ask(Request::RemoveDir(RemoveDirArgs { path, non_empty }))
             .await;
 
         if let Err(x) = result {
@@ -198,7 +199,7 @@ impl ConnectedClient {
     /// Requests to get a list of the root directory's contents on the server
     pub async fn ask_list_root_dir_contents(
         &mut self,
-    ) -> Result<reply::DirContentsListArgs, FileAskError> {
+    ) -> Result<DirContentsListArgs, FileAskError> {
         self.ask_list_dir_contents(String::from(".")).await
     }
 
@@ -206,11 +207,9 @@ impl ConnectedClient {
     pub async fn ask_list_dir_contents(
         &mut self,
         path: String,
-    ) -> Result<reply::DirContentsListArgs, FileAskError> {
+    ) -> Result<DirContentsListArgs, FileAskError> {
         let result = self
-            .ask(Request::DoListDirContents(request::DoListDirContentsArgs {
-                path,
-            }))
+            .ask(Request::ListDirContents(ListDirContentsArgs { path }))
             .await;
 
         if let Err(x) = result {
@@ -228,7 +227,7 @@ impl ConnectedClient {
     pub async fn ask_open_file(
         &mut self,
         path: String,
-    ) -> Result<reply::FileOpenedArgs, FileAskError> {
+    ) -> Result<FileOpenedArgs, FileAskError> {
         self.ask_open_file_with_options(path, true, true, true)
             .await
     }
@@ -240,9 +239,9 @@ impl ConnectedClient {
         create: bool,
         write: bool,
         read: bool,
-    ) -> Result<reply::FileOpenedArgs, FileAskError> {
+    ) -> Result<FileOpenedArgs, FileAskError> {
         let result = self
-            .ask(Request::DoOpenFile(request::DoOpenFileArgs {
+            .ask(Request::OpenFile(OpenFileArgs {
                 path: path.clone(),
                 create_if_missing: create,
                 write_access: write,
@@ -264,9 +263,9 @@ impl ConnectedClient {
     pub async fn ask_close_file(
         &mut self,
         file: &RemoteFile,
-    ) -> Result<reply::FileClosedArgs, FileAskError> {
+    ) -> Result<FileClosedArgs, FileAskError> {
         let result = self
-            .ask(Request::DoCloseFile(request::DoCloseFileArgs {
+            .ask(Request::CloseFile(CloseFileArgs {
                 id: file.id,
                 sig: file.sig,
             }))
@@ -287,9 +286,9 @@ impl ConnectedClient {
         &mut self,
         file: &mut RemoteFile,
         to: String,
-    ) -> Result<reply::FileRenamedArgs, FileAskError> {
+    ) -> Result<FileRenamedArgs, FileAskError> {
         let result = self
-            .ask(Request::DoRenameFile(request::DoRenameFileArgs {
+            .ask(Request::RenameFile(RenameFileArgs {
                 id: file.id,
                 sig: file.sig,
                 to,
@@ -314,11 +313,12 @@ impl ConnectedClient {
         &mut self,
         from: String,
         to: String,
-    ) -> Result<reply::UnopenedFileRenamedArgs, FileAskError> {
+    ) -> Result<UnopenedFileRenamedArgs, FileAskError> {
         let result = self
-            .ask(Request::DoRenameUnopenedFile(
-                request::DoRenameUnopenedFileArgs { from, to },
-            ))
+            .ask(Request::RenameUnopenedFile(RenameUnopenedFileArgs {
+                from,
+                to,
+            }))
             .await;
 
         if let Err(x) = result {
@@ -335,9 +335,9 @@ impl ConnectedClient {
     pub async fn ask_remove_file(
         &mut self,
         file: &mut RemoteFile,
-    ) -> Result<reply::FileRemovedArgs, FileAskError> {
+    ) -> Result<FileRemovedArgs, FileAskError> {
         let result = self
-            .ask(Request::DoRemoveFile(request::DoRemoveFileArgs {
+            .ask(Request::RemoveFile(RemoveFileArgs {
                 id: file.id,
                 sig: file.sig,
             }))
@@ -360,11 +360,9 @@ impl ConnectedClient {
     pub async fn ask_remove_unopened_file(
         &mut self,
         path: String,
-    ) -> Result<reply::UnopenedFileRemovedArgs, FileAskError> {
+    ) -> Result<UnopenedFileRemovedArgs, FileAskError> {
         let result = self
-            .ask(Request::DoRemoveUnopenedFile(
-                request::DoRemoveUnopenedFileArgs { path },
-            ))
+            .ask(Request::RemoveUnopenedFile(RemoveUnopenedFileArgs { path }))
             .await;
 
         if let Err(x) = result {
@@ -381,9 +379,9 @@ impl ConnectedClient {
     pub async fn ask_read_file(
         &mut self,
         file: &RemoteFile,
-    ) -> Result<reply::FileContentsArgs, FileAskError> {
+    ) -> Result<FileContentsArgs, FileAskError> {
         let result = self
-            .ask(Request::DoReadFile(request::DoReadFileArgs {
+            .ask(Request::ReadFile(ReadFileArgs {
                 id: file.id,
                 sig: file.sig,
             }))
@@ -404,9 +402,9 @@ impl ConnectedClient {
         &mut self,
         file: &mut RemoteFile,
         contents: &[u8],
-    ) -> Result<reply::FileWrittenArgs, FileAskError> {
+    ) -> Result<FileWrittenArgs, FileAskError> {
         let result = self
-            .ask(Request::DoWriteFile(request::DoWriteFileArgs {
+            .ask(Request::WriteFile(WriteFileArgs {
                 id: file.id,
                 sig: file.sig,
                 contents: contents.to_vec(),
@@ -433,7 +431,7 @@ impl ConnectedClient {
         &mut self,
         command: String,
         args: Vec<String>,
-    ) -> Result<reply::ProcStartedArgs, ExecAskError> {
+    ) -> Result<ProcStartedArgs, ExecAskError> {
         self.ask_exec_proc_with_options(command, args, true, true, true, None)
             .await
     }
@@ -446,7 +444,7 @@ impl ConnectedClient {
         command: String,
         args: Vec<String>,
         current_dir: String,
-    ) -> Result<reply::ProcStartedArgs, ExecAskError> {
+    ) -> Result<ProcStartedArgs, ExecAskError> {
         self.ask_exec_proc_with_options(
             command,
             args,
@@ -468,9 +466,9 @@ impl ConnectedClient {
         stdout: bool,
         stderr: bool,
         current_dir: Option<String>,
-    ) -> Result<reply::ProcStartedArgs, ExecAskError> {
+    ) -> Result<ProcStartedArgs, ExecAskError> {
         let result = self
-            .ask(Request::DoExecProc(request::DoExecProcArgs {
+            .ask(Request::ExecProc(ExecProcArgs {
                 command,
                 args,
                 stdin,
@@ -491,13 +489,13 @@ impl ConnectedClient {
     }
 
     /// Requests to send lines of text to stdin of a remote process on the server
-    pub async fn ask_write_stdin(
+    pub async fn ask_write_proc_stdin(
         &mut self,
         proc: &RemoteProc,
         input: &[u8],
-    ) -> Result<reply::StdinWrittenArgs, ExecAskError> {
+    ) -> Result<ProcStdinWrittenArgs, ExecAskError> {
         let result = self
-            .ask(Request::DoWriteStdin(request::DoWriteStdinArgs {
+            .ask(Request::WriteProcStdin(WriteProcStdinArgs {
                 id: proc.id,
                 input: input.to_vec(),
             }))
@@ -508,21 +506,19 @@ impl ConnectedClient {
         }
 
         match result.unwrap() {
-            Reply::StdinWritten(args) => Ok(args),
+            Reply::ProcStdinWritten(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
 
     /// Requests to get all stdout from a remote process on the server since
     /// the last ask was made
-    pub async fn ask_get_stdout(
+    pub async fn ask_read_proc_stdout(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<reply::StdoutContentsArgs, ExecAskError> {
+    ) -> Result<ProcStdoutContentsArgs, ExecAskError> {
         let result = self
-            .ask(Request::DoGetStdout(request::DoGetStdoutArgs {
-                id: proc.id,
-            }))
+            .ask(Request::ReadProcStdout(ReadProcStdoutArgs { id: proc.id }))
             .await;
 
         if let Err(x) = result {
@@ -530,21 +526,19 @@ impl ConnectedClient {
         }
 
         match result.unwrap() {
-            Reply::StdoutContents(args) => Ok(args),
+            Reply::ProcStdoutContents(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
 
     /// Requests to get all stderr from a remote process on the server since
     /// the last ask was made
-    pub async fn ask_get_stderr(
+    pub async fn ask_read_proc_stderr(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<reply::StderrContentsArgs, ExecAskError> {
+    ) -> Result<ProcStderrContentsArgs, ExecAskError> {
         let result = self
-            .ask(Request::DoGetStderr(request::DoGetStderrArgs {
-                id: proc.id,
-            }))
+            .ask(Request::ReadProcStderr(ReadProcStderrArgs { id: proc.id }))
             .await;
 
         if let Err(x) = result {
@@ -552,20 +546,18 @@ impl ConnectedClient {
         }
 
         match result.unwrap() {
-            Reply::StderrContents(args) => Ok(args),
+            Reply::ProcStderrContents(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
 
     /// Requests to kill a remote process on the server
-    pub async fn ask_proc_status(
+    pub async fn ask_read_proc_status(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<reply::ProcStatusArgs, ExecAskError> {
+    ) -> Result<ProcStatusArgs, ExecAskError> {
         let result = self
-            .ask(Request::DoGetProcStatus(request::DoGetProcStatusArgs {
-                id: proc.id,
-            }))
+            .ask(Request::ReadProcStatus(ReadProcStatusArgs { id: proc.id }))
             .await;
 
         if let Err(x) = result {
@@ -582,9 +574,9 @@ impl ConnectedClient {
     pub async fn ask_proc_kill(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<reply::ProcStatusArgs, ExecAskError> {
+    ) -> Result<ProcStatusArgs, ExecAskError> {
         let result = self
-            .ask(Request::DoKillProc(request::DoKillProcArgs { id: proc.id }))
+            .ask(Request::KillProc(KillProcArgs { id: proc.id }))
             .await;
 
         if let Err(x) = result {

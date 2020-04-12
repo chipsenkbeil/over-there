@@ -102,32 +102,26 @@ pub enum Reply {
     ProcStarted(ProcStartedArgs),
 
     /// This will be returned upon successfully writing to stdin
-    #[serde(rename = "write_stdin_reply")]
-    StdinWritten(StdinWrittenArgs),
+    #[serde(rename = "write_proc_stdin_reply")]
+    ProcStdinWritten(ProcStdinWrittenArgs),
 
     /// This will be returned upon receiving stdout from a remote process on
     /// the server, if enabled when first executing
-    #[serde(rename = "get_stdout_reply")]
-    StdoutContents(StdoutContentsArgs),
+    #[serde(rename = "read_proc_stdout_reply")]
+    ProcStdoutContents(ProcStdoutContentsArgs),
 
     /// This will be returned upon receiving stderr from a remote process on
     /// the server, if enabled when first executing
-    #[serde(rename = "get_stderr_reply")]
-    StderrContents(StderrContentsArgs),
+    #[serde(rename = "read_proc_stderr_reply")]
+    ProcStderrContents(ProcStderrContentsArgs),
 
     /// This will be returned upon attempting to kill a process
-    // TODO: This is returned for two different types, killing a proc
-    //       and requesting status; should I make a duplicate for the proc
-    //       kill that has proc kill args?
     #[serde(rename = "kill_proc_reply")]
     ProcKilled(ProcKilledArgs),
 
     /// This will be returned reporting the status of the process, indicating
     /// if still running or if has completed (and the exit code)
-    // TODO: This is returned for two different types, killing a proc
-    //       and requesting status; should I make a duplicate for the proc
-    //       kill that has proc kill args?
-    #[serde(rename = "proc_status_reply")]
+    #[serde(rename = "read_proc_status_reply")]
     ProcStatus(ProcStatusArgs),
 
     // ------------------------------------------------------------------------
@@ -159,6 +153,18 @@ pub enum Reply {
     InternalDebug(InternalDebugArgs),
 }
 
+impl From<std::io::Error> for Reply {
+    fn from(x: std::io::Error) -> Self {
+        Self::Error(ReplyError::from(x))
+    }
+}
+
+impl From<Box<dyn std::error::Error>> for Reply {
+    fn from(x: Box<dyn std::error::Error>) -> Self {
+        Self::Error(ReplyError::from(x))
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub enum ReplyError {
@@ -175,8 +181,8 @@ pub enum ReplyError {
 impl ToString for ReplyError {
     fn to_string(&self) -> String {
         match self {
-            Self::Generic(args) => args.msg,
-            Self::Io(args) => args.description,
+            Self::Generic(args) => args.msg.clone(),
+            Self::Io(args) => args.description.clone(),
             Self::FileSigChanged(args) => {
                 format!("File {} signature changed", args.id)
             }
@@ -193,5 +199,17 @@ impl From<String> for ReplyError {
 impl From<&str> for ReplyError {
     fn from(text: &str) -> Self {
         Self::from(String::from(text))
+    }
+}
+
+impl From<Box<dyn std::error::Error>> for ReplyError {
+    fn from(x: Box<dyn std::error::Error>) -> Self {
+        Self::Generic(GenericErrorArgs::from(x))
+    }
+}
+
+impl From<std::io::Error> for ReplyError {
+    fn from(x: std::io::Error) -> Self {
+        Self::Io(IoErrorArgs::from(x))
     }
 }

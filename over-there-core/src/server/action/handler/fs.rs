@@ -1,29 +1,45 @@
 use crate::{
-    msg::content::*,
+    reply::*,
+    request::*,
     server::{
-        action::ActionError,
         fs::{LocalDirEntry, LocalFileError, LocalFileHandle},
         state::ServerState,
     },
 };
 use log::debug;
 use std::convert::TryFrom;
-use std::future::Future;
 use std::io;
 use std::sync::Arc;
 
-pub async fn do_open_file<F, R>(
-    state: Arc<ServerState>,
-    args: &DoOpenFileArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_open_file: {:?}", args);
+pub enum FileIoError {
+    Io(io::Error),
+    SigMismatch { id: u32, sig: u32 },
+}
 
-    match state
+impl From<FileIoError> for ReplyError {
+    fn from(fie: FileIoError) -> ReplyError {
+        match fie {
+            FileIoError::Io(x) => ReplyError::Io(x.into()),
+            FileIoError::SigMismatch { id, sig } => {
+                ReplyError::FileSigChanged(FileSigChangedArgs { id, sig })
+            }
+        }
+    }
+}
+
+impl From<FileIoError> for Reply {
+    fn from(x: FileIoError) -> Self {
+        Self::Error(ReplyError::from(x))
+    }
+}
+
+pub async fn open_file(
+    state: Arc<ServerState>,
+    args: &OpenFileArgs,
+) -> Result<FileOpenedArgs, io::Error> {
+    debug!("handler::open_file: {:?}", args);
+
+    let handle = state
         .fs_manager
         .lock()
         .await
@@ -33,33 +49,24 @@ where
             args.write_access,
             args.read_access,
         )
-        .await
-    {
-        Ok(LocalFileHandle { id, sig }) => {
-            state.touch_file_id(id).await;
-            respond(Content::FileOpened(FileOpenedArgs {
-                id,
-                sig,
-                path: args.path.clone(),
-                read: args.read_access,
-                write: args.write_access,
-            }))
-            .await
-        }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
-    }
+        .await?;
+
+    state.touch_file_id(handle.id).await;
+
+    Ok(FileOpenedArgs {
+        id: handle.id,
+        sig: handle.sig,
+        path: args.path.clone(),
+        read: args.read_access,
+        write: args.write_access,
+    })
 }
 
-pub async fn do_close_file<F, R>(
+pub async fn close_file(
     state: Arc<ServerState>,
-    args: &DoCloseFileArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_close_file: {:?}", args);
+    args: &CloseFileArgs,
+) -> Result<FileClosedArgs, io::Error> {
+    debug!("handler::close_file: {:?}", args);
     state.touch_file_id(args.id).await;
 
     let handle = LocalFileHandle {
@@ -67,338 +74,233 @@ where
         sig: args.sig,
     };
 
-    match state.fs_manager.lock().await.close_file(handle) {
-        Ok(_) => {
-            state.remove_file_id(args.id).await;
-            respond(Content::FileClosed(FileClosedArgs { id: args.id })).await
-        }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
-    }
+    let _ = state.fs_manager.lock().await.close_file(handle)?;
+
+    state.remove_file_id(args.id).await;
+    Ok(FileClosedArgs { id: args.id })
 }
 
-pub async fn do_rename_unopened_file<F, R>(
+pub async fn rename_unopened_file(
     state: Arc<ServerState>,
-    args: &DoRenameUnopenedFileArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_rename_unopened_file: {:?}", args);
+    args: &RenameUnopenedFileArgs,
+) -> Result<UnopenedFileRenamedArgs, io::Error> {
+    debug!("handler::rename_unopened_file: {:?}", args);
 
-    match state
+    let _ = state
         .fs_manager
         .lock()
         .await
         .rename_file(&args.from, &args.to)
-        .await
-    {
-        Ok(_) => {
-            respond(Content::UnopenedFileRenamed(UnopenedFileRenamedArgs {
-                from: args.from.clone(),
-                to: args.to.clone(),
-            }))
-            .await
-        }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
-    }
+        .await?;
+
+    Ok(UnopenedFileRenamedArgs {
+        from: args.from.clone(),
+        to: args.to.clone(),
+    })
 }
 
-pub async fn do_rename_file<F, R>(
+pub async fn rename_file(
     state: Arc<ServerState>,
-    args: &DoRenameFileArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_rename_file: {:?}", args);
+    args: &RenameFileArgs,
+) -> Result<FileRenamedArgs, FileIoError> {
+    debug!("handler::rename_file: {:?}", args);
     state.touch_file_id(args.id).await;
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.rename(args.sig, &args.to).await {
-            Ok(_) => {
-                respond(Content::FileRenamed(FileRenamedArgs {
-                    id: args.id,
-                    sig: local_file.sig(),
-                }))
-                .await
-            }
-            Err(LocalFileError::SigMismatch) => {
-                respond(Content::FileSigChanged(FileSigChangedArgs {
-                    id: args.id,
-                    sig: local_file.sig(),
-                }))
-                .await
-            }
-            Err(LocalFileError::IoError(x)) => {
-                respond(Content::IoError(From::from(x))).await
-            }
+            Ok(_) => Ok(FileRenamedArgs {
+                id: args.id,
+                sig: local_file.sig(),
+            }),
+            Err(LocalFileError::SigMismatch) => Err(FileIoError::SigMismatch {
+                id: args.id,
+                sig: local_file.sig(),
+            }),
+            Err(LocalFileError::IoError(x)) => Err(FileIoError::Io(x)),
         },
-        None => {
-            respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id)))
-                .await
-        }
+        None => Err(FileIoError::Io(
+            IoErrorArgs::invalid_file_id(args.id).into(),
+        )),
     }
 }
 
-pub async fn do_remove_unopened_file<F, R>(
+pub async fn remove_unopened_file(
     state: Arc<ServerState>,
-    args: &DoRemoveUnopenedFileArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_remove_unopened_file: {:?}", args);
+    args: &RemoveUnopenedFileArgs,
+) -> Result<UnopenedFileRemovedArgs, io::Error> {
+    debug!("handler::remove_unopened_file: {:?}", args);
 
-    match state.fs_manager.lock().await.remove_file(&args.path).await {
-        Ok(_) => {
-            respond(Content::UnopenedFileRemoved(UnopenedFileRemovedArgs {
-                path: args.path.clone(),
-            }))
-            .await
-        }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
-    }
+    let _ = state
+        .fs_manager
+        .lock()
+        .await
+        .remove_file(&args.path)
+        .await?;
+
+    Ok(UnopenedFileRemovedArgs {
+        path: args.path.clone(),
+    })
 }
 
-pub async fn do_remove_file<F, R>(
+pub async fn remove_file(
     state: Arc<ServerState>,
-    args: &DoRemoveFileArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_remove_file: {:?}", args);
+    args: &RemoveFileArgs,
+) -> Result<FileRemovedArgs, FileIoError> {
+    debug!("handler::remove_file: {:?}", args);
     state.touch_file_id(args.id).await;
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.remove(args.sig).await {
             Ok(_) => {
                 state.remove_file_id(args.id).await;
-                respond(Content::FileRemoved(FileRemovedArgs {
+                Ok(FileRemovedArgs {
                     id: args.id,
                     sig: local_file.sig(),
-                }))
-                .await
+                })
             }
-            Err(LocalFileError::SigMismatch) => {
-                respond(Content::FileSigChanged(FileSigChangedArgs {
-                    id: args.id,
-                    sig: local_file.sig(),
-                }))
-                .await
-            }
-            Err(LocalFileError::IoError(x)) => {
-                respond(Content::IoError(From::from(x))).await
-            }
+            Err(LocalFileError::SigMismatch) => Err(FileIoError::SigMismatch {
+                id: args.id,
+                sig: local_file.sig(),
+            }),
+            Err(LocalFileError::IoError(x)) => Err(FileIoError::Io(x)),
         },
-        None => {
-            respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id)))
-                .await
-        }
+        None => Err(FileIoError::Io(
+            IoErrorArgs::invalid_file_id(args.id).into(),
+        )),
     }
 }
 
-pub async fn do_read_file<F, R>(
+pub async fn read_file(
     state: Arc<ServerState>,
-    args: &DoReadFileArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_read_file: {:?}", args);
+    args: &ReadFileArgs,
+) -> Result<FileContentsArgs, FileIoError> {
+    debug!("handler::read_file: {:?}", args);
     state.touch_file_id(args.id).await;
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => match local_file.read_all(args.sig).await {
-            Ok(contents) => {
-                respond(Content::FileContents(FileContentsArgs {
-                    id: args.id,
-                    contents,
-                }))
-                .await
-            }
-            Err(LocalFileError::SigMismatch) => {
-                respond(Content::FileSigChanged(FileSigChangedArgs {
-                    id: args.id,
-                    sig: local_file.sig(),
-                }))
-                .await
-            }
-            Err(LocalFileError::IoError(x)) => {
-                respond(Content::IoError(From::from(x))).await
-            }
+            Ok(contents) => Ok(FileContentsArgs {
+                id: args.id,
+                contents,
+            }),
+            Err(LocalFileError::SigMismatch) => Err(FileIoError::SigMismatch {
+                id: args.id,
+                sig: local_file.sig(),
+            }),
+            Err(LocalFileError::IoError(x)) => Err(FileIoError::Io(x)),
         },
-        None => {
-            respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id)))
-                .await
-        }
+        None => Err(FileIoError::Io(
+            IoErrorArgs::invalid_file_id(args.id).into(),
+        )),
     }
 }
 
-pub async fn do_write_file<F, R>(
+pub async fn write_file(
     state: Arc<ServerState>,
-    args: &DoWriteFileArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_write_file: {:?}", args);
+    args: &WriteFileArgs,
+) -> Result<FileWrittenArgs, FileIoError> {
+    debug!("handler::write_file: {:?}", args);
     state.touch_file_id(args.id).await;
 
     match state.fs_manager.lock().await.get_mut(args.id) {
         Some(local_file) => {
             match local_file.write_all(args.sig, &args.contents).await {
-                Ok(_) => {
-                    respond(Content::FileWritten(FileWrittenArgs {
-                        id: args.id,
-                        sig: local_file.sig(),
-                    }))
-                    .await
-                }
+                Ok(_) => Ok(FileWrittenArgs {
+                    id: args.id,
+                    sig: local_file.sig(),
+                }),
                 Err(LocalFileError::SigMismatch) => {
-                    respond(Content::FileSigChanged(FileSigChangedArgs {
+                    Err(FileIoError::SigMismatch {
                         id: args.id,
                         sig: local_file.sig(),
-                    }))
-                    .await
+                    })
                 }
-                Err(LocalFileError::IoError(x)) => {
-                    respond(Content::IoError(From::from(x))).await
-                }
+                Err(LocalFileError::IoError(x)) => Err(FileIoError::Io(x)),
             }
         }
-        None => {
-            respond(Content::IoError(IoErrorArgs::invalid_file_id(args.id)))
-                .await
-        }
+        None => Err(FileIoError::Io(
+            IoErrorArgs::invalid_file_id(args.id).into(),
+        )),
     }
 }
 
-pub async fn do_create_dir<F, R>(
+pub async fn create_dir(
     state: Arc<ServerState>,
-    args: &DoCreateDirArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_create_dir: {:?}", args);
+    args: &CreateDirArgs,
+) -> Result<DirCreatedArgs, io::Error> {
+    debug!("handler::create_dir: {:?}", args);
 
-    match state
+    let _ = state
         .fs_manager
         .lock()
         .await
         .create_dir(&args.path, args.include_components)
-        .await
-    {
-        Ok(_) => {
-            respond(Content::DirCreated(DirCreatedArgs {
-                path: args.path.clone(),
-            }))
-            .await
-        }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
-    }
+        .await?;
+
+    Ok(DirCreatedArgs {
+        path: args.path.clone(),
+    })
 }
 
-pub async fn do_rename_dir<F, R>(
+pub async fn rename_dir(
     state: Arc<ServerState>,
-    args: &DoRenameDirArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_rename_dir: {:?}", args);
+    args: &RenameDirArgs,
+) -> Result<DirRenamedArgs, io::Error> {
+    debug!("handler::rename_dir: {:?}", args);
 
-    match state
+    let _ = state
         .fs_manager
         .lock()
         .await
         .rename_dir(&args.from, &args.to)
-        .await
-    {
-        Ok(_) => {
-            respond(Content::DirRenamed(DirRenamedArgs {
-                from: args.from.clone(),
-                to: args.to.clone(),
-            }))
-            .await
-        }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
-    }
+        .await?;
+
+    Ok(DirRenamedArgs {
+        from: args.from.clone(),
+        to: args.to.clone(),
+    })
 }
 
-pub async fn do_remove_dir<F, R>(
+pub async fn remove_dir(
     state: Arc<ServerState>,
-    args: &DoRemoveDirArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_remove_dir: {:?}", args);
+    args: &RemoveDirArgs,
+) -> Result<DirRemovedArgs, io::Error> {
+    debug!("handler::remove_dir: {:?}", args);
 
-    match state
+    let _ = state
         .fs_manager
         .lock()
         .await
         .remove_dir(&args.path, args.non_empty)
-        .await
-    {
-        Ok(_) => {
-            respond(Content::DirRemoved(DirRemovedArgs {
-                path: args.path.clone(),
-            }))
-            .await
-        }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
-    }
+        .await?;
+
+    Ok(DirRemovedArgs {
+        path: args.path.clone(),
+    })
 }
 
-pub async fn do_list_dir_contents<F, R>(
+pub async fn list_dir_contents(
     state: Arc<ServerState>,
-    args: &DoListDirContentsArgs,
-    respond: F,
-) -> Result<(), ActionError>
-where
-    F: FnOnce(Content) -> R,
-    R: Future<Output = Result<(), ActionError>>,
-{
-    debug!("do_list_dir_contents: {:?}", args);
+    args: &ListDirContentsArgs,
+) -> Result<DirContentsListArgs, io::Error> {
+    debug!("handler::list_dir_contents: {:?}", args);
 
-    match state.fs_manager.lock().await.dir_entries(&args.path).await {
-        Ok(local_entries) => {
-            let entries: io::Result<Vec<DirEntry>> =
-                local_entries.into_iter().map(DirEntry::try_from).collect();
-            match entries {
-                Ok(entries) => {
-                    respond(Content::DirContentsList(DirContentsListArgs {
-                        path: args.path.clone(),
-                        entries,
-                    }))
-                    .await
-                }
-                Err(x) => respond(Content::IoError(From::from(x))).await,
-            }
-        }
-        Err(x) => respond(Content::IoError(From::from(x))).await,
-    }
+    let local_entries = state
+        .fs_manager
+        .lock()
+        .await
+        .dir_entries(&args.path)
+        .await?;
+
+    let entries = local_entries
+        .into_iter()
+        .map(DirEntry::try_from)
+        .collect::<io::Result<Vec<DirEntry>>>()?;
+
+    Ok(DirContentsListArgs {
+        path: args.path.clone(),
+        entries,
+    })
 }
 
 impl TryFrom<LocalDirEntry> for DirEntry {

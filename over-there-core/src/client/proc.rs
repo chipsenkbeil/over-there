@@ -1,4 +1,4 @@
-use super::{ProcStartedArgs, ProcStatusArgs};
+use crate::reply::{ProcStartedArgs, ProcStatusArgs};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RemoteProcStatus {

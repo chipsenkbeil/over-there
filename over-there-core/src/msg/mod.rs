@@ -68,7 +68,7 @@ impl Msg {
 
     /// Sets the parent header of this msg with that of the provided parent
     pub fn with_parent(&mut self, parent: &Self) -> &mut Self {
-        self.with_parent_header(parent.header)
+        self.with_parent_header(parent.header.clone())
     }
 }
 
