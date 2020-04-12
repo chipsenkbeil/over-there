@@ -1,11 +1,9 @@
 pub mod reply;
 pub mod request;
-mod transform;
 
 pub use reply::{Reply, ReplyError};
-pub use request::Request;
-pub use transform::{
-    LazilyTransformedContent, TransformContentError, TransformRule,
+pub use request::{
+    LazilyTransformedRequest, Request, TransformRequestError, TransformRule,
 };
 
 use serde::{Deserialize, Serialize};

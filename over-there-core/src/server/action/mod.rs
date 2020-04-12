@@ -1,14 +1,13 @@
 mod handler;
 
 use crate::{
-    server::state::ServerState, Content, Header, LazilyTransformedContent, Msg,
-    MsgError, Reply, ReplyError, Request,
+    reply, server::state::ServerState, Content, Header, Msg, MsgError, Reply,
+    ReplyError, Request,
 };
+use futures::future::{BoxFuture, FutureExt};
 use log::trace;
 use over_there_derive::Error;
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
-use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -22,7 +21,6 @@ pub enum ActionError {
     MsgError(MsgError),
     RespondFailed,
     UnexpectedContent,
-    Unknown,
 }
 
 struct OriginSender<T> {
@@ -139,7 +137,7 @@ impl Executor<(Vec<u8>, SocketAddr)> {
 
 async fn validate_route_and_execute(
     state: Arc<ServerState>,
-    mut content: Content,
+    content: Content,
     origin: SocketAddr,
 ) -> Result<Reply, ActionError> {
     trace!("Executing content: {:?}", content);
@@ -149,118 +147,168 @@ async fn validate_route_and_execute(
     Ok(route_and_execute(state, request, MAX_DEPTH).await)
 }
 
-async fn route_and_execute(
+fn route_and_execute(
     state: Arc<ServerState>,
     request: Request,
     max_depth: u8,
-) -> Reply {
-    if max_depth == 0 {
-        return Reply::Error(ReplyError::from("Reached maximum nested depth"));
-    }
+) -> BoxFuture<'static, Reply> {
+    async move {
+        if max_depth == 0 {
+            Reply::Error(ReplyError::from("Reached maximum nested depth"))
+        } else {
+            match request {
+                Request::Heartbeat => {
+                    handler::heartbeat::heartbeat().await;
+                    Reply::Heartbeat
+                }
+                Request::Version => {
+                    Reply::Version(handler::version::version().await)
+                }
+                Request::Capabilities => Reply::Capabilities(
+                    handler::capabilities::capabilities().await,
+                ),
+                Request::OpenFile(args) => handler::fs::open_file(state, &args)
+                    .await
+                    .map(Reply::FileOpened)
+                    .unwrap_or_else(Reply::from),
+                Request::CloseFile(args) => {
+                    handler::fs::close_file(state, &args)
+                        .await
+                        .map(Reply::FileClosed)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::RenameUnopenedFile(args) => {
+                    handler::fs::rename_unopened_file(state, &args)
+                        .await
+                        .map(Reply::UnopenedFileRenamed)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::RenameFile(args) => {
+                    handler::fs::rename_file(state, &args)
+                        .await
+                        .map(Reply::FileRenamed)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::RemoveUnopenedFile(args) => {
+                    handler::fs::remove_unopened_file(state, &args)
+                        .await
+                        .map(Reply::UnopenedFileRemoved)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::RemoveFile(args) => {
+                    handler::fs::remove_file(state, &args)
+                        .await
+                        .map(Reply::FileRemoved)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::ReadFile(args) => handler::fs::read_file(state, &args)
+                    .await
+                    .map(Reply::FileContents)
+                    .unwrap_or_else(Reply::from),
+                Request::WriteFile(args) => {
+                    handler::fs::write_file(state, &args)
+                        .await
+                        .map(Reply::FileWritten)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::CreateDir(args) => {
+                    handler::fs::create_dir(state, &args)
+                        .await
+                        .map(Reply::DirCreated)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::RenameDir(args) => {
+                    handler::fs::rename_dir(state, &args)
+                        .await
+                        .map(Reply::DirRenamed)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::RemoveDir(args) => {
+                    handler::fs::remove_dir(state, &args)
+                        .await
+                        .map(Reply::DirRemoved)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::ListDirContents(args) => {
+                    handler::fs::list_dir_contents(state, &args)
+                        .await
+                        .map(Reply::DirContentsList)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::ExecProc(args) => {
+                    handler::proc::exec_proc(state, &args)
+                        .await
+                        .map(Reply::ProcStarted)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::WriteProcStdin(args) => {
+                    handler::proc::write_proc_stdin(state, &args)
+                        .await
+                        .map(Reply::ProcStdinWritten)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::ReadProcStdout(args) => {
+                    handler::proc::read_proc_stdout(state, &args)
+                        .await
+                        .map(Reply::ProcStdoutContents)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::ReadProcStderr(args) => {
+                    handler::proc::read_proc_stderr(state, &args)
+                        .await
+                        .map(Reply::ProcStderrContents)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::ReadProcStatus(args) => {
+                    handler::proc::read_proc_status(state, &args)
+                        .await
+                        .map(Reply::ProcStatus)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::KillProc(args) => {
+                    handler::proc::kill_proc(state, &args)
+                        .await
+                        .map(Reply::ProcKilled)
+                        .unwrap_or_else(Reply::from)
+                }
+                Request::InternalDebug(args) => Reply::InternalDebug(
+                    handler::internal_debug::internal_debug(state, &args).await,
+                ),
+                Request::Sequence(mut args) => {
+                    let mut results: Vec<Reply> = vec![];
+                    for op in args.operations.drain(..) {
+                        let try_req = if results.is_empty() {
+                            Ok(op.into_raw_request())
+                        } else {
+                            op.transform_with_reply(results.last().unwrap())
+                        };
 
-    match &request {
-        Request::Heartbeat => {
-            handler::heartbeat::heartbeat().await;
-            Reply::Heartbeat
+                        let result = match try_req {
+                            Ok(req) => {
+                                route_and_execute(
+                                    Arc::clone(&state),
+                                    req,
+                                    max_depth - 1,
+                                )
+                                .await
+                            }
+                            Err(x) => {
+                                Reply::Error(ReplyError::from(format!("{}", x)))
+                            }
+                        };
+
+                        results.push(result);
+                    }
+
+                    Reply::Sequence(reply::SequenceArgs { results })
+                }
+                Request::Batch(_) => unimplemented!(),
+                Request::Custom(_) => unimplemented!(),
+                Request::Forward(_) => unimplemented!(),
+            }
         }
-        Request::Version => Reply::Version(handler::version::version().await),
-        Request::Capabilities => {
-            Reply::Capabilities(handler::capabilities::capabilities().await)
-        }
-        Request::OpenFile(args) => handler::fs::open_file(state, args)
-            .await
-            .map(Reply::FileOpened)
-            .unwrap_or_else(Reply::from),
-        Request::CloseFile(args) => handler::fs::close_file(state, args)
-            .await
-            .map(Reply::FileClosed)
-            .unwrap_or_else(Reply::from),
-        Request::RenameUnopenedFile(args) => {
-            handler::fs::rename_unopened_file(state, args)
-                .await
-                .map(Reply::UnopenedFileRenamed)
-                .unwrap_or_else(Reply::from)
-        }
-        Request::RenameFile(args) => handler::fs::rename_file(state, args)
-            .await
-            .map(Reply::FileRenamed)
-            .unwrap_or_else(Reply::from),
-        Request::RemoveUnopenedFile(args) => {
-            handler::fs::remove_unopened_file(state, args)
-                .await
-                .map(Reply::UnopenedFileRemoved)
-                .unwrap_or_else(Reply::from)
-        }
-        Request::RemoveFile(args) => handler::fs::remove_file(state, args)
-            .await
-            .map(Reply::FileRemoved)
-            .unwrap_or_else(Reply::from),
-        Request::ReadFile(args) => handler::fs::read_file(state, args)
-            .await
-            .map(Reply::FileContents)
-            .unwrap_or_else(Reply::from),
-        Request::WriteFile(args) => handler::fs::write_file(state, args)
-            .await
-            .map(Reply::FileWritten)
-            .unwrap_or_else(Reply::from),
-        Request::CreateDir(args) => handler::fs::create_dir(state, args)
-            .await
-            .map(Reply::DirCreated)
-            .unwrap_or_else(Reply::from),
-        Request::RenameDir(args) => handler::fs::rename_dir(state, args)
-            .await
-            .map(Reply::DirRenamed)
-            .unwrap_or_else(Reply::from),
-        Request::RemoveDir(args) => handler::fs::remove_dir(state, args)
-            .await
-            .map(Reply::DirRemoved)
-            .unwrap_or_else(Reply::from),
-        Request::ListDirContents(args) => {
-            handler::fs::list_dir_contents(state, args)
-                .await
-                .map(Reply::DirContentsList)
-                .unwrap_or_else(Reply::from)
-        }
-        Request::ExecProc(args) => handler::proc::exec_proc(state, args)
-            .await
-            .map(Reply::ProcStarted)
-            .unwrap_or_else(Reply::from),
-        Request::WriteProcStdin(args) => {
-            handler::proc::write_proc_stdin(state, args)
-                .await
-                .map(Reply::ProcStdinWritten)
-                .unwrap_or_else(Reply::from)
-        }
-        Request::ReadProcStdout(args) => {
-            handler::proc::read_proc_stdout(state, args)
-                .await
-                .map(Reply::ProcStdoutContents)
-                .unwrap_or_else(Reply::from)
-        }
-        Request::ReadProcStderr(args) => {
-            handler::proc::read_proc_stderr(state, args)
-                .await
-                .map(Reply::ProcStderrContents)
-                .unwrap_or_else(Reply::from)
-        }
-        Request::ReadProcStatus(args) => {
-            handler::proc::read_proc_status(state, args)
-                .await
-                .map(Reply::ProcStatus)
-                .unwrap_or_else(Reply::from)
-        }
-        Request::KillProc(args) => handler::proc::kill_proc(state, args)
-            .await
-            .map(Reply::ProcKilled)
-            .unwrap_or_else(Reply::from),
-        Request::InternalDebug(args) => Reply::InternalDebug(
-            handler::internal_debug::internal_debug(state, args).await,
-        ),
-        Request::Sequence(_) => unimplemented!(),
-        Request::Batch(_) => unimplemented!(),
-        Request::Custom(_) => unimplemented!(),
-        Request::Forward(_) => unimplemented!(),
     }
+    .boxed()
 }
 
 /// Update last time we received a message from the connection

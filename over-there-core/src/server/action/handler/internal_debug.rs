@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 pub async fn internal_debug(
     state: Arc<ServerState>,
-    args: &request::InternalDebugArgs,
+    _args: &request::InternalDebugArgs,
 ) -> reply::InternalDebugArgs {
     debug!("internal_debug_request");
 
