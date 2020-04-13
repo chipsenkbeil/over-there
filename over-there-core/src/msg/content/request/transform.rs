@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn transform_with_reply_should_fail_if_rule_value_not_found() {
-        let raw_request = Request::from(Request::ReadFile(Default::default()));
+        let raw_request = Request::ReadFile(Default::default());
         let reply = Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
@@ -105,10 +105,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace id of raw request
-                path: String::from("$.id"),
+                path: String::from("$.payload.id"),
 
                 // Apply missing field from reply request
-                value: String::from("$.missing_field"),
+                value: String::from("$.payload.missing_field"),
             }],
         };
 
@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn transform_with_reply_should_fail_if_rule_value_not_scalar() {
-        let raw_request = Request::from(Request::ReadFile(Default::default()));
+        let raw_request = Request::ReadFile(Default::default());
         let reply = Reply::Custom(CustomArgs {
             data: vec![0, 1, 2],
         });
@@ -129,10 +129,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace id of raw request
-                path: String::from("$.id"),
+                path: String::from("$.payload.id"),
 
                 // Apply array data field from reply request
-                value: String::from("$.data[*]"),
+                value: String::from("$.payload.data[*]"),
             }],
         };
 
@@ -155,10 +155,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace data of raw request
-                path: String::from("$.data"),
+                path: String::from("$.payload.data"),
 
                 // Apply id from reply request
-                value: String::from("$.id"),
+                value: String::from("$.payload.id"),
             }],
         };
 
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn transform_with_reply_should_return_raw_request_if_rule_path_missing() {
-        let raw_request = Request::from(Request::ReadFile(Default::default()));
+        let raw_request = Request::ReadFile(Default::default());
         let reply = Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
@@ -181,10 +181,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace missing field of raw request
-                path: String::from("$.missing_field"),
+                path: String::from("$.payload.missing_field"),
 
                 // Apply id from reply request
-                value: String::from("$.id"),
+                value: String::from("$.payload.id"),
             }],
         };
 
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn transform_with_reply_should_succeed_if_able_to_replace_path_with_value()
     {
-        let raw_request = Request::from(Request::ReadFile(Default::default()));
+        let raw_request = Request::ReadFile(Default::default());
         let reply = Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
@@ -210,10 +210,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace id of raw request
-                path: String::from("$.id"),
+                path: String::from("$.payload.id"),
 
                 // Apply id from reply request
-                value: String::from("$.id"),
+                value: String::from("$.payload.id"),
             }],
         };
 
@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn transform_with_reply_should_apply_rules_in_sequence() {
-        let raw_request = Request::from(Request::ReadFile(Default::default()));
+        let raw_request = Request::ReadFile(Default::default());
         let reply = Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
@@ -244,17 +244,17 @@ mod tests {
             rules: vec![
                 TransformRule {
                     // Replace id of raw request
-                    path: String::from("$.id"),
+                    path: String::from("$.payload.id"),
 
                     // Apply id from reply request
-                    value: String::from("$.id"),
+                    value: String::from("$.payload.id"),
                 },
                 TransformRule {
                     // Replace sig of raw request
-                    path: String::from("$.sig"),
+                    path: String::from("$.payload.sig"),
 
                     // Apply sig from reply request
-                    value: String::from("$.sig"),
+                    value: String::from("$.payload.sig"),
                 },
             ],
         };
