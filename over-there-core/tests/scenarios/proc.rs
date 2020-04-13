@@ -20,14 +20,14 @@ pub async fn async_test(mut client: ConnectedClient) {
         .await
         .expect("Failed to run cat")
         .into();
-    client.ask_write_stdin(&proc, b"test\n").await.unwrap();
+    client.ask_write_proc_stdin(&proc, b"test\n").await.unwrap();
 
     let output =
         wait_for_nonempty_output(&mut client, &proc, OUTPUT_TIMEOUT).await;
     assert_eq!(output, "test\n");
 
     // Check the status of the proc, which should still be alive
-    let status = client.ask_proc_status(&proc).await.unwrap();
+    let status = client.ask_read_proc_status(&proc).await.unwrap();
     assert_eq!(status.id, proc.id(), "Wrong proc id returned with status");
     assert!(status.is_alive, "Proc reported dead when shouldn't be");
     assert!(
@@ -37,7 +37,7 @@ pub async fn async_test(mut client: ConnectedClient) {
 
     // Write again to proc to prove that it hasn't closed input
     client
-        .ask_write_stdin(&proc, b"another test\n")
+        .ask_write_proc_stdin(&proc, b"another test\n")
         .await
         .unwrap();
 
@@ -54,7 +54,7 @@ pub async fn async_test(mut client: ConnectedClient) {
     );
 
     // Should not be able to get status of proc because it's been removed
-    match client.ask_proc_status(&proc).await.unwrap_err() {
+    match client.ask_read_proc_status(&proc).await.unwrap_err() {
         ExecAskError::IoError(x) => {
             assert_eq!(x.kind(), std::io::ErrorKind::InvalidInput)
         }
@@ -71,7 +71,7 @@ async fn wait_for_nonempty_output(
 
     while start.elapsed() < timeout {
         let output = client
-            .ask_get_stdout(&proc)
+            .ask_read_proc_stdout(&proc)
             .await
             .expect("Failed to get stdout")
             .output;

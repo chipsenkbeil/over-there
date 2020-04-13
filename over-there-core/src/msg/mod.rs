@@ -131,7 +131,7 @@ mod tests {
         let mut msg = Msg::from(Reply::Heartbeat);
         let header = Header::default();
 
-        msg.with_parent_header(header);
+        msg.with_parent_header(header.clone());
 
         assert_eq!(msg.parent_header, Some(header));
     }

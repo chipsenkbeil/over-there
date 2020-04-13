@@ -89,17 +89,17 @@ pub struct TransformRule {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{CustomArgs, FileOpenedArgs};
     use super::*;
+    use crate::reply::{CustomArgs, FileOpenedArgs};
 
     #[test]
     fn transform_with_reply_should_fail_if_rule_value_not_found() {
         let raw_request = Request::from(Request::ReadFile(Default::default()));
-        let reply_request = Request::from(Reply::FileOpened(FileOpenedArgs {
+        let reply = Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        }));
+        });
 
         let lazy_request = LazilyTransformedRequest {
             raw_request: raw_request.clone(),
@@ -112,7 +112,7 @@ mod tests {
             }],
         };
 
-        match lazy_request.transform_with_reply(&reply_request) {
+        match lazy_request.transform_with_reply(&reply) {
             Err(TransformRequestError::ReplyValueMissing { .. }) => (),
             x => panic!("Unexpected request: {:?}", x),
         }
@@ -121,9 +121,9 @@ mod tests {
     #[test]
     fn transform_with_reply_should_fail_if_rule_value_not_scalar() {
         let raw_request = Request::from(Request::ReadFile(Default::default()));
-        let reply_request = Request::from(Reply::Custom(CustomArgs {
+        let reply = Reply::Custom(CustomArgs {
             data: vec![0, 1, 2],
-        }));
+        });
 
         let lazy_request = LazilyTransformedRequest {
             raw_request: raw_request.clone(),
@@ -136,7 +136,7 @@ mod tests {
             }],
         };
 
-        match lazy_request.transform_with_reply(&reply_request) {
+        match lazy_request.transform_with_reply(&reply) {
             Err(TransformRequestError::ReplyValueNotScalar { .. }) => (),
             x => panic!("Unexpected request: {:?}", x),
         }
@@ -144,25 +144,25 @@ mod tests {
 
     #[test]
     fn transform_with_reply_should_fail_if_rule_value_not_same_type_as_path() {
-        let raw_request = Request::from(Reply::Error(Default::default()));
-        let reply_request = Request::from(Reply::FileOpened(FileOpenedArgs {
+        let raw_request = Request::Custom(Default::default());
+        let reply = Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        }));
+        });
 
         let lazy_request = LazilyTransformedRequest {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
-                // Replace msg of raw request
-                path: String::from("$.msg"),
+                // Replace data of raw request
+                path: String::from("$.data"),
 
                 // Apply id from reply request
                 value: String::from("$.id"),
             }],
         };
 
-        match lazy_request.transform_with_reply(&reply_request) {
+        match lazy_request.transform_with_reply(&reply) {
             Err(TransformRequestError::JsonToRequestFailed(_)) => (),
             x => panic!("Unexpected request: {:?}", x),
         }
@@ -171,11 +171,11 @@ mod tests {
     #[test]
     fn transform_with_reply_should_return_raw_request_if_rule_path_missing() {
         let raw_request = Request::from(Request::ReadFile(Default::default()));
-        let reply_request = Request::from(Reply::FileOpened(FileOpenedArgs {
+        let reply = Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        }));
+        });
 
         let lazy_request = LazilyTransformedRequest {
             raw_request: raw_request.clone(),
@@ -188,7 +188,7 @@ mod tests {
             }],
         };
 
-        match lazy_request.transform_with_reply(&reply_request) {
+        match lazy_request.transform_with_reply(&reply) {
             Ok(request) => {
                 assert_eq!(request, raw_request, "Raw request altered")
             }
@@ -200,11 +200,11 @@ mod tests {
     fn transform_with_reply_should_succeed_if_able_to_replace_path_with_value()
     {
         let raw_request = Request::from(Request::ReadFile(Default::default()));
-        let reply_request = Request::from(Reply::FileOpened(FileOpenedArgs {
+        let reply = Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        }));
+        });
 
         let lazy_request = LazilyTransformedRequest {
             raw_request: raw_request.clone(),
@@ -218,7 +218,7 @@ mod tests {
         };
 
         let transformed_request = lazy_request
-            .transform_with_reply(&reply_request)
+            .transform_with_reply(&reply)
             .expect("Failed to transform");
 
         match transformed_request {
@@ -233,11 +233,11 @@ mod tests {
     #[test]
     fn transform_with_reply_should_apply_rules_in_sequence() {
         let raw_request = Request::from(Request::ReadFile(Default::default()));
-        let reply_request = Request::from(Reply::FileOpened(FileOpenedArgs {
+        let reply = Reply::FileOpened(FileOpenedArgs {
             id: 123,
             sig: 456,
             ..Default::default()
-        }));
+        });
 
         let lazy_request = LazilyTransformedRequest {
             raw_request: raw_request.clone(),
@@ -260,7 +260,7 @@ mod tests {
         };
 
         let transformed_request = lazy_request
-            .transform_with_reply(&reply_request)
+            .transform_with_reply(&reply)
             .expect("Failed to transform");
 
         match transformed_request {
