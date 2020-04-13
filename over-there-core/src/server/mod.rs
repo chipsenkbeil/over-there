@@ -233,9 +233,13 @@ async fn tcp_event_loop(
     mut rx: mpsc::Receiver<(Msg, SocketAddr, mpsc::Sender<Vec<u8>>)>,
 ) {
     while let Some((msg, addr, tx)) = rx.recv().await {
-        if let Err(x) = action::Executor::<Vec<u8>>::new(tx, addr)
-            .execute(Arc::clone(&state), msg)
-            .await
+        if let Err(x) = action::Executor::<Vec<u8>>::new(
+            tx,
+            addr,
+            action::Executor::<Vec<u8>>::DEFAULT_MAX_DEPTH,
+        )
+        .execute(Arc::clone(&state), msg)
+        .await
         {
             error!("Failed to execute action: {}", x);
         }
@@ -251,9 +255,13 @@ async fn udp_event_loop(
     )>,
 ) {
     while let Some((msg, addr, tx)) = rx.recv().await {
-        if let Err(x) = action::Executor::<(Vec<u8>, SocketAddr)>::new(tx, addr)
-            .execute(Arc::clone(&state), msg)
-            .await
+        if let Err(x) = action::Executor::<(Vec<u8>, SocketAddr)>::new(
+            tx,
+            addr,
+            action::Executor::<(Vec<u8>, SocketAddr)>::DEFAULT_MAX_DEPTH,
+        )
+        .execute(Arc::clone(&state), msg)
+        .await
         {
             error!("Failed to execute action: {}", x);
         }

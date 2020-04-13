@@ -13,9 +13,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
-/// Represents the maximum depth to process nested sequential and batch operations
-pub const MAX_DEPTH: u8 = 5;
-
 #[derive(Debug, Error)]
 pub enum ActionError {
     MsgError(MsgError),
@@ -59,12 +56,25 @@ impl OriginSender<(Vec<u8>, SocketAddr)> {
 
 pub struct Executor<T> {
     origin_sender: OriginSender<T>,
+    max_depth: u8,
+}
+
+impl<T> Executor<T> {
+    /// Represents the maximum depth to process nested sequential and batch operations
+    pub const DEFAULT_MAX_DEPTH: u8 = 5;
 }
 
 impl Executor<Vec<u8>> {
-    pub fn new(tx: mpsc::Sender<Vec<u8>>, origin_addr: SocketAddr) -> Self {
+    pub fn new(
+        tx: mpsc::Sender<Vec<u8>>,
+        origin_addr: SocketAddr,
+        max_depth: u8,
+    ) -> Self {
         let origin_sender = OriginSender::<Vec<u8>>::new(tx, origin_addr);
-        Self { origin_sender }
+        Self {
+            origin_sender,
+            max_depth,
+        }
     }
 
     pub async fn execute(
@@ -76,8 +86,13 @@ impl Executor<Vec<u8>> {
         let origin_sender = self.origin_sender;
         let addr = origin_sender.addr;
 
-        let reply =
-            validate_route_and_execute(state, msg.content, addr).await?;
+        let reply = validate_route_and_execute(
+            state,
+            msg.content,
+            addr,
+            self.max_depth,
+        )
+        .await?;
         Self::respond(reply, header, origin_sender).await
     }
 
@@ -100,10 +115,14 @@ impl Executor<(Vec<u8>, SocketAddr)> {
     pub fn new(
         tx: mpsc::Sender<(Vec<u8>, SocketAddr)>,
         origin_addr: SocketAddr,
+        max_depth: u8,
     ) -> Self {
         let origin_sender =
             OriginSender::<(Vec<u8>, SocketAddr)>::new(tx, origin_addr);
-        Self { origin_sender }
+        Self {
+            origin_sender,
+            max_depth,
+        }
     }
 
     pub async fn execute(
@@ -115,8 +134,13 @@ impl Executor<(Vec<u8>, SocketAddr)> {
         let origin_sender = self.origin_sender;
         let addr = origin_sender.addr;
 
-        let reply =
-            validate_route_and_execute(state, msg.content, addr).await?;
+        let reply = validate_route_and_execute(
+            state,
+            msg.content,
+            addr,
+            self.max_depth,
+        )
+        .await?;
         Self::respond(reply, header, origin_sender).await
     }
 
@@ -139,12 +163,13 @@ async fn validate_route_and_execute(
     state: Arc<ServerState>,
     content: Content,
     origin: SocketAddr,
+    max_depth: u8,
 ) -> Result<Reply, ActionError> {
     trace!("Executing content: {:?}", content);
 
     let request = content.to_request().ok_or(ActionError::UnexpectedContent)?;
     update_origin_last_touched(Arc::clone(&state), origin).await;
-    Ok(route_and_execute(state, request, MAX_DEPTH).await)
+    Ok(route_and_execute(state, request, max_depth).await)
 }
 
 fn route_and_execute(
@@ -302,7 +327,20 @@ fn route_and_execute(
 
                     Reply::Sequence(reply::SequenceArgs { results })
                 }
-                Request::Batch(_) => unimplemented!(),
+                Request::Batch(mut args) => {
+                    use futures::future::join_all;
+
+                    let results: Vec<Reply> =
+                        join_all(args.operations.drain(..).map(|req| {
+                            route_and_execute(
+                                Arc::clone(&state),
+                                req,
+                                max_depth - 1,
+                            )
+                        }))
+                        .await;
+                    Reply::Batch(reply::BatchArgs { results })
+                }
                 Request::Custom(_) => unimplemented!(),
                 Request::Forward(_) => unimplemented!(),
             }
