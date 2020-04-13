@@ -172,6 +172,10 @@ async fn validate_route_and_execute(
     Ok(route_and_execute(state, request, max_depth).await)
 }
 
+/// Determines the appropriate handler for a request and executes it
+///
+/// Returns a boxed future as requests like Sequence and Batch will
+/// recursively call this function
 fn route_and_execute(
     state: Arc<ServerState>,
     request: Request,
@@ -341,7 +345,13 @@ fn route_and_execute(
                         .await;
                     Reply::Batch(reply::BatchArgs { results })
                 }
+
+                // TODO: Implement custom handler support; should remove
+                //       this panic operation as it's a point of attack
                 Request::Custom(_) => unimplemented!(),
+
+                // TODO: Implement forwarding support; should remove
+                //       this panic operation as it's a point of attack
                 Request::Forward(_) => unimplemented!(),
             }
         }
@@ -366,6 +376,16 @@ async fn update_origin_last_touched(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn route_and_execute_should_execute_sequence_request_in_order() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn route_and_execute_should_execute_batch_request_in_parallel() {
+        unimplemented!();
+    }
 
     #[tokio::test]
     async fn update_origin_last_touched_should_create_a_new_entry_if_missing() {

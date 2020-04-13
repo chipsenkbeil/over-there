@@ -11,6 +11,7 @@ use std::convert::TryFrom;
 use std::io;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub enum FileIoError {
     Io(io::Error),
     SigMismatch { id: u32, sig: u32 },
@@ -86,7 +87,7 @@ pub async fn rename_unopened_file(
 ) -> Result<UnopenedFileRenamedArgs, io::Error> {
     debug!("handler::rename_unopened_file: {:?}", args);
 
-    let _ = state
+    state
         .fs_manager
         .lock()
         .await
@@ -130,7 +131,7 @@ pub async fn remove_unopened_file(
 ) -> Result<UnopenedFileRemovedArgs, io::Error> {
     debug!("handler::remove_unopened_file: {:?}", args);
 
-    let _ = state
+    state
         .fs_manager
         .lock()
         .await
@@ -230,7 +231,7 @@ pub async fn create_dir(
 ) -> Result<DirCreatedArgs, io::Error> {
     debug!("handler::create_dir: {:?}", args);
 
-    let _ = state
+    state
         .fs_manager
         .lock()
         .await
@@ -248,7 +249,7 @@ pub async fn rename_dir(
 ) -> Result<DirRenamedArgs, io::Error> {
     debug!("handler::rename_dir: {:?}", args);
 
-    let _ = state
+    state
         .fs_manager
         .lock()
         .await
@@ -267,7 +268,7 @@ pub async fn remove_dir(
 ) -> Result<DirRemovedArgs, io::Error> {
     debug!("handler::remove_dir: {:?}", args);
 
-    let _ = state
+    state
         .fs_manager
         .lock()
         .await
@@ -332,88 +333,66 @@ mod tests {
     use tokio::fs;
 
     #[tokio::test]
-    async fn do_open_file_should_send_success_if_create_flag_set_and_opening_new_file(
+    async fn open_file_should_return_success_if_create_flag_set_and_opening_new_file(
     ) {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
-
         let tmp_path = tempfile::NamedTempFile::new()
             .unwrap()
             .into_temp_path()
             .to_string_lossy()
             .to_string();
 
-        do_open_file(
+        let args = open_file(
             Arc::clone(&state),
-            &DoOpenFileArgs {
+            &OpenFileArgs {
                 path: tmp_path.clone(),
                 create_if_missing: true,
                 write_access: true,
                 read_access: true,
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
         .unwrap();
 
-        match content.unwrap() {
-            Content::FileOpened(args) => {
-                let x = state.fs_manager.lock().await;
-                let local_file = x.get(args.id).unwrap();
-                assert_eq!(args.sig, local_file.sig());
-                assert_eq!(args.path, tmp_path);
-                assert!(args.write);
-                assert!(args.read);
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        let x = state.fs_manager.lock().await;
+        let local_file = x.get(args.id).unwrap();
+        assert_eq!(args.sig, local_file.sig());
+        assert_eq!(args.path, tmp_path);
+        assert!(args.write);
+        assert!(args.read);
     }
 
     #[tokio::test]
-    async fn do_open_file_should_send_success_opening_existing_file() {
+    async fn open_file_should_return_success_opening_existing_file() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
         let tmp_file_path = tmp_file.path().to_string_lossy().to_string();
 
-        do_open_file(
+        let args = open_file(
             Arc::clone(&state),
-            &DoOpenFileArgs {
+            &OpenFileArgs {
                 path: tmp_file_path.clone(),
                 create_if_missing: false,
                 write_access: true,
                 read_access: true,
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
         .unwrap();
 
-        match content.unwrap() {
-            Content::FileOpened(args) => {
-                let x = state.fs_manager.lock().await;
-                let local_file = x.get(args.id).unwrap();
-                assert_eq!(args.sig, local_file.sig());
-                assert_eq!(args.path, tmp_file_path);
-                assert!(args.write);
-                assert!(args.read);
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        let x = state.fs_manager.lock().await;
+        let local_file = x.get(args.id).unwrap();
+        assert_eq!(args.sig, local_file.sig());
+        assert_eq!(args.path, tmp_file_path);
+        assert!(args.write);
+        assert!(args.read);
     }
 
     #[tokio::test]
-    async fn do_open_file_should_send_error_if_file_missing_and_create_flag_not_set(
+    async fn open_file_should_return_error_if_file_missing_and_create_flag_not_set(
     ) {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let tmp_path = tempfile::NamedTempFile::new()
             .unwrap()
@@ -421,34 +400,24 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        do_open_file(
+        let err = open_file(
             Arc::clone(&state),
-            &DoOpenFileArgs {
+            &OpenFileArgs {
                 path: tmp_path,
                 create_if_missing: false,
                 write_access: true,
                 read_access: true,
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::NotFound)
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 
     #[tokio::test]
-    async fn do_close_file_should_send_error_if_file_not_open() {
+    async fn close_file_should_return_error_if_file_not_open() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let tmp_path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
         let handle = state
@@ -462,25 +431,16 @@ mod tests {
         let id = handle.id + 1;
         let sig = handle.sig;
 
-        do_close_file(Arc::clone(&state), &DoCloseFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
-        .await
-        .unwrap();
+        let err = close_file(Arc::clone(&state), &CloseFileArgs { id, sig })
+            .await
+            .unwrap_err();
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::NotFound)
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 
     #[tokio::test]
-    async fn do_close_file_should_send_error_if_signature_different() {
+    async fn close_file_should_return_error_if_signature_different() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let tmp_path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
         let handle = state
@@ -494,25 +454,16 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig + 1;
 
-        do_close_file(Arc::clone(&state), &DoCloseFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
-        .await
-        .unwrap();
+        let err = close_file(Arc::clone(&state), &CloseFileArgs { id, sig })
+            .await
+            .unwrap_err();
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::InvalidInput)
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[tokio::test]
-    async fn do_close_file_should_send_confirmation_if_successful() {
+    async fn close_file_should_return_confirmation_if_successful() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let tmp_path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
         let handle = state
@@ -526,25 +477,16 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_close_file(Arc::clone(&state), &DoCloseFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
-        .await
-        .unwrap();
+        let args = close_file(Arc::clone(&state), &CloseFileArgs { id, sig })
+            .await
+            .unwrap();
 
-        match content.unwrap() {
-            Content::FileClosed(FileClosedArgs { id: arg_id }) => {
-                assert_eq!(arg_id, id)
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(args.id, id);
     }
 
     #[tokio::test]
-    async fn do_rename_unopened_file_should_send_error_if_file_open() {
+    async fn rename_unopened_file_should_return_error_if_file_open() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
         state
@@ -555,47 +497,32 @@ mod tests {
             .await
             .expect("Failed to open file");
 
-        do_rename_unopened_file(
+        let err = rename_unopened_file(
             Arc::clone(&state),
-            &DoRenameUnopenedFileArgs {
+            &RenameUnopenedFileArgs {
                 from: file.as_ref().to_string_lossy().to_string(),
                 to: file.as_ref().to_string_lossy().to_string(),
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::InvalidData)
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     #[tokio::test]
-    async fn do_rename_unopened_file_should_send_confirmation_if_file_renamed()
-    {
+    async fn rename_unopened_file_should_return_confirmation_if_file_renamed() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
         let from_path_str = file.as_ref().to_string_lossy().to_string();
         let to_path_str = format!("{}.renamed", from_path_str);
 
-        do_rename_unopened_file(
+        let args = rename_unopened_file(
             Arc::clone(&state),
-            &DoRenameUnopenedFileArgs {
+            &RenameUnopenedFileArgs {
                 from: from_path_str.clone(),
                 to: to_path_str.clone(),
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
@@ -610,22 +537,13 @@ mod tests {
             "File renamed incorrectly"
         );
 
-        match content.unwrap() {
-            Content::UnopenedFileRenamed(UnopenedFileRenamedArgs {
-                from,
-                to,
-            }) => {
-                assert_eq!(from, from_path_str);
-                assert_eq!(to, to_path_str);
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(args.from, from_path_str);
+        assert_eq!(args.to, to_path_str);
     }
 
     #[tokio::test]
-    async fn do_rename_file_should_send_error_if_file_not_open() {
+    async fn rename_file_should_return_error_if_file_not_open() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
         let handle = state
@@ -637,20 +555,16 @@ mod tests {
             .expect("Failed to open file");
         let new_path_str = String::from("new-file-name");
 
-        do_rename_file(
+        let err = rename_file(
             Arc::clone(&state),
-            &DoRenameFileArgs {
+            &RenameFileArgs {
                 id: handle.id + 1,
                 sig: handle.sig,
                 to: new_path_str.clone(),
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         assert!(
             fs::metadata(file.as_ref()).await.is_ok(),
@@ -662,18 +576,17 @@ mod tests {
             "Renamed file exists"
         );
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::InvalidInput)
+        match err {
+            FileIoError::Io(x) => {
+                assert_eq!(x.kind(), io::ErrorKind::InvalidInput)
             }
-            x => panic!("Bad content: {:?}", x),
+            x => panic!("Unexpected error: {:?}", x),
         }
     }
 
     #[tokio::test]
-    async fn do_rename_file_should_send_error_if_signature_different() {
+    async fn rename_file_should_return_error_if_signature_different() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
         let handle = state
@@ -685,20 +598,16 @@ mod tests {
             .expect("Failed to open file");
         let new_path_str = String::from("new-file-name");
 
-        do_rename_file(
+        let err = rename_file(
             Arc::clone(&state),
-            &DoRenameFileArgs {
+            &RenameFileArgs {
                 id: handle.id,
                 sig: handle.sig + 1,
                 to: new_path_str.clone(),
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         assert!(
             fs::metadata(file.as_ref()).await.is_ok(),
@@ -710,19 +619,18 @@ mod tests {
             "Renamed file exists"
         );
 
-        match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs { id, sig }) => {
+        match err {
+            FileIoError::SigMismatch { id, sig } => {
                 assert_eq!(id, handle.id);
                 assert_eq!(sig, handle.sig);
             }
-            x => panic!("Bad content: {:?}", x),
+            x => panic!("Unexpected error: {:?}", x),
         }
     }
 
     #[tokio::test]
-    async fn do_rename_file_should_send_confirmation_if_file_renamed() {
+    async fn rename_file_should_return_confirmation_if_file_renamed() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
         let handle = state
@@ -735,16 +643,12 @@ mod tests {
         let new_path_str =
             format!("{}.2", file.as_ref().to_string_lossy().to_string());
 
-        do_rename_file(
+        let args = rename_file(
             Arc::clone(&state),
-            &DoRenameFileArgs {
+            &RenameFileArgs {
                 id: handle.id,
                 sig: handle.sig,
                 to: new_path_str.clone(),
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
@@ -760,22 +664,13 @@ mod tests {
             "Renamed file missing"
         );
 
-        match content.unwrap() {
-            Content::FileRenamed(FileRenamedArgs { id, sig }) => {
-                assert_eq!(handle.id, id, "Wrong id returned");
-                assert_ne!(
-                    handle.sig, sig,
-                    "Signature returned is not different"
-                );
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(handle.id, args.id, "Wrong id returned");
+        assert_ne!(handle.sig, args.sig, "Signature returned is not different");
     }
 
     #[tokio::test]
-    async fn do_remove_unopened_file_should_send_error_if_file_open() {
+    async fn remove_unopened_file_should_return_error_if_file_open() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
         state
@@ -786,48 +681,33 @@ mod tests {
             .await
             .expect("Failed to open file");
 
-        do_remove_unopened_file(
+        let err = remove_unopened_file(
             Arc::clone(&state),
-            &DoRemoveUnopenedFileArgs {
+            &RemoveUnopenedFileArgs {
                 path: file.as_ref().to_string_lossy().to_string(),
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         assert!(
             fs::metadata(file.as_ref()).await.is_ok(),
             "File unexpectedly removed"
         );
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::InvalidData)
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     #[tokio::test]
-    async fn do_remove_unopened_file_should_send_confirmation_if_file_removed()
-    {
+    async fn remove_unopened_file_should_return_confirmation_if_file_removed() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
 
-        do_remove_unopened_file(
+        let args = remove_unopened_file(
             Arc::clone(&state),
-            &DoRemoveUnopenedFileArgs {
+            &RemoveUnopenedFileArgs {
                 path: file.as_ref().to_string_lossy().to_string(),
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
@@ -838,18 +718,12 @@ mod tests {
             "File still exists"
         );
 
-        match content.unwrap() {
-            Content::UnopenedFileRemoved(UnopenedFileRemovedArgs { path }) => {
-                assert_eq!(path, file.as_ref().to_string_lossy().to_string());
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(args.path, file.as_ref().to_string_lossy().to_string());
     }
 
     #[tokio::test]
-    async fn do_remove_file_should_send_error_if_file_not_open() {
+    async fn remove_file_should_return_error_if_file_not_open() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
         let handle = state
@@ -860,37 +734,32 @@ mod tests {
             .await
             .expect("Failed to open file");
 
-        do_remove_file(
+        let err = remove_file(
             Arc::clone(&state),
-            &DoRemoveFileArgs {
+            &RemoveFileArgs {
                 id: handle.id + 1,
                 sig: handle.sig,
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         assert!(
             fs::metadata(file.as_ref()).await.is_ok(),
             "File unexpectedly missing after failed remove"
         );
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::InvalidInput)
+        match err {
+            FileIoError::Io(x) => {
+                assert_eq!(x.kind(), io::ErrorKind::InvalidInput)
             }
-            x => panic!("Bad content: {:?}", x),
+            x => panic!("Unexpected error: {:?}", x),
         }
     }
 
     #[tokio::test]
-    async fn do_remove_file_should_send_error_if_signature_different() {
+    async fn remove_file_should_return_error_if_signature_different() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
         let handle = state
@@ -901,38 +770,33 @@ mod tests {
             .await
             .expect("Failed to open file");
 
-        do_remove_file(
+        let err = remove_file(
             Arc::clone(&state),
-            &DoRemoveFileArgs {
+            &RemoveFileArgs {
                 id: handle.id,
                 sig: handle.sig + 1,
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         assert!(
             fs::metadata(file.as_ref()).await.is_ok(),
             "File unexpectedly missing after failed remove"
         );
 
-        match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs { id, sig }) => {
+        match err {
+            FileIoError::SigMismatch { id, sig } => {
                 assert_eq!(id, handle.id);
                 assert_eq!(sig, handle.sig);
             }
-            x => panic!("Bad content: {:?}", x),
+            x => panic!("Unexpected error: {:?}", x),
         }
     }
 
     #[tokio::test]
-    async fn do_remove_file_should_send_confirmation_if_file_removed() {
+    async fn remove_file_should_return_confirmation_if_file_removed() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let file = tempfile::NamedTempFile::new().unwrap();
         let handle = state
@@ -943,15 +807,11 @@ mod tests {
             .await
             .expect("Failed to open file");
 
-        do_remove_file(
+        let args = remove_file(
             Arc::clone(&state),
-            &DoRemoveFileArgs {
+            &RemoveFileArgs {
                 id: handle.id,
                 sig: handle.sig,
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
@@ -962,22 +822,13 @@ mod tests {
             "File still exists"
         );
 
-        match content.unwrap() {
-            Content::FileRemoved(FileRemovedArgs { id, sig }) => {
-                assert_eq!(handle.id, id, "Wrong id returned");
-                assert_ne!(
-                    handle.sig, sig,
-                    "Signature returned is not different"
-                );
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(handle.id, args.id, "Wrong id returned");
+        assert_ne!(handle.sig, args.sig, "Signature returned is not different");
     }
 
     #[tokio::test]
-    async fn do_read_file_should_send_contents_if_read_successful() {
+    async fn read_file_should_return_contents_if_read_successful() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
         let file_contents = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let mut file = tempfile::NamedTempFile::new().unwrap();
@@ -996,52 +847,34 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
-        .await
-        .unwrap();
+        let args = read_file(Arc::clone(&state), &ReadFileArgs { id, sig })
+            .await
+            .unwrap();
 
-        match content.unwrap() {
-            Content::FileContents(FileContentsArgs {
-                id: arg_id,
-                contents,
-            }) => {
-                assert_eq!(id, arg_id, "Wrong id returned");
-                assert_eq!(contents, file_contents);
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(args.id, id, "Wrong id returned");
+        assert_eq!(args.contents, file_contents);
     }
 
     #[tokio::test]
-    async fn do_read_file_should_send_error_if_file_not_open() {
-        let mut content: Option<Content> = None;
-
-        do_read_file(
+    async fn read_file_should_return_error_if_file_not_open() {
+        let err = read_file(
             Arc::new(ServerState::default()),
-            &DoReadFileArgs { id: 0, sig: 0 },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
+            &ReadFileArgs { id: 0, sig: 0 },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::InvalidInput);
+        match err {
+            FileIoError::Io(x) => {
+                assert_eq!(x.kind(), io::ErrorKind::InvalidInput);
             }
-            x => panic!("Bad content: {:?}", x),
+            x => panic!("Unexpected error: {:?}", x),
         }
     }
 
     #[tokio::test]
-    async fn do_read_file_should_send_error_if_not_readable() {
+    async fn read_file_should_return_error_if_not_readable() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
 
@@ -1065,26 +898,21 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_read_file(Arc::clone(&state), &DoReadFileArgs { id, sig }, |c| {
-            content = Some(c);
-            async { Ok(()) }
-        })
-        .await
-        .unwrap();
+        let err = read_file(Arc::clone(&state), &ReadFileArgs { id, sig })
+            .await
+            .unwrap_err();
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { os_code, .. }) => {
-                // Should be an OS-related error
-                assert!(os_code.is_some());
+        match err {
+            FileIoError::Io(x) => {
+                assert!(x.raw_os_error().is_some());
             }
-            x => panic!("Bad content: {:?}", x),
+            x => panic!("Unexpected error: {:?}", x),
         }
     }
 
     #[tokio::test]
-    async fn do_read_file_should_send_error_if_file_sig_has_changed() {
+    async fn read_file_should_return_error_if_file_sig_has_changed() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
         let file = tempfile::NamedTempFile::new().unwrap();
 
         let handle = state
@@ -1097,33 +925,26 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_read_file(
-            Arc::clone(&state),
-            &DoReadFileArgs { id, sig: sig + 1 },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
-        )
-        .await
-        .unwrap();
+        let err =
+            read_file(Arc::clone(&state), &ReadFileArgs { id, sig: sig + 1 })
+                .await
+                .unwrap_err();
 
-        match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs {
+        match err {
+            FileIoError::SigMismatch {
                 id: cur_id,
                 sig: cur_sig,
-            }) => {
+            } => {
                 assert_eq!(cur_id, id);
                 assert_eq!(cur_sig, sig);
             }
-            x => panic!("Bad content: {:?}", x),
+            x => panic!("Unexpected error: {:?}", x),
         }
     }
 
     #[tokio::test]
-    async fn do_write_file_should_send_success_if_write_successful() {
+    async fn write_file_should_return_success_if_write_successful() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
         let contents = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let mut file = tempfile::NamedTempFile::new().unwrap();
@@ -1138,49 +959,36 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_write_file(
+        let args = write_file(
             Arc::clone(&state),
-            &DoWriteFileArgs {
+            &WriteFileArgs {
                 id,
                 sig,
                 contents: contents.clone(),
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
         .unwrap();
 
-        match content.unwrap() {
-            Content::FileWritten(FileWrittenArgs {
-                id: cur_id,
-                sig: new_sig,
-            }) => {
-                assert_eq!(cur_id, id, "Wrong id returned");
-                assert_ne!(new_sig, sig);
+        assert_eq!(args.id, id, "Wrong id returned");
+        assert_ne!(args.sig, sig);
 
-                use std::io::{Seek, SeekFrom};
-                file.seek(SeekFrom::Start(0)).unwrap();
+        use std::io::{Seek, SeekFrom};
+        file.seek(SeekFrom::Start(0)).unwrap();
 
-                use std::io::Read;
-                let mut file_contents = Vec::new();
-                file.read_to_end(&mut file_contents).unwrap();
+        use std::io::Read;
+        let mut file_contents = Vec::new();
+        file.read_to_end(&mut file_contents).unwrap();
 
-                assert_eq!(
-                    contents, file_contents,
-                    "File does not match written content"
-                );
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(
+            contents, file_contents,
+            "File does not match written content"
+        );
     }
 
     #[tokio::test]
-    async fn do_write_file_should_send_error_if_not_writeable() {
+    async fn write_file_should_return_error_if_not_writeable() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
         let contents = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let file = tempfile::NamedTempFile::new().unwrap();
@@ -1195,30 +1003,25 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_write_file(
+        let err = write_file(
             Arc::clone(&state),
-            &DoWriteFileArgs { id, sig, contents },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
+            &WriteFileArgs { id, sig, contents },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { os_code, .. }) => {
+        match err {
+            FileIoError::Io(x) => {
                 // Should be an OS-related error
-                assert!(os_code.is_some());
+                assert!(x.raw_os_error().is_some());
             }
-            x => panic!("Bad content: {:?}", x),
+            x => panic!("Unexpected error: {:?}", x),
         }
     }
 
     #[tokio::test]
-    async fn do_write_file_should_send_error_if_file_sig_has_changed() {
+    async fn write_file_should_return_error_if_file_sig_has_changed() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
         let contents = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
 
         let file = tempfile::NamedTempFile::new().unwrap();
@@ -1233,88 +1036,69 @@ mod tests {
         let id = handle.id;
         let sig = handle.sig;
 
-        do_write_file(
+        let err = write_file(
             Arc::clone(&state),
-            &DoWriteFileArgs {
+            &WriteFileArgs {
                 id,
                 sig: sig + 1,
                 contents: contents.clone(),
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
-        match content.unwrap() {
-            Content::FileSigChanged(FileSigChangedArgs {
+        match err {
+            FileIoError::SigMismatch {
                 id: cur_id,
                 sig: cur_sig,
-            }) => {
+            } => {
                 assert_eq!(cur_id, id, "Wrong id returned");
                 assert_eq!(cur_sig, sig);
             }
-            x => panic!("Bad content: {:?}", x),
+            x => panic!("Unexpected error: {:?}", x),
         }
     }
 
     #[tokio::test]
-    async fn do_create_dir_should_send_error_if_part_of_path_missing_and_flag_not_set(
+    async fn create_dir_should_return_error_if_part_of_path_missing_and_flag_not_set(
     ) {
         let root_path = tempfile::tempdir().unwrap();
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let dir_path = root_path.as_ref().join("test").join("dir");
 
-        do_create_dir(
+        let err = create_dir(
             Arc::clone(&state),
-            &DoCreateDirArgs {
+            &CreateDirArgs {
                 path: dir_path.as_path().to_string_lossy().to_string(),
                 include_components: false,
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         assert!(
             fs::metadata(&dir_path).await.is_err(),
             "Dir was unexpectedly created"
         );
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::NotFound);
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 
     #[tokio::test]
-    async fn do_create_dir_should_send_confirmation_if_single_level_directory_created(
+    async fn create_dir_should_return_confirmation_if_single_level_directory_created(
     ) {
         let root_path = tempfile::tempdir().unwrap();
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let dir_path = root_path.as_ref().join("test");
 
-        do_create_dir(
+        let args = create_dir(
             Arc::clone(&state),
-            &DoCreateDirArgs {
+            &CreateDirArgs {
                 path: dir_path.as_path().to_string_lossy().to_string(),
                 include_components: false,
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
         .unwrap();
@@ -1324,36 +1108,26 @@ mod tests {
             "Dir was unexpectedly not created"
         );
 
-        match content.unwrap() {
-            Content::DirCreated(DirCreatedArgs { path }) => {
-                assert_eq!(
-                    path,
-                    dir_path.to_string_lossy().to_string(),
-                    "Wrong path returned"
-                );
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(
+            args.path,
+            dir_path.to_string_lossy().to_string(),
+            "Wrong path returned"
+        );
     }
 
     #[tokio::test]
-    async fn do_create_dir_should_send_confirmation_if_multi_level_directory_created(
+    async fn create_dir_should_return_confirmation_if_multi_level_directory_created(
     ) {
         let root_path = tempfile::tempdir().unwrap();
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let dir_path = root_path.as_ref().join("test").join("dir");
 
-        do_create_dir(
+        let args = create_dir(
             Arc::clone(&state),
-            &DoCreateDirArgs {
+            &CreateDirArgs {
                 path: dir_path.as_path().to_string_lossy().to_string(),
                 include_components: true,
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
@@ -1363,21 +1137,16 @@ mod tests {
             fs::metadata(&dir_path).await.is_ok(),
             "Dir was unexpectedly not created"
         );
-
-        match content.unwrap() {
-            Content::DirCreated(DirCreatedArgs { path }) => assert_eq!(
-                path,
-                dir_path.to_string_lossy().to_string(),
-                "Wrong path returned"
-            ),
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(
+            args.path,
+            dir_path.to_string_lossy().to_string(),
+            "Wrong path returned"
+        );
     }
 
     #[tokio::test]
-    async fn do_rename_dir_should_send_error_if_a_file_open_in_directory() {
+    async fn rename_dir_should_return_error_if_a_file_open_in_directory() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let from_dir = tempfile::tempdir().unwrap();
         let to_dir = tempfile::tempdir().unwrap().into_path();
@@ -1394,19 +1163,15 @@ mod tests {
             .await
             .expect("Failed to open file");
 
-        do_rename_dir(
+        let err = rename_dir(
             Arc::clone(&state),
-            &DoRenameDirArgs {
+            &RenameDirArgs {
                 from: from_dir.as_ref().to_string_lossy().to_string(),
                 to: to_dir.as_path().to_string_lossy().to_string(),
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         assert!(
             fs::metadata(file_path.as_path()).await.is_ok(),
@@ -1423,18 +1188,12 @@ mod tests {
             "Destination of rename unexpectedly exists"
         );
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::InvalidData);
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     #[tokio::test]
-    async fn do_rename_dir_should_send_confirmation_if_directory_renamed() {
+    async fn rename_dir_should_return_confirmation_if_directory_renamed() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let from_dir = tempfile::tempdir().unwrap();
         let to_dir = tempfile::tempdir().unwrap().into_path();
@@ -1442,15 +1201,11 @@ mod tests {
             .await
             .expect("Failed to clean up temp dir");
 
-        do_rename_dir(
+        let args = rename_dir(
             Arc::clone(&state),
-            &DoRenameDirArgs {
+            &RenameDirArgs {
                 from: from_dir.as_ref().to_string_lossy().to_string(),
                 to: to_dir.as_path().to_string_lossy().to_string(),
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
@@ -1466,27 +1221,21 @@ mod tests {
             "Destination of rename unexpectedly missing"
         );
 
-        match content.unwrap() {
-            Content::DirRenamed(DirRenamedArgs { from, to }) => {
-                assert_eq!(
-                    from,
-                    from_dir.as_ref().to_string_lossy().to_string(),
-                    "Wrong from path returned"
-                );
-                assert_eq!(
-                    to,
-                    to_dir.to_string_lossy().to_string(),
-                    "Wrong to path returned"
-                );
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(
+            args.from,
+            from_dir.as_ref().to_string_lossy().to_string(),
+            "Wrong from path returned"
+        );
+        assert_eq!(
+            args.to,
+            to_dir.to_string_lossy().to_string(),
+            "Wrong to path returned"
+        );
     }
 
     #[tokio::test]
-    async fn do_remove_dir_should_send_error_if_a_file_open_in_directory() {
+    async fn remove_dir_should_return_error_if_a_file_open_in_directory() {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let dir = tempfile::tempdir().unwrap();
 
@@ -1499,50 +1248,36 @@ mod tests {
             .await
             .expect("Failed to open file");
 
-        do_remove_dir(
+        let err = remove_dir(
             Arc::clone(&state),
-            &DoRemoveDirArgs {
+            &RemoveDirArgs {
                 path: dir.as_ref().to_string_lossy().to_string(),
                 non_empty: true,
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         assert!(
             fs::metadata(file_path.as_path()).await.is_ok(),
             "Open file unexpectedly removed"
         );
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::InvalidData);
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     #[tokio::test]
-    async fn do_remove_dir_should_send_confirmation_if_empty_directory_removed()
+    async fn remove_dir_should_return_confirmation_if_empty_directory_removed()
     {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let dir = tempfile::tempdir().unwrap();
 
-        do_remove_dir(
+        let args = remove_dir(
             Arc::clone(&state),
-            &DoRemoveDirArgs {
+            &RemoveDirArgs {
                 path: dir.as_ref().to_string_lossy().to_string(),
                 non_empty: false,
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
@@ -1553,38 +1288,30 @@ mod tests {
             "Dir still exists"
         );
 
-        match content.unwrap() {
-            Content::DirRemoved(DirRemovedArgs { path }) => assert_eq!(
-                path,
-                dir.as_ref().to_string_lossy().to_string(),
-                "Wrong path returned"
-            ),
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(
+            args.path,
+            dir.as_ref().to_string_lossy().to_string(),
+            "Wrong path returned"
+        );
     }
 
     #[tokio::test]
-    async fn do_remove_dir_should_send_error_if_nonempty_directory_removed_with_flag_not_set(
+    async fn remove_dir_should_return_error_if_nonempty_directory_removed_with_flag_not_set(
     ) {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let dir = tempfile::tempdir().unwrap();
         let file = tempfile::NamedTempFile::new_in(dir.as_ref()).unwrap();
 
-        do_remove_dir(
+        let err = remove_dir(
             Arc::clone(&state),
-            &DoRemoveDirArgs {
+            &RemoveDirArgs {
                 path: dir.as_ref().to_string_lossy().to_string(),
                 non_empty: false,
             },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
-            },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         assert!(
             fs::metadata(file.as_ref()).await.is_ok(),
@@ -1596,32 +1323,22 @@ mod tests {
             "Dir unexpected removed"
         );
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::Other);
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::Other);
     }
 
     #[tokio::test]
-    async fn do_remove_dir_should_send_confirmation_if_nonempty_directory_removed_with_flag_set(
+    async fn remove_dir_should_return_confirmation_if_nonempty_directory_removed_with_flag_set(
     ) {
         let state = Arc::new(ServerState::default());
-        let mut content: Option<Content> = None;
 
         let dir = tempfile::tempdir().unwrap();
         let file = tempfile::NamedTempFile::new_in(dir.as_ref()).unwrap();
 
-        do_remove_dir(
+        let args = remove_dir(
             Arc::clone(&state),
-            &DoRemoveDirArgs {
+            &RemoveDirArgs {
                 path: dir.as_ref().to_string_lossy().to_string(),
                 non_empty: true,
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
@@ -1637,34 +1354,25 @@ mod tests {
             "Dir still exists"
         );
 
-        match content.unwrap() {
-            Content::DirRemoved(DirRemovedArgs { path }) => assert_eq!(
-                path,
-                dir.as_ref().to_string_lossy().to_string(),
-                "Wrong path returned"
-            ),
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(
+            args.path,
+            dir.as_ref().to_string_lossy().to_string(),
+            "Wrong path returned"
+        );
     }
 
     #[tokio::test]
-    async fn do_list_dir_contents_should_send_entries_if_successful() {
-        let mut content: Option<Content> = None;
-
+    async fn list_dir_contents_should_return_entries_if_successful() {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_string_lossy().to_string();
 
         let tmp_file = tempfile::NamedTempFile::new_in(&dir).unwrap();
         let tmp_dir = tempfile::tempdir_in(&dir).unwrap();
 
-        do_list_dir_contents(
+        let args = list_dir_contents(
             Arc::new(ServerState::default()),
-            &DoListDirContentsArgs {
+            &ListDirContentsArgs {
                 path: dir_path.clone(),
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
@@ -1672,54 +1380,34 @@ mod tests {
 
         std::fs::remove_dir_all(dir_path).unwrap();
 
-        match content.unwrap() {
-            Content::DirContentsList(args) => {
-                assert_eq!(
-                    args.entries.len(),
-                    2,
-                    "Unexpected number of entries"
-                );
+        assert_eq!(args.entries.len(), 2, "Unexpected number of entries");
 
-                assert!(args.entries.contains(&DirEntry {
-                    path: tmp_file.path().to_string_lossy().to_string(),
-                    is_file: true,
-                    is_dir: false,
-                    is_symlink: false
-                }));
+        assert!(args.entries.contains(&DirEntry {
+            path: tmp_file.path().to_string_lossy().to_string(),
+            is_file: true,
+            is_dir: false,
+            is_symlink: false
+        }));
 
-                assert!(args.entries.contains(&DirEntry {
-                    path: tmp_dir.path().to_string_lossy().to_string(),
-                    is_file: false,
-                    is_dir: true,
-                    is_symlink: false
-                }));
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert!(args.entries.contains(&DirEntry {
+            path: tmp_dir.path().to_string_lossy().to_string(),
+            is_file: false,
+            is_dir: true,
+            is_symlink: false
+        }));
     }
 
     #[tokio::test]
-    async fn do_list_dir_contents_should_send_error_if_path_invalid() {
-        let mut content: Option<Content> = None;
-
-        do_list_dir_contents(
+    async fn list_dir_contents_should_return_error_if_path_invalid() {
+        let err = list_dir_contents(
             Arc::new(ServerState::default()),
-            &DoListDirContentsArgs {
+            &ListDirContentsArgs {
                 path: String::from(""),
-            },
-            |c| {
-                content = Some(c);
-                async { Ok(()) }
             },
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
-        match content.unwrap() {
-            Content::IoError(IoErrorArgs { error_kind, .. }) => {
-                assert_eq!(error_kind, io::ErrorKind::NotFound)
-            }
-            x => panic!("Bad content: {:?}", x),
-        }
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 }
