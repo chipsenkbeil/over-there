@@ -1,4 +1,4 @@
-use super::{fs::FileSystemManager, proc::LocalProc};
+use super::{custom::CustomHandler, fs::FileSystemManager, proc::LocalProc};
 use log::error;
 use over_there_utils::TtlValue;
 use std::collections::{HashMap, HashSet};
@@ -38,6 +38,8 @@ pub struct ServerState {
     proc_ttl: Duration,
     pub(crate) dead_proc_ttl: Duration,
 
+    pub custom_handler: CustomHandler,
+
     /// Indicator of whether or not the server is running, used to signal
     /// to looping handlers that it is time to shut down if false
     running: AtomicBool,
@@ -58,8 +60,17 @@ impl ServerState {
             proc_ids: Mutex::new(HashSet::default()),
             proc_ttl,
             dead_proc_ttl,
+            custom_handler: CustomHandler::new_unimplemented(),
             running: AtomicBool::new(true),
         }
+    }
+
+    pub fn set_custom_handler(
+        &mut self,
+        custom_handler: CustomHandler,
+    ) -> &mut Self {
+        self.custom_handler = custom_handler;
+        self
     }
 
     /// Creates or updates an internal TTL for a file with `id` using the

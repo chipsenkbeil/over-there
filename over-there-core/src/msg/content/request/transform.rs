@@ -27,6 +27,10 @@ pub struct LazilyTransformedRequest {
 }
 
 impl LazilyTransformedRequest {
+    pub fn new(raw_request: Request, rules: Vec<TransformRule>) -> Self {
+        Self { rules, raw_request }
+    }
+
     /// Converts to the raw request with no transformations applied
     pub fn into_raw_request(self) -> Request {
         self.raw_request

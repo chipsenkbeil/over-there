@@ -6,3 +6,9 @@ use serde::{Deserialize, Serialize};
 pub struct BatchArgs {
     pub operations: Vec<Request>,
 }
+
+impl From<Vec<Request>> for BatchArgs {
+    fn from(operations: Vec<Request>) -> Self {
+        Self { operations }
+    }
+}

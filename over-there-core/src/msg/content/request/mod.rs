@@ -148,3 +148,14 @@ pub enum Request {
     #[serde(rename = "internal_debug_request")]
     InternalDebug(InternalDebugArgs),
 }
+
+impl Request {
+    /// Converts a request into a lazily transformed request using the
+    /// provided rules as transformation specifications
+    pub fn into_lazily_transformed(
+        self,
+        rules: Vec<TransformRule>,
+    ) -> LazilyTransformedRequest {
+        LazilyTransformedRequest::new(self, rules)
+    }
+}

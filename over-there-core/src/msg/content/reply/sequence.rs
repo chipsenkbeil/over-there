@@ -6,3 +6,9 @@ use serde::{Deserialize, Serialize};
 pub struct SequenceArgs {
     pub results: Vec<Reply>,
 }
+
+impl From<Vec<Reply>> for SequenceArgs {
+    fn from(results: Vec<Reply>) -> Self {
+        Self { results }
+    }
+}

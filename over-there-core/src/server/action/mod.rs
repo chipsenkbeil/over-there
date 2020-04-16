@@ -346,9 +346,14 @@ fn route_and_execute(
                     Reply::Batch(reply::BatchArgs { results })
                 }
 
-                // TODO: Implement custom handler support; should remove
-                //       this panic operation as it's a point of attack
-                Request::Custom(_) => unimplemented!(),
+                // TODO: Move to handler function that can be tested
+                //       and have logging
+                Request::Custom(args) => state
+                    .custom_handler
+                    .invoke(args)
+                    .await
+                    .map(Reply::Custom)
+                    .unwrap_or_else(Reply::from),
 
                 // TODO: Implement forwarding support; should remove
                 //       this panic operation as it's a point of attack
@@ -378,12 +383,88 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn route_and_execute_should_execute_sequence_request_in_order() {
+    async fn route_and_execute_with_sequence_should_execute_request_in_order() {
+        let mut state = ServerState::default();
+
+        // Produce a custom handler that will delay and then return the time in millis
+        state.set_custom_handler(From::from(|_| {
+            use futures::future::FutureExt;
+            use std::time::{Duration, SystemTime, UNIX_EPOCH};
+            tokio::time::delay_for(Duration::from_millis(30)).map(|_| {
+                Ok(reply::CustomArgs {
+                    data: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis()
+                        .to_be_bytes()
+                        .to_vec(),
+                })
+            })
+        }));
+
+        // Invoke in sequence using the custom handler
+        let reply = route_and_execute(
+            Arc::new(state),
+            Request::Sequence(From::from(vec![
+                Request::Custom(From::from(Vec::<u8>::new()))
+                    .into_lazily_transformed(vec![]),
+                Request::Custom(From::from(Vec::<u8>::new()))
+                    .into_lazily_transformed(vec![]),
+                Request::Custom(From::from(Vec::<u8>::new()))
+                    .into_lazily_transformed(vec![]),
+            ])),
+            2,
+        )
+        .await;
+
+        match reply {
+            Reply::Sequence(args) => {
+                let times: Vec<u128> = args
+                    .results
+                    .iter()
+                    .map(|r| match r {
+                        Reply::Custom(args) => {
+                            use std::convert::TryInto;
+                            let (int_bytes, _) =
+                                args.data.split_at(std::mem::size_of::<u128>());
+                            u128::from_be_bytes(int_bytes.try_into().unwrap())
+                        }
+                        x => panic!("Unexpected reply in sequence: {:?}", x),
+                    })
+                    .collect();
+
+                // Time between each in sequence should be ~30 millis
+                assert!(
+                    times[0] < times[1] && times[1] - times[0] <= 40,
+                    "{} - {} not ~ 30 millis apart",
+                    times[1],
+                    times[0]
+                );
+                assert!(
+                    times[1] < times[2] && times[2] - times[1] <= 40,
+                    "{} - {} not ~ 30 millis apart",
+                    times[2],
+                    times[1]
+                );
+            }
+            x => panic!("Unexpected reply: {:?}", x),
+        }
+    }
+
+    #[tokio::test]
+    async fn route_and_execute_with_sequence_should_abort_later_operations_if_one_fails(
+    ) {
         unimplemented!();
     }
 
     #[tokio::test]
-    async fn route_and_execute_should_execute_batch_request_in_parallel() {
+    async fn route_and_execute_with_batch_should_request_in_parallel() {
+        unimplemented!();
+    }
+
+    #[tokio::test]
+    async fn route_and_execute_with_batch_should_continue_running_requests_if_one_fails(
+    ) {
         unimplemented!();
     }
 
