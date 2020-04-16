@@ -1,8 +1,9 @@
 mod handler;
 
 use crate::{
-    reply, server::state::ServerState, Content, Header, Msg, MsgError, Reply,
-    ReplyError, Request,
+    reply, server::state::ServerState, Content, Header,
+    LazilyTransformedRequest, Msg, MsgError, Reply, ReplyError, Request,
+    TransformRequestError,
 };
 use futures::future::{BoxFuture, FutureExt};
 use log::trace;
@@ -11,7 +12,7 @@ use std::collections::hash_map::Entry;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::mpsc;
+use tokio::{runtime::Handle, sync::mpsc};
 
 #[derive(Debug, Error)]
 pub enum ActionError {
@@ -306,27 +307,21 @@ fn route_and_execute(
                 Request::Sequence(mut args) => {
                     let mut results: Vec<Reply> = vec![];
                     for op in args.operations.drain(..) {
-                        let try_req = if results.is_empty() {
-                            Ok(op.into_raw_request())
-                        } else {
-                            op.transform_with_reply(results.last().unwrap())
-                        };
-
-                        let result = match try_req {
-                            Ok(req) => {
-                                route_and_execute(
-                                    Arc::clone(&state),
-                                    req,
-                                    max_depth - 1,
-                                )
-                                .await
-                            }
-                            Err(x) => {
-                                Reply::Error(ReplyError::from(format!("{}", x)))
-                            }
-                        };
-
-                        results.push(result);
+                        results.push(
+                            match try_transform_request(op, results.last()) {
+                                Ok(req) => {
+                                    route_and_execute(
+                                        Arc::clone(&state),
+                                        req,
+                                        max_depth - 1,
+                                    )
+                                    .await
+                                }
+                                Err(x) => Reply::Error(ReplyError::from(
+                                    format!("{}", x),
+                                )),
+                            },
+                        );
                     }
 
                     Reply::Sequence(reply::SequenceArgs { results })
@@ -336,13 +331,20 @@ fn route_and_execute(
 
                     let results: Vec<Reply> =
                         join_all(args.operations.drain(..).map(|req| {
-                            route_and_execute(
+                            Handle::current().spawn(route_and_execute(
                                 Arc::clone(&state),
                                 req,
                                 max_depth - 1,
-                            )
+                            ))
                         }))
-                        .await;
+                        .await
+                        .drain(..)
+                        .map(|r| {
+                            r.unwrap_or_else(|x| {
+                                Reply::Error(From::from(format!("{}", x)))
+                            })
+                        })
+                        .collect();
                     Reply::Batch(reply::BatchArgs { results })
                 }
 
@@ -364,6 +366,25 @@ fn route_and_execute(
     .boxed()
 }
 
+#[derive(Debug, Error)]
+enum SequenceError {
+    Abort,
+    Transform(TransformRequestError),
+}
+
+fn try_transform_request(
+    op: LazilyTransformedRequest,
+    previous_reply: Option<&Reply>,
+) -> Result<Request, SequenceError> {
+    match previous_reply {
+        None => Ok(op.into_raw_request()),
+        Some(Reply::Error(_)) => Err(SequenceError::Abort),
+        Some(reply) => op
+            .transform_with_reply(reply)
+            .map_err(SequenceError::Transform),
+    }
+}
+
 /// Update last time we received a message from the connection
 async fn update_origin_last_touched(
     state: Arc<ServerState>,
@@ -381,28 +402,14 @@ async fn update_origin_last_touched(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::request;
 
     #[tokio::test]
     async fn route_and_execute_with_sequence_should_execute_request_in_order() {
+        let delay = 30;
         let mut state = ServerState::default();
+        make_custom_handler_return_time(&mut state, delay);
 
-        // Produce a custom handler that will delay and then return the time in millis
-        state.set_custom_handler(From::from(|_| {
-            use futures::future::FutureExt;
-            use std::time::{Duration, SystemTime, UNIX_EPOCH};
-            tokio::time::delay_for(Duration::from_millis(30)).map(|_| {
-                Ok(reply::CustomArgs {
-                    data: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis()
-                        .to_be_bytes()
-                        .to_vec(),
-                })
-            })
-        }));
-
-        // Invoke in sequence using the custom handler
         let reply = route_and_execute(
             Arc::new(state),
             Request::Sequence(From::from(vec![
@@ -419,26 +426,14 @@ mod tests {
 
         match reply {
             Reply::Sequence(args) => {
-                let times: Vec<u128> = args
-                    .results
-                    .iter()
-                    .map(|r| match r {
-                        Reply::Custom(args) => {
-                            use std::convert::TryInto;
-                            let (int_bytes, _) =
-                                args.data.split_at(std::mem::size_of::<u128>());
-                            u128::from_be_bytes(int_bytes.try_into().unwrap())
-                        }
-                        x => panic!("Unexpected reply in sequence: {:?}", x),
-                    })
-                    .collect();
+                let times = parse_replies_as_times(args.results);
 
                 // Time between each in sequence should be ~30 millis
                 assert!(
                     times[0] < times[1] && times[1] - times[0] <= 40,
                     "{} - {} not ~ 30 millis apart",
                     times[1],
-                    times[0]
+                    times[0],
                 );
                 assert!(
                     times[1] < times[2] && times[2] - times[1] <= 40,
@@ -454,18 +449,146 @@ mod tests {
     #[tokio::test]
     async fn route_and_execute_with_sequence_should_abort_later_operations_if_one_fails(
     ) {
-        unimplemented!();
+        let mut state = ServerState::default();
+
+        // Set custom handler to fail if it receives any data, but succeed
+        // if receives empty data
+        state.set_custom_handler(From::from(
+            move |req: request::CustomArgs| async move {
+                if req.data.is_empty() {
+                    Ok(reply::CustomArgs { data: vec![] })
+                } else {
+                    Err("Bad data".into())
+                }
+            },
+        ));
+
+        let reply = route_and_execute(
+            Arc::new(state),
+            Request::Sequence(From::from(vec![
+                Request::Custom(From::from(Vec::<u8>::new()))
+                    .into_lazily_transformed(vec![]),
+                Request::Custom(From::from(vec![1, 2, 3]))
+                    .into_lazily_transformed(vec![]),
+                Request::Custom(From::from(Vec::<u8>::new()))
+                    .into_lazily_transformed(vec![]),
+            ])),
+            2,
+        )
+        .await;
+
+        match reply {
+            Reply::Sequence(args) => {
+                match &args.results[0] {
+                    Reply::Custom(_) => (),
+                    x => panic!("Unexpected reply in sequence[0]: {:?}", x),
+                }
+                match &args.results[1] {
+                    Reply::Error(_) => (),
+                    x => panic!("Unexpected reply in batch[1]: {:?}", x),
+                }
+                match &args.results[2] {
+                    Reply::Error(_) => (),
+                    x => panic!("Unexpected reply in batch[2]: {:?}", x),
+                }
+            }
+            x => panic!("Unexpected reply: {:?}", x),
+        }
     }
 
+    // TODO: Batch operations may run concurrently, but the delay_for tactic
+    //       appears to not let other tasks start, even when using
+    //       Handle.spawn(...); so, we aren't able to validate that batching
+    //       can occur with this setup
     #[tokio::test]
+    #[ignore]
     async fn route_and_execute_with_batch_should_request_in_parallel() {
-        unimplemented!();
+        let delay = 30;
+        let mut state = ServerState::default();
+        make_custom_handler_return_time(&mut state, delay);
+
+        let reply = route_and_execute(
+            Arc::new(state),
+            Request::Batch(From::from(vec![
+                Request::Custom(From::from(Vec::<u8>::new())),
+                Request::Custom(From::from(Vec::<u8>::new())),
+                Request::Custom(From::from(Vec::<u8>::new())),
+            ])),
+            2,
+        )
+        .await;
+
+        match reply {
+            Reply::Batch(args) => {
+                let times = parse_replies_as_times(args.results);
+
+                // The time difference between all parallel requests being
+                // completed should be minimal
+                assert!(
+                    time_diff(times[0], times[1]) < 10,
+                    "Batch[0,1]: Time between parallel requests was too large: {}",
+                    time_diff(times[0], times[1])
+                );
+                assert!(
+                    time_diff(times[0], times[2]) < 10,
+                    "Batch[0,2]: Time between parallel requests was too large: {}",
+                    time_diff(times[0], times[2])
+                );
+                assert!(
+                    time_diff(times[1], times[2]) < 10,
+                    "Batch[1,2]: Time between parallel requests was too large: {}",
+                    time_diff(times[1], times[2])
+                );
+            }
+            x => panic!("Unexpected reply: {:?}", x),
+        }
     }
 
     #[tokio::test]
     async fn route_and_execute_with_batch_should_continue_running_requests_if_one_fails(
     ) {
-        unimplemented!();
+        let mut state = ServerState::default();
+
+        // Set custom handler to fail if it receives any data, but succeed
+        // if receives empty data
+        state.set_custom_handler(From::from(
+            move |req: request::CustomArgs| async move {
+                if req.data.is_empty() {
+                    Ok(reply::CustomArgs { data: vec![] })
+                } else {
+                    Err("Bad data".into())
+                }
+            },
+        ));
+
+        let reply = route_and_execute(
+            Arc::new(state),
+            Request::Batch(From::from(vec![
+                Request::Custom(From::from(Vec::<u8>::new())),
+                Request::Custom(From::from(vec![1, 2, 3])),
+                Request::Custom(From::from(Vec::<u8>::new())),
+            ])),
+            2,
+        )
+        .await;
+
+        match reply {
+            Reply::Batch(args) => {
+                match &args.results[0] {
+                    Reply::Custom(_) => (),
+                    x => panic!("Unexpected reply in batch[0]: {:?}", x),
+                }
+                match &args.results[1] {
+                    Reply::Error(_) => (),
+                    x => panic!("Unexpected reply in batch[1]: {:?}", x),
+                }
+                match &args.results[2] {
+                    Reply::Custom(_) => (),
+                    x => panic!("Unexpected reply in batch[2]: {:?}", x),
+                }
+            }
+            x => panic!("Unexpected reply: {:?}", x),
+        }
     }
 
     #[tokio::test]
@@ -507,5 +630,43 @@ mod tests {
             new_touched >= old_touched.expect("Old entry was not returned"),
             "Inserted time was in the past"
         );
+    }
+
+    fn time_diff(time1: u128, time2: u128) -> u128 {
+        time1
+            .checked_sub(time2)
+            .or(time2.checked_sub(time1))
+            .expect("Bad time diff")
+    }
+
+    fn make_custom_handler_return_time(state: &mut ServerState, delay: u64) {
+        state.set_custom_handler(From::from(move |_| {
+            use std::time::{Duration, SystemTime, UNIX_EPOCH};
+            tokio::time::delay_for(Duration::from_millis(delay)).map(|_| {
+                Ok(reply::CustomArgs {
+                    data: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis()
+                        .to_be_bytes()
+                        .to_vec(),
+                })
+            })
+        }));
+    }
+
+    fn parse_replies_as_times(replies: Vec<Reply>) -> Vec<u128> {
+        replies
+            .iter()
+            .map(|r| match r {
+                Reply::Custom(args) => {
+                    use std::convert::TryInto;
+                    let (int_bytes, _) =
+                        args.data.split_at(std::mem::size_of::<u128>());
+                    u128::from_be_bytes(int_bytes.try_into().unwrap())
+                }
+                x => panic!("Unexpected reply in sequence: {:?}", x),
+            })
+            .collect()
     }
 }
