@@ -58,20 +58,26 @@ where
         Ok((None, _)) => true,
         Ok((Some(data), addr)) => {
             trace!("Incoming data of size {} from {}", data.len(), addr);
-            if let Ok(msg) = Msg::from_slice(&data) {
-                trace!("Valid msg {:?} from {}", msg, addr);
+            match Msg::from_slice(&data) {
+                Ok(msg) => {
+                    trace!("Valid msg {:?} from {}", msg, addr);
 
-                if let Err(x) = on_inbound_tx.send((msg, addr, sender)).await {
-                    error!("Encountered error: {}", x);
+                    if let Err(x) =
+                        on_inbound_tx.send((msg, addr, sender)).await
+                    {
+                        error!("Encountered error: {}", x);
+                    }
+
+                    true
                 }
-
-                true
-            } else {
-                warn!(
-                    "Discarding data of size {} as not valid msg",
-                    data.len()
-                );
-                true
+                Err(x) => {
+                    warn!(
+                        "Discarding data of size {} as not valid msg: {}",
+                        data.len(),
+                        x
+                    );
+                    true
+                }
             }
         }
         Err(x) => match x {
