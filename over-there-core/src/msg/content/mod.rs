@@ -16,22 +16,22 @@ pub enum Content {
 }
 
 impl Content {
-    pub fn to_request(self) -> Option<Request> {
+    pub fn into_request(self) -> Option<Request> {
         match self {
             Self::Request(x) => Some(x),
             Self::Reply(_) => None,
         }
     }
 
-    pub fn to_reply(self) -> Option<Reply> {
+    pub fn into_reply(self) -> Option<Reply> {
         match self {
             Self::Request(_) => None,
             Self::Reply(x) => Some(x),
         }
     }
 
-    pub fn to_reply_error(self) -> Option<ReplyError> {
-        match self.to_reply() {
+    pub fn into_reply_error(self) -> Option<ReplyError> {
+        match self.into_reply() {
             Some(Reply::Error(x)) => Some(x),
             _ => None,
         }

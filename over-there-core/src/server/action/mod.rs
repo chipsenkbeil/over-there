@@ -176,7 +176,9 @@ async fn validate_route_and_execute(
 ) -> Result<Reply, ActionError> {
     trace!("Executing content: {:?}", content);
 
-    let request = content.to_request().ok_or(ActionError::UnexpectedContent)?;
+    let request = content
+        .into_request()
+        .ok_or(ActionError::UnexpectedContent)?;
     update_origin_last_touched(Arc::clone(&state), origin).await;
     Ok(route_and_execute(state, request, max_depth).await)
 }
