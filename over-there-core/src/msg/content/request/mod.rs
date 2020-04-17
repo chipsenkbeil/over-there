@@ -6,7 +6,6 @@ mod internal_debug;
 mod io;
 mod sequence;
 mod transform;
-mod version;
 
 pub use batch::*;
 pub use capabilities::*;
@@ -16,7 +15,6 @@ pub use internal_debug::*;
 pub use io::*;
 pub use sequence::*;
 pub use transform::*;
-pub use version::*;
 
 use serde::{Deserialize, Serialize};
 
