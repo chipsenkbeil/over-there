@@ -5,6 +5,12 @@ pub struct GenericErrorArgs {
     pub msg: String,
 }
 
+impl ToString for GenericErrorArgs {
+    fn to_string(&self) -> String {
+        self.msg.clone()
+    }
+}
+
 impl From<Box<dyn std::error::Error>> for GenericErrorArgs {
     fn from(x: Box<dyn std::error::Error>) -> Self {
         Self {

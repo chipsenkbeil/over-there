@@ -19,6 +19,12 @@ pub struct IoErrorArgs {
     pub error_kind: io::ErrorKind,
 }
 
+impl ToString for IoErrorArgs {
+    fn to_string(&self) -> String {
+        self.description.clone()
+    }
+}
+
 impl Default for IoErrorArgs {
     fn default() -> Self {
         Self {

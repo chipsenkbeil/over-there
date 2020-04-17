@@ -185,11 +185,9 @@ pub enum ReplyError {
 impl ToString for ReplyError {
     fn to_string(&self) -> String {
         match self {
-            Self::Generic(args) => args.msg.clone(),
-            Self::Io(args) => args.description.clone(),
-            Self::FileSigChanged(args) => {
-                format!("File {} signature changed", args.id)
-            }
+            Self::Generic(args) => args.to_string(),
+            Self::Io(args) => args.to_string(),
+            Self::FileSigChanged(args) => args.to_string(),
         }
     }
 }

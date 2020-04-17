@@ -48,10 +48,6 @@ pub async fn async_test(mut client: ConnectedClient) {
     // Kill our proc and verify it's dead
     let status = client.ask_proc_kill(&proc).await.unwrap();
     assert_eq!(status.id, proc.id(), "Wrong proc id returned with status");
-    assert!(
-        !status.is_alive,
-        "Proc reported running when should be dead"
-    );
 
     // Should not be able to get status of proc because it's been removed
     match client.ask_read_proc_status(&proc).await.unwrap_err() {

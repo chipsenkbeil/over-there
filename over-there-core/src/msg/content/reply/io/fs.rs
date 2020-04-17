@@ -84,3 +84,9 @@ pub struct FileSigChangedArgs {
     pub id: u32,
     pub sig: u32,
 }
+
+impl ToString for FileSigChangedArgs {
+    fn to_string(&self) -> String {
+        format!("File {} signature changed", self.id)
+    }
+}

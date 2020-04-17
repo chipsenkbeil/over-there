@@ -72,11 +72,14 @@ impl ConnectedClient {
         self.state.lock().await.callback_manager.add_callback(
             msg.header.id,
             |reply| {
-                let result = if let Reply::Error(x) = &reply {
-                    tx.send(Err(AskError::Failure { msg: x.to_string() }))
-                } else {
-                    tx.send(Ok(reply.clone()))
-                };
+                // NOTE: We handle errors like IO further downstream, so
+                //       only extract the generic error here
+                let result =
+                    if let Reply::Error(ReplyError::Generic(x)) = &reply {
+                        tx.send(Err(AskError::Failure { msg: x.to_string() }))
+                    } else {
+                        tx.send(Ok(reply.clone()))
+                    };
 
                 if result.is_err() {
                     error!("Failed to trigger callback: {:?}", reply);
@@ -551,7 +554,7 @@ impl ConnectedClient {
         }
     }
 
-    /// Requests to kill a remote process on the server
+    /// Requests to read the status of a remote process on the server
     pub async fn ask_read_proc_status(
         &mut self,
         proc: &RemoteProc,
@@ -574,7 +577,7 @@ impl ConnectedClient {
     pub async fn ask_proc_kill(
         &mut self,
         proc: &RemoteProc,
-    ) -> Result<ProcStatusArgs, ExecAskError> {
+    ) -> Result<ProcKilledArgs, ExecAskError> {
         let result = self
             .ask(Request::KillProc(KillProcArgs { id: proc.id }))
             .await;
@@ -584,10 +587,7 @@ impl ConnectedClient {
         }
 
         match result.unwrap() {
-            Reply::ProcStatus(args) if args.is_alive => {
-                Err(ExecAskError::FailedToKill)
-            }
-            Reply::ProcStatus(args) => Ok(args),
+            Reply::ProcKilled(args) => Ok(args),
             x => Err(make_exec_ask_error(x)),
         }
     }
