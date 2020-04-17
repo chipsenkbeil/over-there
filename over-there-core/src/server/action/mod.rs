@@ -94,7 +94,11 @@ impl Executor<Vec<u8>> {
             self.max_depth,
         )
         .await?;
-        Self::respond(reply, header, origin_sender).await
+
+        match reply {
+            Reply::Ignore => Ok(()),
+            _ => Self::respond(reply, header, origin_sender).await,
+        }
     }
 
     async fn respond(
@@ -142,7 +146,11 @@ impl Executor<(Vec<u8>, SocketAddr)> {
             self.max_depth,
         )
         .await?;
-        Self::respond(reply, header, origin_sender).await
+
+        match reply {
+            Reply::Ignore => Ok(()),
+            _ => Self::respond(reply, header, origin_sender).await,
+        }
     }
 
     async fn respond(
@@ -350,16 +358,17 @@ fn route_and_execute(
 
                 // TODO: Move to handler function that can be tested
                 //       and have logging
-                Request::Custom(args) => state
-                    .custom_handler
-                    .invoke(args)
-                    .await
-                    .map(Reply::Custom)
-                    .unwrap_or_else(Reply::from),
+                Request::Custom(args) => match &state.custom_handler.as_ref() {
+                    Some(ch) => ch
+                        .invoke(args)
+                        .await
+                        .map(Reply::Custom)
+                        .unwrap_or_else(Reply::from),
+                    None => Reply::Ignore,
+                },
 
-                // TODO: Implement forwarding support; should remove
-                //       this panic operation as it's a point of attack
-                Request::Forward(_) => unimplemented!(),
+                // TODO: Implement forwarding support
+                Request::Forward(_) => Reply::Ignore,
             }
         }
     }

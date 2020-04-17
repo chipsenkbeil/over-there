@@ -38,7 +38,7 @@ pub struct ServerState {
     proc_ttl: Duration,
     pub(crate) dead_proc_ttl: Duration,
 
-    pub custom_handler: CustomHandler,
+    pub custom_handler: Option<CustomHandler>,
 
     /// Indicator of whether or not the server is running, used to signal
     /// to looping handlers that it is time to shut down if false
@@ -60,7 +60,7 @@ impl ServerState {
             proc_ids: Mutex::new(HashSet::default()),
             proc_ttl,
             dead_proc_ttl,
-            custom_handler: CustomHandler::new_unimplemented(),
+            custom_handler: None,
             running: AtomicBool::new(true),
         }
     }
@@ -69,7 +69,7 @@ impl ServerState {
         &mut self,
         custom_handler: CustomHandler,
     ) -> &mut Self {
-        self.custom_handler = custom_handler;
+        self.custom_handler = Some(custom_handler);
         self
     }
 

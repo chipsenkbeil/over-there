@@ -39,10 +39,6 @@ impl CustomHandler {
         let f = &mut *self.f.lock().await;
         f(args).await
     }
-
-    pub fn new_unimplemented() -> Self {
-        Self::from(|_| async { Ok(reply::CustomArgs { data: vec![] }) })
-    }
 }
 
 impl<F, R> From<F> for CustomHandler

@@ -23,6 +23,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "type", content = "payload")]
 pub enum Reply {
+    /// Used when we want to NOT send a reply at all
+    #[serde(skip)]
+    Ignore,
+
     // ------------------------------------------------------------------------
     // Heartbeats are used to ensure remote instances are alive
     #[serde(rename = "heartbeat_reply")]
