@@ -1367,7 +1367,18 @@ mod tests {
         let dir_path = dir.path().to_string_lossy().to_string();
 
         let tmp_file = tempfile::NamedTempFile::new_in(&dir).unwrap();
+        let tmp_file_path = fs::canonicalize(tmp_file.path())
+            .await
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
         let tmp_dir = tempfile::tempdir_in(&dir).unwrap();
+        let tmp_dir_path = fs::canonicalize(tmp_dir.path())
+            .await
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
 
         let args = list_dir_contents(
             Arc::new(ServerState::default()),
@@ -1383,14 +1394,14 @@ mod tests {
         assert_eq!(args.entries.len(), 2, "Unexpected number of entries");
 
         assert!(args.entries.contains(&DirEntry {
-            path: tmp_file.path().to_string_lossy().to_string(),
+            path: tmp_file_path,
             is_file: true,
             is_dir: false,
             is_symlink: false
         }));
 
         assert!(args.entries.contains(&DirEntry {
-            path: tmp_dir.path().to_string_lossy().to_string(),
+            path: tmp_dir_path,
             is_file: false,
             is_dir: true,
             is_symlink: false

@@ -34,7 +34,7 @@ impl FileSystemManager {
         path: impl AsRef<Path>,
         create_components: bool,
     ) -> io::Result<()> {
-        let path = self.clean_path(path.as_ref()).await;
+        let path = clean_path(path.as_ref()).await;
         dir::create(path, create_components).await
     }
 
@@ -46,8 +46,8 @@ impl FileSystemManager {
         from: impl AsRef<Path>,
         to: impl AsRef<Path>,
     ) -> io::Result<()> {
-        let from = self.clean_path(from.as_ref()).await;
-        let to = self.clean_path(to.as_ref()).await;
+        let from = clean_path(from.as_ref()).await;
+        let to = clean_path(to.as_ref()).await;
 
         self.check_no_open_files(from.as_path())?;
 
@@ -64,7 +64,7 @@ impl FileSystemManager {
         path: impl AsRef<Path>,
         non_empty: bool,
     ) -> io::Result<()> {
-        let path = self.clean_path(path.as_ref()).await;
+        let path = clean_path(path.as_ref()).await;
 
         self.check_no_open_files(path.as_path())?;
 
@@ -84,7 +84,7 @@ impl FileSystemManager {
         &self,
         path: impl AsRef<Path>,
     ) -> io::Result<Vec<LocalDirEntry>> {
-        let path = self.clean_path(path.as_ref()).await;
+        let path = clean_path(path.as_ref()).await;
 
         dir::entries(path).await
     }
@@ -104,7 +104,7 @@ impl FileSystemManager {
         write: bool,
         read: bool,
     ) -> io::Result<LocalFileHandle> {
-        let path = self.clean_path(path.as_ref()).await;
+        let path = clean_path(path.as_ref()).await;
 
         let mut new_permissions = LocalFilePermissions { read, write };
         let mut maybe_id_and_sig = None;
@@ -189,8 +189,8 @@ impl FileSystemManager {
         from: impl AsRef<Path>,
         to: impl AsRef<Path>,
     ) -> io::Result<()> {
-        let from = self.clean_path(from.as_ref()).await;
-        let to = self.clean_path(to.as_ref()).await;
+        let from = clean_path(from.as_ref()).await;
+        let to = clean_path(to.as_ref()).await;
 
         self.check_no_open_files(from.as_path())?;
 
@@ -202,7 +202,7 @@ impl FileSystemManager {
         &mut self,
         path: impl AsRef<Path>,
     ) -> io::Result<()> {
-        let path = self.clean_path(path.as_ref()).await;
+        let path = clean_path(path.as_ref()).await;
 
         self.check_no_open_files(path.as_path())?;
 
@@ -252,15 +252,15 @@ impl FileSystemManager {
 
         Ok(())
     }
+}
 
-    /// Attempts to canonicalize the path, returning the canonicalized form
-    /// or the original form if failed.
-    async fn clean_path(&self, path: impl AsRef<Path>) -> PathBuf {
-        tokio::fs::canonicalize(path.as_ref())
-            .await
-            .ok()
-            .unwrap_or_else(|| path.as_ref().to_path_buf())
-    }
+/// Attempts to canonicalize the path, returning the canonicalized form
+/// or the original form if failed.
+async fn clean_path(path: impl AsRef<Path>) -> PathBuf {
+    tokio::fs::canonicalize(path.as_ref())
+        .await
+        .ok()
+        .unwrap_or_else(|| path.as_ref().to_path_buf())
 }
 
 #[cfg(test)]
@@ -408,7 +408,7 @@ mod tests {
                 );
                 assert!(
                     entries.contains(&LocalDirEntry {
-                        path: file.as_ref().to_path_buf(),
+                        path: clean_path(file.as_ref()).await,
                         is_file: true,
                         is_dir: false,
                         is_symlink: false,
@@ -417,7 +417,7 @@ mod tests {
                 );
                 assert!(
                     entries.contains(&LocalDirEntry {
-                        path: dir.as_ref().to_path_buf(),
+                        path: clean_path(dir.as_ref()).await,
                         is_file: false,
                         is_dir: true,
                         is_symlink: false,
@@ -426,7 +426,7 @@ mod tests {
                 );
                 assert!(
                     !entries.contains(&LocalDirEntry {
-                        path: inner_file.as_ref().to_path_buf(),
+                        path: clean_path(inner_file.as_ref()).await,
                         is_file: true,
                         is_dir: false,
                         is_symlink: false,

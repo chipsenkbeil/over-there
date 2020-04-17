@@ -269,7 +269,13 @@ mod tests {
             let f = tempfile::NamedTempFile::new().unwrap();
             let path = f.path();
             let result = LocalFile::open(path, false, true, true).await;
-            (path.to_owned(), result)
+
+            // NOTE: Need to canonicalize the path below as can run into
+            //       cases such as on MacOS where temp path can be
+            //       /private/var/folders/... for result.unwrap().path() and
+            //       /var/folders/... for path
+            let f_path = fs::canonicalize(path.to_owned()).await.unwrap();
+            (f_path, result)
         }
         .await;
 
@@ -506,6 +512,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(not(target_os = "linux"), ignore)]
     async fn rename_should_yield_error_if_new_name_on_different_mount_point() {
         let f = tempfile::NamedTempFile::new().unwrap();
         let path = f.path();
@@ -513,8 +520,8 @@ mod tests {
         let mut lf =
             create_test_local_file(f.as_file().try_clone().unwrap(), path);
 
-        // NOTE: Renaming when using temp file seems to trigger this, so using
-        //       it as a test case
+        // NOTE: Renaming when using temp file on Linux seems to trigger this,
+        //       so using it as a test case
         let sig = lf.sig();
         match lf.rename(sig, "renamed_file").await {
             Err(_) => {
