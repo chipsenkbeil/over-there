@@ -1,3 +1,4 @@
+use log::debug;
 use over_there_auth::Sha256Authenticator;
 use over_there_core::{
     ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder, Transport,
@@ -42,7 +43,7 @@ pub async fn setup_with_timeout(
 fn init_logger() {
     let _ = env_logger::builder()
         .is_test(true)
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Debug)
         .try_init();
 }
 
@@ -61,6 +62,7 @@ async fn start_tcp_client_and_server() -> TestBench {
         .cloneable_listen()
         .await
         .expect("Failed to listen");
+    debug!("TCP Server listening: {}", server.addr());
 
     let client = ClientBuilder::default()
         .authenticator(auth.clone())
@@ -71,6 +73,7 @@ async fn start_tcp_client_and_server() -> TestBench {
         .connect()
         .await
         .expect("Failed to connect");
+    debug!("TCP Client connected: {}", client.remote_addr());
 
     TestBench { client, server }
 }
@@ -90,6 +93,7 @@ async fn start_udp_client_and_server() -> TestBench {
         .listen()
         .await
         .expect("Failed to listen");
+    debug!("UDP Server listening: {}", server.addr());
 
     let client = ClientBuilder::default()
         .authenticator(auth.clone())
@@ -100,6 +104,7 @@ async fn start_udp_client_and_server() -> TestBench {
         .connect()
         .await
         .expect("Failed to connect");
+    debug!("UDP Client connected: {}", client.remote_addr());
 
     TestBench { client, server }
 }

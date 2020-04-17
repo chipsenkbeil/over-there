@@ -30,7 +30,14 @@ pub fn connect(addr: SocketAddr) -> io::Result<UdpSocket> {
             super::IANA_EPHEMERAL_PORT_RANGE.collect(),
         )?
     };
+
+    // NOTE: There appears to be a limitation in MacOS that causes subsequent
+    //       calls to socket.send_to(...) after a connect to fail with OS
+    //       error code 56 (socket already connected); so, we will NOT perform
+    //       a connect if on MacOS
+    #[cfg(not(target_os = "macos"))]
     socket.connect(addr)?;
+
     Ok(socket)
 }
 
