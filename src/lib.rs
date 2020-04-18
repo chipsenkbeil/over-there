@@ -532,58 +532,58 @@ async fn run_schema(cmd: SchemaSubcommand) -> Result<(), Box<dyn Error>> {
                 SchemaType::CapabilitiesReply => {
                     over_there_core::reply::CapabilitiesArgs::schema()
                 }
-                SchemaType::DirCreatedReply => {
+                SchemaType::CreateDirReply => {
                     over_there_core::reply::DirCreatedArgs::schema()
                 }
-                SchemaType::DirRenamedReply => {
+                SchemaType::RenameDirReply => {
                     over_there_core::reply::DirRenamedArgs::schema()
                 }
-                SchemaType::DirRemovedReply => {
+                SchemaType::RemoveDirReply => {
                     over_there_core::reply::DirRemovedArgs::schema()
                 }
-                SchemaType::DirContentsListReply => {
+                SchemaType::ListDirContentsReply => {
                     over_there_core::reply::DirContentsListArgs::schema()
                 }
-                SchemaType::FileOpenedReply => {
+                SchemaType::OpenFileReply => {
                     over_there_core::reply::FileOpenedArgs::schema()
                 }
-                SchemaType::FileClosedReply => {
+                SchemaType::CloseFileReply => {
                     over_there_core::reply::FileClosedArgs::schema()
                 }
-                SchemaType::UnopenedFileRenamedReply => {
+                SchemaType::RenameUnopenedFileReply => {
                     over_there_core::reply::UnopenedFileRenamedArgs::schema()
                 }
-                SchemaType::FileRenamedReply => {
+                SchemaType::RenameFileReply => {
                     over_there_core::reply::FileRenamedArgs::schema()
                 }
-                SchemaType::UnopenedFileRemovedReply => {
+                SchemaType::RemoveUnopenedFileReply => {
                     over_there_core::reply::UnopenedFileRemovedArgs::schema()
                 }
-                SchemaType::FileRemovedReply => {
+                SchemaType::RemoveFileReply => {
                     over_there_core::reply::FileRemovedArgs::schema()
                 }
-                SchemaType::FileContentsReply => {
+                SchemaType::ReadFileReply => {
                     over_there_core::reply::FileContentsArgs::schema()
                 }
-                SchemaType::FileWrittenReply => {
+                SchemaType::WriteFileReply => {
                     over_there_core::reply::FileWrittenArgs::schema()
                 }
-                SchemaType::ProcStartedReply => {
+                SchemaType::ExecProcReply => {
                     over_there_core::reply::ProcStartedArgs::schema()
                 }
-                SchemaType::ProcStdinWrittenReply => {
+                SchemaType::WriteProcStdinReply => {
                     over_there_core::reply::ProcStdinWrittenArgs::schema()
                 }
-                SchemaType::ProcStdoutContentsReply => {
+                SchemaType::ReadProcStdoutReply => {
                     over_there_core::reply::ProcStdoutContentsArgs::schema()
                 }
-                SchemaType::ProcStderrContentsReply => {
+                SchemaType::ReadProcStderrReply => {
                     over_there_core::reply::ProcStderrContentsArgs::schema()
                 }
-                SchemaType::ProcKilledReply => {
+                SchemaType::KillProcReply => {
                     over_there_core::reply::ProcKilledArgs::schema()
                 }
-                SchemaType::ProcStatusReply => {
+                SchemaType::ReadProcStatusReply => {
                     over_there_core::reply::ProcStatusArgs::schema()
                 }
                 SchemaType::GenericError => {
