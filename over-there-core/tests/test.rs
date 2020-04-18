@@ -4,6 +4,18 @@ mod setup;
 use setup::TestMode;
 
 #[tokio::test]
+async fn test_tcp_client_ask_heartbeat() {
+    let test_bench = setup::setup(TestMode::Tcp).await;
+    scenarios::heartbeat::async_test(test_bench.client).await;
+}
+
+#[tokio::test]
+async fn test_udp_client_ask_heartbeat() {
+    let test_bench = setup::setup(TestMode::Udp).await;
+    scenarios::heartbeat::async_test(test_bench.client).await;
+}
+
+#[tokio::test]
 async fn test_tcp_client_ask_version() {
     let test_bench = setup::setup(TestMode::Tcp).await;
     scenarios::version::async_test(test_bench.client).await;
@@ -13,6 +25,18 @@ async fn test_tcp_client_ask_version() {
 async fn test_udp_client_ask_version() {
     let test_bench = setup::setup(TestMode::Udp).await;
     scenarios::version::async_test(test_bench.client).await;
+}
+
+#[tokio::test]
+async fn test_tcp_client_ask_capabilities() {
+    let test_bench = setup::setup(TestMode::Tcp).await;
+    scenarios::capabilities::async_test(test_bench.client).await;
+}
+
+#[tokio::test]
+async fn test_udp_client_ask_capabilities() {
+    let test_bench = setup::setup(TestMode::Udp).await;
+    scenarios::capabilities::async_test(test_bench.client).await;
 }
 
 #[tokio::test]

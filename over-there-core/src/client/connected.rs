@@ -116,6 +116,14 @@ impl ConnectedClient {
         }
     }
 
+    /// Requests heartbeat from the server
+    pub async fn ask_heartbeat(&mut self) -> Result<(), AskError> {
+        match self.ask(Request::Heartbeat).await? {
+            Reply::Heartbeat => Ok(()),
+            x => Err(make_ask_error(x)),
+        }
+    }
+
     /// Requests the version from the server
     pub async fn ask_version(
         &mut self,

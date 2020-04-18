@@ -15,8 +15,8 @@ pub use client::{
 pub use event::{AddrEventManager, EventManager};
 pub use msg::{
     content::{
-        reply, request, Content, LazilyTransformedRequest, Reply, ReplyError,
-        Request, TransformRequestError, TransformRule,
+        reply, reply::Capability, request, Content, LazilyTransformedRequest,
+        Reply, ReplyError, Request, TransformRequestError, TransformRule,
     },
     Header, Msg, MsgError,
 };
