@@ -15,6 +15,8 @@ pub struct ExecProcArgs {
     pub current_dir: Option<String>,
 }
 
+impl crate::SchemaInfo for ExecProcArgs {}
+
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
 )]
@@ -23,12 +25,16 @@ pub struct WriteProcStdinArgs {
     pub input: Vec<u8>,
 }
 
+impl crate::SchemaInfo for WriteProcStdinArgs {}
+
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
 )]
 pub struct ReadProcStdoutArgs {
     pub id: u32,
 }
+
+impl crate::SchemaInfo for ReadProcStdoutArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -37,6 +43,8 @@ pub struct ReadProcStderrArgs {
     pub id: u32,
 }
 
+impl crate::SchemaInfo for ReadProcStderrArgs {}
+
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
 )]
@@ -44,9 +52,13 @@ pub struct KillProcArgs {
     pub id: u32,
 }
 
+impl crate::SchemaInfo for KillProcArgs {}
+
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
 )]
 pub struct ReadProcStatusArgs {
     pub id: u32,
 }
+
+impl crate::SchemaInfo for ReadProcStatusArgs {}

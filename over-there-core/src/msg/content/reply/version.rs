@@ -7,3 +7,5 @@ use serde::{Deserialize, Serialize};
 pub struct VersionArgs {
     pub version: String,
 }
+
+impl crate::SchemaInfo for VersionArgs {}

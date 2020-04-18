@@ -8,6 +8,8 @@ pub struct GenericErrorArgs {
     pub msg: String,
 }
 
+impl crate::SchemaInfo for GenericErrorArgs {}
+
 impl ToString for GenericErrorArgs {
     fn to_string(&self) -> String {
         self.msg.clone()

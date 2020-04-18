@@ -158,3 +158,5 @@ impl Request {
         LazilyTransformedRequest::new(self, rules)
     }
 }
+
+impl crate::SchemaInfo for Request {}

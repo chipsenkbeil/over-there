@@ -39,6 +39,8 @@ impl Content {
     }
 }
 
+impl crate::SchemaInfo for Content {}
+
 impl From<Request> for Content {
     fn from(request: Request) -> Self {
         Self::Request(request)

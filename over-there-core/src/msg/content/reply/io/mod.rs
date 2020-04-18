@@ -15,6 +15,8 @@ pub struct IoErrorArgs {
     pub error_kind: SerErrorKind,
 }
 
+impl crate::SchemaInfo for IoErrorArgs {}
+
 impl ToString for IoErrorArgs {
     fn to_string(&self) -> String {
         self.description.clone()
@@ -116,6 +118,8 @@ pub enum SerErrorKind {
     /// For types that are added later that are not covered
     NonExhaustive,
 }
+
+impl crate::SchemaInfo for SerErrorKind {}
 
 impl From<io::ErrorKind> for SerErrorKind {
     fn from(error_kind: io::ErrorKind) -> Self {

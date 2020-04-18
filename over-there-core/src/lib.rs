@@ -42,3 +42,12 @@ pub enum Transport {
     ///   the very first addr in most cases as no network validation is used
     Udp(Vec<SocketAddr>),
 }
+
+pub trait SchemaInfo: schemars::JsonSchema {
+    /// Outputs schema as a pretty JSON string
+    fn schema() -> String {
+        let schema = schemars::schema_for!(Self);
+        serde_json::to_string_pretty(&schema)
+            .expect("Failed to serialize schema")
+    }
+}

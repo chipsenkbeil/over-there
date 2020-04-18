@@ -6,10 +6,13 @@ use format::FormatOption;
 use log::info;
 use opts::{
     client::{self, ClientCommand},
+    schema::{SchemaSubcommand, SchemaType},
     server::ServerCommand,
     Command,
 };
-use over_there_core::{ConnectedClient, Content, RemoteProc, Reply};
+use over_there_core::{
+    ConnectedClient, Content, RemoteProc, Reply, SchemaInfo,
+};
 use std::error::Error;
 use std::io;
 use std::path::PathBuf;
@@ -30,6 +33,7 @@ pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
             )?,
             _ => (),
         },
+        Command::Schema(s) => run_schema(s.command).await?,
     };
 
     Ok(())
@@ -423,6 +427,183 @@ async fn process_proc(
             }
         }
     }
+
+    Ok(())
+}
+
+async fn run_schema(cmd: SchemaSubcommand) -> Result<(), Box<dyn Error>> {
+    use strum::VariantNames;
+    match cmd {
+        SchemaSubcommand::List => {
+            for v in SchemaType::VARIANTS {
+                println!("{}", v);
+            }
+        }
+        SchemaSubcommand::Info(info) => println!(
+            "{}",
+            match info.schema_type {
+                SchemaType::HeartbeatRequest => {
+                    String::from("{}")
+                }
+                SchemaType::VersionRequest => {
+                    String::from("{}")
+                }
+                SchemaType::CapabilitiesRequest => {
+                    over_there_core::request::CapabilitiesArgs::schema()
+                }
+                SchemaType::CreateDirRequest => {
+                    over_there_core::request::CreateDirArgs::schema()
+                }
+                SchemaType::RenameDirRequest => {
+                    over_there_core::request::RenameDirArgs::schema()
+                }
+                SchemaType::RemoveDirRequest => {
+                    over_there_core::request::RemoveDirArgs::schema()
+                }
+                SchemaType::ListDirContentsRequest => {
+                    over_there_core::request::ListDirContentsArgs::schema()
+                }
+                SchemaType::OpenFileRequest => {
+                    over_there_core::request::OpenFileArgs::schema()
+                }
+                SchemaType::CloseFileRequest => {
+                    over_there_core::request::CloseFileArgs::schema()
+                }
+                SchemaType::RenameUnopenedFileRequest => {
+                    over_there_core::request::RenameUnopenedFileArgs::schema()
+                }
+                SchemaType::RenameFileRequest => {
+                    over_there_core::request::RenameFileArgs::schema()
+                }
+                SchemaType::RemoveUnopenedFileRequest => {
+                    over_there_core::request::RemoveUnopenedFileArgs::schema()
+                }
+                SchemaType::RemoveFileRequest => {
+                    over_there_core::request::RemoveFileArgs::schema()
+                }
+                SchemaType::ReadFileRequest => {
+                    over_there_core::request::ReadFileArgs::schema()
+                }
+                SchemaType::WriteFileRequest => {
+                    over_there_core::request::WriteFileArgs::schema()
+                }
+                SchemaType::ExecProcRequest => {
+                    over_there_core::request::ExecProcArgs::schema()
+                }
+                SchemaType::WriteProcStdinRequest => {
+                    over_there_core::request::WriteProcStdinArgs::schema()
+                }
+                SchemaType::ReadProcStdoutRequest => {
+                    over_there_core::request::ReadProcStdoutArgs::schema()
+                }
+                SchemaType::ReadProcStderrRequest => {
+                    over_there_core::request::ReadProcStderrArgs::schema()
+                }
+                SchemaType::KillProcRequest => {
+                    over_there_core::request::KillProcArgs::schema()
+                }
+                SchemaType::ReadProcStatusRequest => {
+                    over_there_core::request::ReadProcStatusArgs::schema()
+                }
+                SchemaType::SequenceRequest => {
+                    over_there_core::request::SequenceArgs::schema()
+                }
+                SchemaType::BatchRequest => {
+                    over_there_core::request::BatchArgs::schema()
+                }
+                SchemaType::ForwardRequest => {
+                    over_there_core::request::ForwardArgs::schema()
+                }
+                SchemaType::CustomRequest => {
+                    over_there_core::request::CustomArgs::schema()
+                }
+                SchemaType::InternalDebugRequest => {
+                    over_there_core::request::InternalDebugArgs::schema()
+                }
+                SchemaType::HeartbeatReply => {
+                    String::from("{}")
+                }
+                SchemaType::VersionReply => {
+                    over_there_core::reply::VersionArgs::schema()
+                }
+                SchemaType::CapabilitiesReply => {
+                    over_there_core::reply::CapabilitiesArgs::schema()
+                }
+                SchemaType::DirCreatedReply => {
+                    over_there_core::reply::DirCreatedArgs::schema()
+                }
+                SchemaType::DirRenamedReply => {
+                    over_there_core::reply::DirRenamedArgs::schema()
+                }
+                SchemaType::DirRemovedReply => {
+                    over_there_core::reply::DirRemovedArgs::schema()
+                }
+                SchemaType::DirContentsListReply => {
+                    over_there_core::reply::DirContentsListArgs::schema()
+                }
+                SchemaType::FileOpenedReply => {
+                    over_there_core::reply::FileOpenedArgs::schema()
+                }
+                SchemaType::FileClosedReply => {
+                    over_there_core::reply::FileClosedArgs::schema()
+                }
+                SchemaType::UnopenedFileRenamedReply => {
+                    over_there_core::reply::UnopenedFileRenamedArgs::schema()
+                }
+                SchemaType::FileRenamedReply => {
+                    over_there_core::reply::FileRenamedArgs::schema()
+                }
+                SchemaType::UnopenedFileRemovedReply => {
+                    over_there_core::reply::UnopenedFileRemovedArgs::schema()
+                }
+                SchemaType::FileRemovedReply => {
+                    over_there_core::reply::FileRemovedArgs::schema()
+                }
+                SchemaType::FileContentsReply => {
+                    over_there_core::reply::FileContentsArgs::schema()
+                }
+                SchemaType::FileWrittenReply => {
+                    over_there_core::reply::FileWrittenArgs::schema()
+                }
+                SchemaType::ProcStartedReply => {
+                    over_there_core::reply::ProcStartedArgs::schema()
+                }
+                SchemaType::ProcStdinWrittenReply => {
+                    over_there_core::reply::ProcStdinWrittenArgs::schema()
+                }
+                SchemaType::ProcStdoutContentsReply => {
+                    over_there_core::reply::ProcStdoutContentsArgs::schema()
+                }
+                SchemaType::ProcStderrContentsReply => {
+                    over_there_core::reply::ProcStderrContentsArgs::schema()
+                }
+                SchemaType::ProcKilledReply => {
+                    over_there_core::reply::ProcKilledArgs::schema()
+                }
+                SchemaType::ProcStatusReply => {
+                    over_there_core::reply::ProcStatusArgs::schema()
+                }
+                SchemaType::ErrorReply => {
+                    over_there_core::reply::GenericErrorArgs::schema()
+                }
+                SchemaType::SequenceReply => {
+                    over_there_core::reply::SequenceArgs::schema()
+                }
+                SchemaType::BatchReply => {
+                    over_there_core::reply::BatchArgs::schema()
+                }
+                SchemaType::ForwardReply => {
+                    over_there_core::reply::ForwardArgs::schema()
+                }
+                SchemaType::CustomReply => {
+                    over_there_core::reply::CustomArgs::schema()
+                }
+                SchemaType::InternalDebugReply => {
+                    over_there_core::reply::InternalDebugArgs::schema()
+                }
+            }
+        ),
+    };
 
     Ok(())
 }

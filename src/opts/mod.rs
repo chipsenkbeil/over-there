@@ -1,5 +1,6 @@
 pub mod client;
 mod parsers;
+pub mod schema;
 pub mod server;
 pub mod types;
 
@@ -16,13 +17,19 @@ pub enum Command {
     /// Launches a server to listen for incoming requests
     #[clap(name = "server")]
     Server(server::ServerCommand),
+
+    /// Prints schema information in JSON format
+    #[cfg(feature = "format-json")]
+    #[clap(name = "schema")]
+    Schema(schema::SchemaCommand),
 }
 
 impl Command {
-    pub fn common_opts(&self) -> &CommonOpts {
+    pub fn common_opts(&self) -> Option<&CommonOpts> {
         match self {
-            Self::Client(c) => &c.opts,
-            Self::Server(s) => &s.opts,
+            Self::Client(c) => Some(&c.opts),
+            Self::Server(s) => Some(&s.opts),
+            Self::Schema(_) => None,
         }
     }
 }

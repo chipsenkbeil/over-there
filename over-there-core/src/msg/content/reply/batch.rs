@@ -9,6 +9,8 @@ pub struct BatchArgs {
     pub results: Vec<Reply>,
 }
 
+impl crate::SchemaInfo for BatchArgs {}
+
 impl From<Vec<Reply>> for BatchArgs {
     fn from(results: Vec<Reply>) -> Self {
         Self { results }

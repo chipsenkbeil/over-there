@@ -7,3 +7,5 @@ use serde::{Deserialize, Serialize};
 pub struct InternalDebugArgs {
     pub output: Vec<u8>,
 }
+
+impl crate::SchemaInfo for InternalDebugArgs {}

@@ -10,6 +10,8 @@ pub struct SequenceArgs {
     pub results: Vec<Reply>,
 }
 
+impl crate::SchemaInfo for SequenceArgs {}
+
 impl From<Vec<Reply>> for SequenceArgs {
     fn from(results: Vec<Reply>) -> Self {
         Self { results }

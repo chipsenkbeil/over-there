@@ -10,6 +10,8 @@ pub struct BatchArgs {
     pub operations: Vec<Request>,
 }
 
+impl crate::SchemaInfo for BatchArgs {}
+
 impl From<Vec<Request>> for BatchArgs {
     fn from(operations: Vec<Request>) -> Self {
         Self { operations }

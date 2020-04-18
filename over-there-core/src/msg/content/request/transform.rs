@@ -75,6 +75,8 @@ impl LazilyTransformedRequest {
     }
 }
 
+impl crate::SchemaInfo for LazilyTransformedRequest {}
+
 /// Represents a transformation to apply against some request; uses syntax
 /// like JSONPath in that $.field can be used to reference the fields of the
 /// objects
@@ -91,6 +93,8 @@ pub struct TransformRule {
     /// the nested keys
     pub value: String,
 }
+
+impl crate::SchemaInfo for TransformRule {}
 
 #[cfg(test)]
 mod tests {

@@ -5,3 +5,5 @@ use serde::{Deserialize, Serialize};
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
 )]
 pub struct CapabilitiesArgs;
+
+impl crate::SchemaInfo for CapabilitiesArgs {}

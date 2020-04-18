@@ -8,3 +8,5 @@ pub struct ForwardArgs {
     pub address: SocketAddr,
     pub request: Box<Request>,
 }
+
+impl crate::SchemaInfo for ForwardArgs {}
