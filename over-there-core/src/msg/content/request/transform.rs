@@ -114,10 +114,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace id of raw request
-                path: String::from("$.payload.id"),
+                path: String::from("$.id"),
 
                 // Apply missing field from reply request
-                value: String::from("$.payload.missing_field"),
+                value: String::from("$.missing_field"),
             }],
         };
 
@@ -138,10 +138,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace id of raw request
-                path: String::from("$.payload.id"),
+                path: String::from("$.id"),
 
                 // Apply array data field from reply request
-                value: String::from("$.payload.data[*]"),
+                value: String::from("$.data[*]"),
             }],
         };
 
@@ -164,10 +164,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace data of raw request
-                path: String::from("$.payload.data"),
+                path: String::from("$.data"),
 
                 // Apply id from reply request
-                value: String::from("$.payload.id"),
+                value: String::from("$.id"),
             }],
         };
 
@@ -190,10 +190,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace missing field of raw request
-                path: String::from("$.payload.missing_field"),
+                path: String::from("$.missing_field"),
 
                 // Apply id from reply request
-                value: String::from("$.payload.id"),
+                value: String::from("$.id"),
             }],
         };
 
@@ -219,10 +219,10 @@ mod tests {
             raw_request: raw_request.clone(),
             rules: vec![TransformRule {
                 // Replace id of raw request
-                path: String::from("$.payload.id"),
+                path: String::from("$.id"),
 
                 // Apply id from reply request
-                value: String::from("$.payload.id"),
+                value: String::from("$.id"),
             }],
         };
 
@@ -253,17 +253,17 @@ mod tests {
             rules: vec![
                 TransformRule {
                     // Replace id of raw request
-                    path: String::from("$.payload.id"),
+                    path: String::from("$.id"),
 
                     // Apply id from reply request
-                    value: String::from("$.payload.id"),
+                    value: String::from("$.id"),
                 },
                 TransformRule {
                     // Replace sig of raw request
-                    path: String::from("$.payload.sig"),
+                    path: String::from("$.sig"),
 
                     // Apply sig from reply request
-                    value: String::from("$.payload.sig"),
+                    value: String::from("$.sig"),
                 },
             ],
         };

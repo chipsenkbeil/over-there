@@ -6,13 +6,21 @@ pub async fn async_test(mut client: ConnectedClient) {
         .await
         .expect("Failed to get capabilities")
         .capabilities;
+
+    let expected = vec![
+        Capability::Custom,
+        Capability::FileSystem,
+        Capability::Exec,
+        Capability::Forward,
+    ];
+
     assert_eq!(
-        capabilities,
-        vec![
-            Capability::Custom,
-            Capability::FileSystem,
-            Capability::Exec,
-            Capability::Forward,
-        ]
+        capabilities.len(),
+        expected.len(),
+        "Unexpected number of capabilities"
     );
+
+    for c in capabilities.iter() {
+        assert!(expected.contains(c), "Missing {:?}", c);
+    }
 }

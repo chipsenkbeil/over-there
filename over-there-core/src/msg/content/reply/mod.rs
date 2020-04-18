@@ -22,7 +22,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(tag = "type", content = "payload")]
+// #[serde(tag = "type", content = "payload")]
+#[serde(tag = "type")]
 pub enum Reply {
     /// Used when we want to NOT send a reply at all
     #[serde(skip)]

@@ -19,8 +19,12 @@ pub use transform::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+// NOTE: Cannot adjacently tag as JsonSchema does not support it and
+//       it leads to deserialization errors with enum variants without
+//       any real arguments (empty struct doesn't fix)
 #[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(tag = "type", content = "payload")]
+// #[serde(tag = "type", content = "payload")]
+#[serde(tag = "type")]
 pub enum Request {
     // ------------------------------------------------------------------------
     // Heartbeats are used to ensure remote instances are alive
