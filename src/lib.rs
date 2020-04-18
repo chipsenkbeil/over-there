@@ -583,8 +583,14 @@ async fn run_schema(cmd: SchemaSubcommand) -> Result<(), Box<dyn Error>> {
                 SchemaType::ProcStatusReply => {
                     over_there_core::reply::ProcStatusArgs::schema()
                 }
-                SchemaType::ErrorReply => {
+                SchemaType::GenericErrorReply => {
                     over_there_core::reply::GenericErrorArgs::schema()
+                }
+                SchemaType::IoErrorReply => {
+                    over_there_core::reply::IoErrorArgs::schema()
+                }
+                SchemaType::FileSigChangedReply => {
+                    over_there_core::reply::FileSigChangedArgs::schema()
                 }
                 SchemaType::SequenceReply => {
                     over_there_core::reply::SequenceArgs::schema()
