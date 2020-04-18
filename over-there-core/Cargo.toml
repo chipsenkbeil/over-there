@@ -27,6 +27,7 @@ forward = []
 
 [dependencies]
 futures = "0.3.4"
+schemars = "0.7.1"
 serde = { version = "1.0.103", features = ["derive"] }
 serde_json = { version = "1.0.48" }
 jsonpath_lib = "0.2.4"

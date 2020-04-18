@@ -18,9 +18,10 @@ pub use io::*;
 pub use sequence::*;
 pub use version::*;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "type", content = "payload")]
 pub enum Reply {
     /// Used when we want to NOT send a reply at all
@@ -169,7 +170,7 @@ impl From<Box<dyn std::error::Error>> for Reply {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "type")]
 pub enum ReplyError {
     #[serde(rename = "generic_error")]

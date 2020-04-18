@@ -1,6 +1,7 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum Capability {
     /// Can send custom binary blobs
     Custom,
@@ -15,7 +16,9 @@ pub enum Capability {
     Forward,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct CapabilitiesArgs {
     pub capabilities: Vec<Capability>,
 }

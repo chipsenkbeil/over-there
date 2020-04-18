@@ -16,9 +16,10 @@ pub use io::*;
 pub use sequence::*;
 pub use transform::*;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "type", content = "payload")]
 pub enum Request {
     // ------------------------------------------------------------------------

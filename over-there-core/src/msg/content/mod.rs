@@ -6,9 +6,10 @@ pub use request::{
     LazilyTransformedRequest, Request, TransformRequestError, TransformRule,
 };
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum Content {
     Request(Request),

@@ -1,29 +1,40 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct CreateDirArgs {
     pub path: String,
     pub include_components: bool,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct RenameDirArgs {
     pub from: String,
     pub to: String,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct RemoveDirArgs {
     pub path: String,
     pub non_empty: bool,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct ListDirContentsArgs {
     pub path: String,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct OpenFileArgs {
     pub path: String,
     pub create_if_missing: bool,
@@ -42,43 +53,57 @@ impl From<String> for OpenFileArgs {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct CloseFileArgs {
     pub id: u32,
     pub sig: u32,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct RenameUnopenedFileArgs {
     pub from: String,
     pub to: String,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct RenameFileArgs {
     pub id: u32,
     pub sig: u32,
     pub to: String,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct RemoveUnopenedFileArgs {
     pub path: String,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct RemoveFileArgs {
     pub id: u32,
     pub sig: u32,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct ReadFileArgs {
     pub id: u32,
     pub sig: u32,
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
+)]
 pub struct WriteFileArgs {
     pub id: u32,
     pub sig: u32,

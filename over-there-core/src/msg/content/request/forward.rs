@@ -1,9 +1,10 @@
-use crate::msg::Msg;
+use super::Request;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ForwardArgs {
     pub address: SocketAddr,
-    pub msg: Box<Msg>,
+    pub request: Box<Request>,
 }

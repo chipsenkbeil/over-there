@@ -1,6 +1,7 @@
 use crate::{Reply, Request};
 use jsonpath_lib as jsonpath;
 use over_there_derive::Error;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Represents an error that can occur when transforming request replyd on
@@ -17,7 +18,7 @@ pub enum TransformRequestError {
 
 /// Represents request that will be transformed at runtime replyd on some
 /// prior input
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct LazilyTransformedRequest {
     /// Represents collection of transformation rules to apply to raw request
     pub rules: Vec<TransformRule>,
@@ -77,7 +78,7 @@ impl LazilyTransformedRequest {
 /// Represents a transformation to apply against some request; uses syntax
 /// like JSONPath in that $.field can be used to reference the fields of the
 /// objects
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct TransformRule {
     /// Represents the key (at a JSON level) to transform for some request;
     /// this will be interpolated using $ to represent the root of the current
