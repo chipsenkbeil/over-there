@@ -34,6 +34,10 @@ pub struct SchemaInfo {
 #[derive(Clap, Debug, EnumString, EnumVariantNames)]
 #[strum(serialize_all = "snake_case")]
 pub enum SchemaType {
+    Content,
+    Request,
+    Reply,
+
     HeartbeatRequest,
     VersionRequest,
     CapabilitiesRequest,
@@ -60,6 +64,7 @@ pub enum SchemaType {
     ForwardRequest,
     CustomRequest,
     InternalDebugRequest,
+
     HeartbeatReply,
     VersionReply,
     CapabilitiesReply,
@@ -81,12 +86,13 @@ pub enum SchemaType {
     ProcStderrContentsReply,
     ProcKilledReply,
     ProcStatusReply,
-    GenericErrorReply,
-    IoErrorReply,
-    FileSigChangedReply,
     SequenceReply,
     BatchReply,
     ForwardReply,
     CustomReply,
     InternalDebugReply,
+
+    GenericError,
+    IoError,
+    FileSigChanged,
 }

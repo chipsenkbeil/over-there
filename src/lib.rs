@@ -442,6 +442,9 @@ async fn run_schema(cmd: SchemaSubcommand) -> Result<(), Box<dyn Error>> {
         SchemaSubcommand::Info(info) => println!(
             "{}",
             match info.schema_type {
+                SchemaType::Content => over_there_core::Content::schema(),
+                SchemaType::Request => over_there_core::Request::schema(),
+                SchemaType::Reply => over_there_core::Reply::schema(),
                 SchemaType::HeartbeatRequest => {
                     String::from("{}")
                 }
@@ -583,13 +586,13 @@ async fn run_schema(cmd: SchemaSubcommand) -> Result<(), Box<dyn Error>> {
                 SchemaType::ProcStatusReply => {
                     over_there_core::reply::ProcStatusArgs::schema()
                 }
-                SchemaType::GenericErrorReply => {
+                SchemaType::GenericError => {
                     over_there_core::reply::GenericErrorArgs::schema()
                 }
-                SchemaType::IoErrorReply => {
+                SchemaType::IoError => {
                     over_there_core::reply::IoErrorArgs::schema()
                 }
-                SchemaType::FileSigChangedReply => {
+                SchemaType::FileSigChanged => {
                     over_there_core::reply::FileSigChangedArgs::schema()
                 }
                 SchemaType::SequenceReply => {
