@@ -1,3 +1,4 @@
+use clap::derive::Clap;
 use std::time::Duration;
 
 fn setup() -> String {

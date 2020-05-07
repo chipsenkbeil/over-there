@@ -29,7 +29,6 @@ format-json = ["serde_json"]
 format-sexpression = ["serde-lexpr"]
 
 [dependencies]
-clap = { version = "3.0.0-beta.1", git = "https://github.com/clap-rs/clap.git"}
 log = "0.4.8"
 env_logger = "0.7.1"
 strum = "0.17.1"
@@ -42,6 +41,13 @@ over-there-crypto = { path = "./over-there-crypto", version = "0.1.0-alpha.1" }
 over-there-core = { path = "./over-there-core", version = "0.1.0-alpha.1" }
 over-there-utils = { path = "./over-there-utils", version = "0.1.0-alpha.1" }
 over-there-wire = { path = "./over-there-wire", version = "0.1.0-alpha.1" }
+
+[dependencies.clap]
+version = "3.0.0-beta.1"
+default-features = false # Must exclude color as it pulls in a conflicting
+                         # version of termcolor (1.1) whereas env_logger
+                         # and other dependencies using 1.0.5
+features = [ "suggestions", "derive", "std", "cargo", "wrap_help" ]
 
 [dependencies.tokio]
 version = "0.2.13"
