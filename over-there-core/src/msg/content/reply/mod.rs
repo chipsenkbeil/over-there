@@ -25,8 +25,8 @@ use serde::{Deserialize, Serialize};
 //       it leads to deserialization errors with enum variants without
 //       any real arguments (empty struct doesn't fix)
 #[derive(JsonSchema, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-// #[serde(tag = "type", content = "payload")]
-#[serde(tag = "type")]
+// #[serde(tag = "type")]
+#[serde(tag = "type", content = "payload")]
 pub enum Reply {
     /// Used when we want to NOT send a reply at all
     #[serde(skip)]

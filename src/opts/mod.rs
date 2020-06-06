@@ -62,7 +62,7 @@ pub struct CommonOpts {
         long, 
         parse(try_from_str), 
         possible_values = &types::Transport::VARIANTS, 
-        default_value = "Udp"
+        default_value = types::Transport::Udp.as_ref(),
     )]
     pub transport: types::Transport,
 
@@ -72,7 +72,7 @@ pub struct CommonOpts {
         long, 
         parse(try_from_str), 
         possible_values = &types::Encryption::VARIANTS, 
-        default_value = "None"
+        default_value = types::Encryption::None.as_ref(),
     )]
     pub encryption: types::Encryption,
 
@@ -86,7 +86,7 @@ pub struct CommonOpts {
         long,
         parse(try_from_str),
         possible_values = &types::Authentication::VARIANTS,
-        default_value = "None"
+        default_value = types::Authentication::None.as_ref(),
     )]
     pub authentication: types::Authentication,
 

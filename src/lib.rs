@@ -24,7 +24,7 @@ pub use opts::Opts;
 pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
     match opts.command {
         Command::Server(s) => run_server(s).await?,
-        Command::Client(c) => match (c.format, run_client(c).await) {
+        Command::Client(c) => match (c.output_format, run_client(c).await) {
             (FormatOption::Human, Err(x)) => return Err(x),
             (f, Err(x)) => format::format_content_println(
                 f,
@@ -150,7 +150,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
         client::Subcommand::Version(_) => {
             let x = client.ask_version().await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::Version(x)),
                 Ok(x.version),
@@ -159,7 +159,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
         client::Subcommand::Capabilities(_) => {
             let x = client.ask_capabilities().await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::Capabilities(x)),
                 Ok(format!("{:?}", x)),
@@ -168,7 +168,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
         client::Subcommand::ListRootDir(_) => {
             let x = client.ask_list_root_dir_contents().await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::DirContentsList(x)),
                 Ok(x.entries
@@ -189,7 +189,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
         client::Subcommand::ListDir(c) => {
             let x = client.ask_list_dir_contents(c.path.clone()).await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::DirContentsList(x)),
                 Ok(x.entries
@@ -210,7 +210,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
         client::Subcommand::CreateDir(c) => {
             let x = client.ask_create_dir(c.path.clone(), c.parents).await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::DirCreated(x)),
                 Ok(format!("Created {}", c.path)),
@@ -219,7 +219,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
         client::Subcommand::MoveDir(c) => {
             let x = client.ask_rename_dir(c.from.clone(), c.to.clone()).await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::DirRenamed(x)),
                 Ok(format!("Moved {} to {}", c.from, c.to)),
@@ -228,7 +228,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
         client::Subcommand::RemoveDir(c) => {
             let x = client.ask_remove_dir(c.path.clone(), c.non_empty).await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::DirRemoved(x)),
                 Ok(format!("Removed {}", c.path)),
@@ -240,7 +240,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                 .ask_write_file(&mut file, c.contents.as_ref())
                 .await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::FileWritten(x)),
                 Ok(format!("{:?}", x)),
@@ -250,7 +250,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             let file = client.ask_open_file(c.path.clone()).await?.into();
             let x = client.ask_read_file(&file).await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::FileContents(x)),
                 Ok(String::from_utf8(x.contents)?),
@@ -261,7 +261,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                 .ask_rename_unopened_file(c.from.clone(), c.to.clone())
                 .await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::UnopenedFileRenamed(x)),
                 Ok(format!("Moved {} to {}", c.from, c.to)),
@@ -270,7 +270,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
         client::Subcommand::RemoveFile(c) => {
             let x = client.ask_remove_unopened_file(c.path.clone()).await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::UnopenedFileRemoved(x)),
                 Ok(format!("Removed {}", c.path)),
@@ -290,12 +290,12 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                 .into();
             process_proc(
                 client,
-                c.stdin,
+                !c.no_stdin,
                 cmd.redirect_stdout,
                 cmd.redirect_stderr,
                 c.post_exit_duration,
                 proc,
-                cmd.format,
+                cmd.output_format,
                 cmd.exit_print,
             )
             .await?;
@@ -304,20 +304,56 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
             let proc = RemoteProc::shallow(c.id);
             process_proc(
                 client,
-                c.stdin,
+                !c.no_stdin,
                 cmd.redirect_stdout,
                 cmd.redirect_stderr,
                 c.post_exit_duration,
                 proc,
-                cmd.format,
+                cmd.output_format,
                 cmd.exit_print,
             )
             .await?;
         }
+        client::Subcommand::Raw(c) => {
+            // If provided some input, attempt to execute it
+            if let Some(line) = &c.input {
+                execute_raw_and_report(
+                    &mut client,
+                    &line,
+                    c.format,
+                    cmd.output_format,
+                    cmd.redirect_stdout.as_ref(),
+                )
+                .await?;
+            }
+
+            // If marked interactive, continue to read stdin for more lines
+            // to execute
+            if c.interactive {
+                let mut line = String::new();
+                while let Ok(n) = std::io::stdin().read_line(&mut line) {
+                    if n == 0 {
+                        break;
+                    }
+
+                    execute_raw_and_report(
+                        &mut client,
+                        &line,
+                        c.format,
+                        cmd.output_format,
+                        cmd.redirect_stdout.as_ref(),
+                    )
+                    .await?;
+
+                    // NOTE: Must clear line contents before next reading
+                    line.clear();
+                }
+            }
+        }
         client::Subcommand::InternalDebug(_) => {
             let x = client.ask_internal_debug().await?;
             format_content_write!(
-                cmd.format,
+                cmd.output_format,
                 cmd.redirect_stdout.as_ref(),
                 Content::from(Reply::InternalDebug(x)),
                 Ok(format!("{}", String::from_utf8_lossy(&x.output))),
@@ -326,6 +362,40 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
     };
 
     Ok(())
+}
+
+async fn execute_raw(
+    client: &mut ConnectedClient,
+    input: &str,
+    format: FormatOption,
+) -> Result<Reply, Box<dyn std::error::Error>> {
+    match format::text_to_content(format, input)? {
+        Content::Request(x) => Ok(client.ask(x).await?),
+        x => Err(format!("Unexpected input: {:?}", x).into()),
+    }
+}
+
+async fn execute_raw_and_report(
+    client: &mut ConnectedClient,
+    input: &str,
+    input_format: FormatOption,
+    output_format: FormatOption,
+    redirect_output: Option<&PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match execute_raw(client, &input, input_format).await {
+        Ok(reply) => Ok(format_content_write!(
+            output_format,
+            redirect_output,
+            Content::from(reply),
+            Ok(format!("{:?}", &reply)),
+        )?),
+        Err(x) => Ok(format_content_write!(
+            output_format,
+            redirect_output,
+            Content::from(Reply::from(x)),
+            Ok(format!("{:?}", &x)),
+        )?),
+    }
 }
 
 async fn process_proc(

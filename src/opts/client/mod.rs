@@ -3,6 +3,7 @@ pub mod dir;
 pub mod exec;
 pub mod file;
 pub mod internal_debug;
+pub mod raw;
 pub mod version;
 
 use super::CommonOpts;
@@ -62,8 +63,13 @@ pub enum Subcommand {
     Exec(exec::ExecCommand),
 
     /// Re-attaches to a running remote process
-    #[clap(name = "reattach-exec")]
+    #[clap(name = "reattach")]
     ReattachExec(exec::ReattachExecCommand),
+
+    /// Performs an operation using raw input as the instruction, only
+    /// valid for non-Human input such as JSON
+    #[clap(name = "raw")]
+    Raw(raw::RawCommand),
 
     /// Internal debugging support against the server
     #[clap(name = "internal-debug")]
@@ -89,10 +95,10 @@ pub struct ClientCommand {
         short, 
         long, 
         parse(try_from_str), 
-        possible_values = &FormatOption::VARIANTS, 
-        default_value = "Human"
+        possible_values = &FormatOption::VARIANTS,
+        default_value = FormatOption::Human.as_ref(),
     )]
-    pub format: FormatOption,
+    pub output_format: FormatOption,
 
     /// If provided, will print out exit information when an exec process
     /// exits (or is killed) if using human-readable format; all other

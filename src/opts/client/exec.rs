@@ -14,8 +14,8 @@ pub struct ExecCommand {
     pub args: Vec<String>,
 
     /// Whether or not to send stdin from this process to the remote process
-    #[clap(short, long)]
-    pub stdin: bool,
+    #[clap(long)]
+    pub no_stdin: bool,
 
     /// Whether or not to detach the client from the remote process, thereby
     /// not terminating the process if the client disconnects
@@ -44,8 +44,8 @@ pub struct ReattachExecCommand {
     pub id: u32,
 
     /// Whether or not to send stdin from this process to the remote process
-    #[clap(short, long)]
-    pub stdin: bool,
+    #[clap(long)]
+    pub no_stdin: bool,
 
     /// The time (in milliseconds) to wait after a process exits (or is killed)
     /// to receive lingering stdout/stderr before closing the remote connection

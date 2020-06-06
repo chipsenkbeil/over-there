@@ -1,10 +1,13 @@
 use over_there_core::Content;
 use serde::Serialize;
-use strum_macros::{EnumString, EnumVariantNames};
+use strum_macros::{AsRefStr, EnumString, EnumVariantNames};
 
 pub type FormatResult = Result<String, Box<dyn std::error::Error>>;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, EnumString, EnumVariantNames)]
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, EnumString, EnumVariantNames, AsRefStr,
+)]
+#[strum(serialize_all = "snake_case")]
 pub enum FormatOption {
     /// Human-readable format for input and output
     Human,
@@ -16,6 +19,24 @@ pub enum FormatOption {
     #[cfg(feature = "format-sexpression")]
     /// S-Expression format for input and output
     Sexpression,
+}
+
+/// Tries to convert provided text with the specified format to content
+pub fn text_to_content(
+    format_option: FormatOption,
+    text: &str,
+) -> Result<Content, Box<dyn std::error::Error>> {
+    match format_option {
+        #[cfg(feature = "format-json")]
+        FormatOption::Json => Ok(serde_json::from_str(text)?),
+
+        #[cfg(feature = "format-sexpression")]
+        FormatOption::Sexpression => {
+            Ok(serde_lexpr::from_str(&serializable_data)?)
+        }
+
+        FormatOption::Human => Err("Cannot convert to human format".into()),
+    }
 }
 
 /// Creates a `String` using the given `format_option` and `serializable_data`,
