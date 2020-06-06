@@ -13,6 +13,6 @@ keywords = ["api", "crypto", "security", "hmac", "digest"]
 [dependencies]
 hmac = "0.7.1"
 sha2 = "0.8.1"
-serde = { version = "1.0.103", features = ["derive"] }
+serde = { version = "1.0.111", features = ["derive"] }
 serde-big-array = "0.2.0"
 over-there-utils = { path = "../over-there-utils", version = "0.1.0-alpha.1" }

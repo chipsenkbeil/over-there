@@ -35,6 +35,7 @@ pub enum Reply {
     // ------------------------------------------------------------------------
     // Heartbeats are used to ensure remote instances are alive
     #[serde(rename = "heartbeat_reply")]
+    #[allow(dead_code)]
     Heartbeat,
 
     // ------------------------------------------------------------------------

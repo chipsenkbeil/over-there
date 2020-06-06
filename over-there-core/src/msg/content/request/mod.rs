@@ -29,18 +29,21 @@ pub enum Request {
     // ------------------------------------------------------------------------
     // Heartbeats are used to ensure remote instances are alive
     #[serde(rename = "heartbeat_request")]
+    #[allow(dead_code)]
     Heartbeat,
 
     // ------------------------------------------------------------------------
     // Version information to ensure that we don't have
     // conflicting functionality
     #[serde(rename = "version_request")]
+    #[allow(dead_code)]
     Version,
 
     // ------------------------------------------------------------------------
     // Capability information to convey what is available remotely, which
     // can differ based on enabled features at compile time
     #[serde(rename = "capabilities_request")]
+    #[allow(dead_code)]
     Capabilities,
 
     // ------------------------------------------------------------------------
