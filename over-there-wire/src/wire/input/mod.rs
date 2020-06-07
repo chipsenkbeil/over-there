@@ -144,7 +144,7 @@ where
 mod tests {
     use super::*;
     use crate::wire::{
-        output::encoder::{Encoder, EncodeArgs},
+        output::encoder::{EncodeArgs, Encoder},
         packet::{PacketEncryption, PacketType},
     };
     use over_there_auth::NoopAuthenticator;
@@ -179,26 +179,28 @@ mod tests {
         let encryption = PacketEncryption::None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         let signer = NoopAuthenticator;
+        let mut encoder = Encoder::default();
 
-        // Calculate the bigger of the two overhead sizes (final packet)
-        // and ensure that we can fit data in it
-        let overhead_size = Encoder::estimate_packet_overhead_size(
-            /* data size */ 1,
-            PacketType::Final { encryption },
-            &signer,
-        )
-        .unwrap();
+        // Calculate a packet size where the final packet can only
+        // fit a single byte of data to ensure that we get at least
+        // one additional packet
+        let max_packet_size = encoder
+            .estimate_packet_size(
+                /* data size */ 1,
+                PacketType::Final { encryption },
+                &signer,
+            )
+            .unwrap();
 
-        println!("OVERHEAD SIZE: {}", overhead_size);
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
         // us to re-add a packet with the same id & index
-        let p = &Encoder::default()
+        let p = &encoder
             .encode(EncodeArgs {
                 id,
                 encryption,
                 data: &data,
-                max_packet_size: overhead_size + 1,
+                max_packet_size,
                 signer: &signer,
             })
             .unwrap()[0];
@@ -238,24 +240,27 @@ mod tests {
         let encryption = PacketEncryption::None;
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         let signer = NoopAuthenticator;
+        let mut encoder = Encoder::default();
 
-        // Calculate the bigger of the two overhead sizes (final packet)
-        // and ensure that we can fit data in it
-        let overhead_size = Encoder::estimate_packet_overhead_size(
-            /* data size */ 1,
-            PacketType::Final { encryption },
-            &signer,
-        )
-        .unwrap();
+        // Calculate a packet size where the final packet can only
+        // fit a single byte of data to ensure that we get at least
+        // one additional packet
+        let max_packet_size = encoder
+            .estimate_packet_size(
+                /* data size */ 1,
+                PacketType::Final { encryption },
+                &signer,
+            )
+            .unwrap();
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
-        let p = &Encoder::default()
+        let p = &encoder
             .encode(EncodeArgs {
                 id,
                 encryption,
                 data: &data,
-                max_packet_size: overhead_size + 1,
+                max_packet_size,
                 signer: &NoopAuthenticator,
             })
             .unwrap()[0];
@@ -307,6 +312,7 @@ mod tests {
             NoopBicrypter,
         );
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let mut encoder = Encoder::default();
 
         // Make many small packets
         let packets = &mut Encoder::default()
@@ -314,12 +320,13 @@ mod tests {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
-                max_packet_size: Encoder::estimate_packet_overhead_size(
-                    data.len(),
-                    PacketType::NotFinal,
-                    &NoopAuthenticator,
-                )
-                .unwrap()
+                max_packet_size: encoder
+                    .estimate_packet_size(
+                        /* data size for final packet */ 1,
+                        PacketType::NotFinal,
+                        &NoopAuthenticator,
+                    )
+                    .unwrap()
                     + data.len(),
                 signer: &NoopAuthenticator,
             })
@@ -405,23 +412,26 @@ mod tests {
             let encryption = PacketEncryption::None;
             let data = vec![1, 2, 3];
             let signer = NoopAuthenticator;
+            let mut encoder = Encoder::default();
 
-            // Calculate the bigger of the two overhead sizes (final packet)
-            // and ensure that we can fit data in it
-            let overhead_size = Encoder::estimate_packet_overhead_size(
-                /* data size */ 1,
-                PacketType::Final { encryption },
-                &signer,
-            )
-            .unwrap();
+            // Calculate a packet size where the final packet can only
+            // fit a single byte of data to ensure that we get at least
+            // one additional packet
+            let max_packet_size = encoder
+                .estimate_packet_size(
+                    /* data size */ 1,
+                    PacketType::Final { encryption },
+                    &signer,
+                )
+                .unwrap();
 
             // Make a new packet per element in data
-            let packets = Encoder::default()
+            let packets = encoder
                 .encode(EncodeArgs {
                     id,
                     encryption,
                     data: &data.clone(),
-                    max_packet_size: overhead_size + 1,
+                    max_packet_size,
                     signer: &NoopAuthenticator,
                 })
                 .unwrap();

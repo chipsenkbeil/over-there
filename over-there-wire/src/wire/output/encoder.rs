@@ -24,13 +24,19 @@ pub(crate) struct EncodeArgs<'d, 's, S: Signer> {
 #[derive(Debug, Error)]
 pub enum EncoderError {
     MaxPacketSizeTooSmall,
-    FailedToEstimatePacketSize,
+    FailedToEstimateDataSize,
     FailedToSignPacket,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct Encoder {
-    packet_overhead_size_cache: HashMap<String, usize>,
+    /// Key = Max Packet Size + PacketType
+    /// Value = Max data size to fit in packet without exceeding max packet size
+    max_data_size_cache: HashMap<String, usize>,
+
+    /// Key = Data Size + PacketType
+    /// Value = Size of packet given some length of data and packet type
+    packet_size_cache: HashMap<String, usize>,
 }
 
 impl Encoder {
@@ -46,39 +52,28 @@ impl Encoder {
             data,
         } = info;
 
-        // Determine overhead needed to produce packet with desired data size
-        let non_final_overhead_size = self
-            .cached_estimate_packet_overhead_size(
+        // Calculate the maximum size of the data section of a packet for
+        // a final and not final version
+        let not_final_max_data_size = self
+            .find_optimal_max_data_size(
                 max_packet_size,
                 PacketType::NotFinal,
                 signer,
             )
-            .map_err(|_| EncoderError::FailedToEstimatePacketSize)?;
-
-        let final_overhead_size = self
-            .cached_estimate_packet_overhead_size(
+            .map_err(|_| EncoderError::FailedToEstimateDataSize)?;
+        let final_max_data_size = self
+            .find_optimal_max_data_size(
                 max_packet_size,
                 PacketType::Final { encryption },
                 signer,
             )
-            .map_err(|_| EncoderError::FailedToEstimatePacketSize)?;
+            .map_err(|_| EncoderError::FailedToEstimateDataSize)?;
 
-        println!("NON FINAL OVERHEAD SIZE: {}", non_final_overhead_size);
-        println!("FINAL OVERHEAD SIZE: {}", final_overhead_size);
-        println!("DESIRED CHUNK SIZE: {}", max_packet_size);
-
-        // If the overhead would be so big that the overhead is at least as
-        // large as our max packet size, we will exit because we cannot send
-        // packets without violating the requirement
-        if non_final_overhead_size >= max_packet_size
-            || final_overhead_size >= max_packet_size
-        {
+        // If a packet type cannot support data of any size, we have requested
+        // a max packet size that is too small
+        if not_final_max_data_size == 0 || final_max_data_size == 0 {
             return Err(EncoderError::MaxPacketSizeTooSmall);
         }
-
-        // Compute the data size for a non-final and final packet
-        let non_final_chunk_size = max_packet_size - non_final_overhead_size;
-        let final_chunk_size = max_packet_size - final_overhead_size;
 
         // Construct the packets, using the single id to associate all of
         // them together and linking each to an individual position in the
@@ -91,29 +86,29 @@ impl Encoder {
             //    store it in the final packet
             // 2. If we have so much data left that it won't fit in the final
             //    packet and it won't fit in a non-final packet, we store N
-            //    bytes into a non-final packet where N is the capable size
+            //    bytes into a non-final packet where N is the max capable size
             //    of a non-final packet data section
             // 3. If we have so much data left that it won't fit in the final
             //    packet but it will fit entirely in a non-final packet, we
-            //    store N bytes into a non-final packet where N is the capable
-            //    size of the final packet data section
+            //    store N - 1 bytes where N is the size of the remaining data
+            let remaining_data_size = data.len() - i;
             let can_fit_all_in_final_packet =
-                i + final_chunk_size >= data.len();
-            let can_fit_all_in_non_final_packet =
-                i + non_final_chunk_size >= data.len();
-            let chunk_size = if can_fit_all_in_final_packet
-                || can_fit_all_in_non_final_packet
-            {
-                final_chunk_size
+                i + final_max_data_size >= data.len();
+            let can_fit_all_in_not_final_packet =
+                i + not_final_max_data_size >= data.len();
+            let data_size = if can_fit_all_in_final_packet {
+                final_max_data_size
+            } else if can_fit_all_in_not_final_packet {
+                remaining_data_size - 1
             } else {
-                non_final_chunk_size
+                not_final_max_data_size
             };
 
-            // Ensure chunk size does not exceed our remaining data
-            let chunk_size = std::cmp::min(chunk_size, data.len() - i);
+            // Ensure data section size does not exceed our remaining data
+            let data_size = std::cmp::min(data_size, remaining_data_size);
 
             // Grab our chunk of data to store into a packet
-            let chunk = &data[i..i + chunk_size];
+            let chunk = &data[i..i + data_size];
 
             // Construct the packet based on whether or not is final
             let packet = Self::make_new_packet(
@@ -133,7 +128,7 @@ impl Encoder {
             packets.push(packet);
 
             // Move our pointer by N bytes
-            i += chunk_size;
+            i += data_size;
         }
 
         Ok(packets)
@@ -154,101 +149,118 @@ impl Encoder {
         })
     }
 
-    fn cached_estimate_packet_overhead_size<S: Signer>(
+    /// Finds the optimal data size to get as close to a maximum packet size
+    /// as possible without exceeding it. Will cache results for faster
+    /// performance on future runs.
+    fn find_optimal_max_data_size<S: Signer>(
         &mut self,
-        max_data_size: usize,
+        max_packet_size: usize,
         r#type: PacketType,
         signer: &S,
     ) -> Result<usize, serde_cbor::Error> {
         // Calculate key to use for cache
-        // TODO: Convert authenticator into part of the key? Is this necessary?
-        let key = format!("{}{:?}", max_data_size, r#type);
+        let key = format!("{}{:?}", max_packet_size, r#type);
 
         // Check if we have a cached value and, if so, use it
-        if let Some(value) = self.packet_overhead_size_cache.get(&key) {
-            println!(
-                "cached_estimate_packet_overhead_size({}, {:?}, --) == {}",
-                max_data_size, r#type, value
-            );
+        if let Some(value) = self.max_data_size_cache.get(&key) {
             return Ok(*value);
         }
 
-        // Otherwise, estimate the packet size, cache it, and return it
-        let overhead_size =
-            Self::estimate_packet_overhead_size(max_data_size, r#type, signer)?;
-        println!(
-            "cached_estimate_packet_overhead_size({}, {:?}, --) == {}",
-            max_data_size, r#type, overhead_size
-        );
-        self.packet_overhead_size_cache.insert(key, overhead_size);
-        Ok(overhead_size)
+        // Start searching somewhere in the middle of the maximum packet size
+        let mut best_data_size = 0;
+        let mut data_size = (max_packet_size / 2) + 1;
+        loop {
+            let packet_size =
+                self.estimate_packet_size(data_size, r#type, signer)?;
+
+            // If the data section has reached our maximum packet size exactly,
+            // we are done searching
+            if packet_size == max_packet_size {
+                best_data_size = data_size;
+                break;
+            // Else, if the packet size would be too big, shrink down
+            } else if packet_size > max_packet_size {
+                let overflow_size = packet_size - max_packet_size;
+
+                // If the overflow is greater than the data available, shrink
+                // down by half (in case the overhead shrinks)
+                if overflow_size >= data_size {
+                    data_size /= 2;
+
+                    // If the shrinkage would cause the data to be nothing, exit
+                    if data_size == 0 {
+                        break;
+                    }
+
+                // Otherwise, shrink data size by N to see if we can fit
+                } else {
+                    data_size -= overflow_size;
+                }
+
+            // Else, if the packet was smaller than max capacity AND the data
+            // that can be fit is better (bigger) than the current best fit,
+            // update it
+            } else if data_size > best_data_size {
+                best_data_size = data_size;
+            // Else, we've reached a point where we are no longer finding
+            // better sizes, so exit with what we've found so far
+            } else {
+                break;
+            }
+        }
+
+        // Cache our best size for the data section given max packet size
+        self.max_data_size_cache.insert(key, best_data_size);
+        Ok(best_data_size)
     }
 
-    pub(crate) fn estimate_packet_overhead_size<S: Signer>(
-        max_data_size: usize,
+    /// Calculates the size of a packet comprised of data of length N, caching
+    /// the result to avoid expensive computations in the future.
+    pub(crate) fn estimate_packet_size<S: Signer>(
+        &mut self,
+        data_size: usize,
         r#type: PacketType,
         signer: &S,
     ) -> Result<usize, serde_cbor::Error> {
-        let packet_size =
-            Self::estimate_packet_size(max_data_size, r#type, signer)?;
+        // Calculate key to use for cache
+        let key = format!("{}{:?}", data_size, r#type);
 
-        // Figure out how much overhead is needed to fit the data into the packet
-        // NOTE: If for some reason the packet -> vec has optimized the
-        //       byte stream so well that it is smaller than the provided
-        //       data, we will assume no overhead
-        Ok(if packet_size > max_data_size {
-            println!(
-                "estimate_packet_overhead_size({}, {:?}, --) == {}",
-                max_data_size,
-                r#type,
-                packet_size - max_data_size
-            );
-            packet_size - max_data_size
-        } else {
-            println!(
-                "estimate_packet_overhead_size({}, {:?}, --) == 0",
-                max_data_size, r#type,
-            );
-            0
-        })
-    }
+        // Check if we have a cached value and, if so, use it
+        if let Some(value) = self.packet_size_cache.get(&key) {
+            return Ok(*value);
+        }
 
-    fn estimate_packet_size<S: Signer>(
-        max_data_size: usize,
-        r#type: PacketType,
-        signer: &S,
-    ) -> Result<usize, serde_cbor::Error> {
         // Produce random fake data to avoid any byte sequencing
         let fake_data: Vec<u8> =
-            (0..max_data_size).map(|_| rand::random::<u8>()).collect();
+            (0..data_size).map(|_| rand::random::<u8>()).collect();
 
         // Produce a fake packet whose data fills the entire size, and then
         // see how much larger it is and use that as the overhead cost
         //
         // NOTE: This is a rough estimate and requires an entire serialization,
         //       but is the most straightforward way I can think of unless
-        //       serde offers some form of size hinting for msgpack specifically
-        let x = Encoder::make_new_packet(
+        //       serde offers some form of size hinting for msgpack/cbor specifically
+        let packet_size = Encoder::make_new_packet(
             u32::max_value(),
             u32::max_value(),
             r#type,
             &fake_data,
             signer,
         )?
-        .to_vec()
-        .map(|v| v.len());
-        println!(
-            "estimate_packet_size({}, {:?}, --) == {:?}",
-            max_data_size, r#type, x
-        );
-        x
+        .to_vec()?
+        .len();
+
+        // Cache the calculated size and return it
+        self.packet_size_cache.insert(key, packet_size);
+        Ok(packet_size)
     }
 }
 
 impl Default for Encoder {
     fn default() -> Self {
         Self {
-            packet_overhead_size_cache: HashMap::new(),
+            max_data_size_cache: HashMap::new(),
+            packet_size_cache: HashMap::new(),
         }
     }
 }
@@ -316,25 +328,27 @@ mod tests {
         let id = 67890;
         let data: Vec<u8> = vec![1, 2, 3];
         let nonce = Nonce::from(nonce::new_128bit_nonce());
+        let mut encoder = Encoder::default();
 
-        // Calculate the bigger of the two overhead sizes (final packet)
-        // and ensure that we can only fit the last element in it
-        let overhead_size = Encoder::estimate_packet_overhead_size(
-            /* data size */ 1,
-            PacketType::Final {
-                encryption: PacketEncryption::from(nonce),
-            },
-            &NoopAuthenticator,
-        )
-        .unwrap();
-        let chunk_size = overhead_size + 2;
+        // Calculate a packet size where the final packet can only
+        // fit a single byte of data to ensure that we get at least
+        // one additional packet
+        let max_packet_size = encoder
+            .estimate_packet_size(
+                /* data size */ 1,
+                PacketType::Final {
+                    encryption: PacketEncryption::from(nonce),
+                },
+                &NoopAuthenticator,
+            )
+            .unwrap();
 
-        let packets = Encoder::default()
+        let packets = encoder
             .encode(EncodeArgs {
                 id,
                 encryption: PacketEncryption::from(nonce),
                 data: &data,
-                max_packet_size: chunk_size,
+                max_packet_size,
                 signer: &NoopAuthenticator,
             })
             .unwrap();
