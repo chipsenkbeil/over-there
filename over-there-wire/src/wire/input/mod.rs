@@ -198,7 +198,7 @@ mod tests {
                 id,
                 encryption,
                 data: &data,
-                desired_chunk_size: overhead_size + 1,
+                max_packet_size: overhead_size + 1,
                 signer: &signer,
             })
             .unwrap()[0];
@@ -255,7 +255,7 @@ mod tests {
                 id,
                 encryption,
                 data: &data,
-                desired_chunk_size: overhead_size + 1,
+                max_packet_size: overhead_size + 1,
                 signer: &NoopAuthenticator,
             })
             .unwrap()[0];
@@ -279,7 +279,7 @@ mod tests {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
-                desired_chunk_size: 100,
+                max_packet_size: 100,
                 signer: &NoopAuthenticator,
             })
             .unwrap()[0];
@@ -314,7 +314,7 @@ mod tests {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
-                desired_chunk_size: Encoder::estimate_packet_overhead_size(
+                max_packet_size: Encoder::estimate_packet_overhead_size(
                     data.len(),
                     PacketType::NotFinal,
                     &NoopAuthenticator,
@@ -347,7 +347,7 @@ mod tests {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
-                desired_chunk_size: 100,
+                max_packet_size: 100,
                 signer: &NoopAuthenticator,
             })
             .unwrap()[0];
@@ -421,7 +421,7 @@ mod tests {
                     id,
                     encryption,
                     data: &data.clone(),
-                    desired_chunk_size: overhead_size + 1,
+                    max_packet_size: overhead_size + 1,
                     signer: &NoopAuthenticator,
                 })
                 .unwrap();

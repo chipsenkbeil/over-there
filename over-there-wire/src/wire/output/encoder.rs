@@ -11,7 +11,7 @@ pub(crate) struct EncodeArgs<'d, 's, S: Signer> {
     pub encryption: PacketEncryption,
 
     /// Desired maximum size of each packet (including metadata)
-    pub desired_chunk_size: usize,
+    pub max_packet_size: usize,
 
     /// Key used to generate signatures
     pub signer: &'s S,
@@ -41,7 +41,7 @@ impl Encoder {
         let EncodeArgs {
             id,
             encryption,
-            desired_chunk_size,
+            max_packet_size,
             signer,
             data,
         } = info;
@@ -49,7 +49,7 @@ impl Encoder {
         // Determine overhead needed to produce packet with desired data size
         let non_final_overhead_size = self
             .cached_estimate_packet_overhead_size(
-                desired_chunk_size,
+                max_packet_size,
                 PacketType::NotFinal,
                 signer,
             )
@@ -57,7 +57,7 @@ impl Encoder {
 
         let final_overhead_size = self
             .cached_estimate_packet_overhead_size(
-                desired_chunk_size,
+                max_packet_size,
                 PacketType::Final { encryption },
                 signer,
             )
@@ -65,20 +65,20 @@ impl Encoder {
 
         println!("NON FINAL OVERHEAD SIZE: {}", non_final_overhead_size);
         println!("FINAL OVERHEAD SIZE: {}", final_overhead_size);
-        println!("DESIRED CHUNK SIZE: {}", desired_chunk_size);
+        println!("DESIRED CHUNK SIZE: {}", max_packet_size);
 
         // If the packet size would be so big that the overhead is at least
         // as large as our desired total byte stream (chunk) size, we will
         // exit because we cannot send packets without violating the requirement
-        if non_final_overhead_size >= desired_chunk_size
-            || final_overhead_size >= desired_chunk_size
+        if non_final_overhead_size >= max_packet_size
+            || final_overhead_size >= max_packet_size
         {
             return Err(EncoderError::DesiredChunkSizeTooSmall);
         }
 
         // Compute the data size for a non-final and final packet
-        let non_final_chunk_size = desired_chunk_size - non_final_overhead_size;
-        let final_chunk_size = desired_chunk_size - final_overhead_size;
+        let non_final_chunk_size = max_packet_size - non_final_overhead_size;
+        let final_chunk_size = max_packet_size - final_overhead_size;
 
         // Construct the packets, using the single id to associate all of
         // them together and linking each to an individual position in the
@@ -264,7 +264,7 @@ mod tests {
     use over_there_crypto::{nonce, Nonce};
 
     #[test]
-    fn fails_if_desired_chunk_size_is_too_low() {
+    fn fails_if_max_packet_size_is_too_low() {
         // Needs to accommodate metadata & data, which this does not
         let chunk_size = 1;
         let err = Encoder::default()
@@ -272,7 +272,7 @@ mod tests {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &vec![1, 2, 3],
-                desired_chunk_size: chunk_size,
+                max_packet_size: chunk_size,
                 signer: &NoopAuthenticator,
             })
             .unwrap_err();
@@ -298,7 +298,7 @@ mod tests {
                 id,
                 encryption,
                 data: &data,
-                desired_chunk_size: chunk_size,
+                max_packet_size: chunk_size,
                 signer: &NoopAuthenticator,
             })
             .unwrap();
@@ -338,7 +338,7 @@ mod tests {
                 id,
                 encryption: PacketEncryption::from(nonce),
                 data: &data,
-                desired_chunk_size: chunk_size,
+                max_packet_size: chunk_size,
                 signer: &NoopAuthenticator,
             })
             .unwrap();
@@ -383,7 +383,7 @@ mod tests {
                 id,
                 encryption,
                 data: &data,
-                desired_chunk_size: chunk_size,
+                max_packet_size: chunk_size,
                 signer: &NoopAuthenticator,
             })
             .unwrap();

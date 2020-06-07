@@ -68,7 +68,7 @@ where
                 id,
                 encryption,
                 data: &data,
-                desired_chunk_size: self.transmission_size,
+                max_packet_size: self.transmission_size,
                 signer: &self.signer,
             })
             .map_err(OutputProcessorError::EncodeData)?;
