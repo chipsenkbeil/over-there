@@ -1,7 +1,7 @@
 pub mod encoder;
 
 use crate::wire::packet::PacketEncryption;
-use encoder::{Encoder, EncodeInfo};
+use encoder::{Encoder, EncodeArgs};
 use over_there_auth::Signer;
 use over_there_crypto::{CryptError, Encrypter};
 use over_there_derive::Error;
@@ -64,7 +64,7 @@ where
         //       get rid of the locking and only need a reference
         let packets = self
             .encoder
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id,
                 encryption,
                 data: &data,

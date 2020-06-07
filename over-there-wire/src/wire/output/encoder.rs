@@ -3,7 +3,7 @@ use over_there_auth::Signer;
 use over_there_derive::Error;
 use std::collections::HashMap;
 
-pub(crate) struct EncodeInfo<'d, 's, S: Signer> {
+pub(crate) struct EncodeArgs<'d, 's, S: Signer> {
     /// ID used to group created packets together
     pub id: u32,
 
@@ -36,9 +36,9 @@ pub(crate) struct Encoder {
 impl Encoder {
     pub fn encode<S: Signer>(
         &mut self,
-        info: EncodeInfo<S>,
+        info: EncodeArgs<S>,
     ) -> Result<Vec<Packet>, EncoderError> {
-        let EncodeInfo {
+        let EncodeArgs {
             id,
             encryption,
             desired_chunk_size,
@@ -268,7 +268,7 @@ mod tests {
         // Needs to accommodate metadata & data, which this does not
         let chunk_size = 1;
         let err = Encoder::default()
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &vec![1, 2, 3],
@@ -294,7 +294,7 @@ mod tests {
         let chunk_size = 1000;
 
         let packets = Encoder::default()
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id,
                 encryption,
                 data: &data,
@@ -334,7 +334,7 @@ mod tests {
         let chunk_size = overhead_size + 2;
 
         let packets = Encoder::default()
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id,
                 encryption: PacketEncryption::from(nonce),
                 data: &data,
@@ -379,7 +379,7 @@ mod tests {
         let chunk_size = 512;
 
         let packets = Encoder::default()
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id,
                 encryption,
                 data: &data,

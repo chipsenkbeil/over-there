@@ -144,7 +144,7 @@ where
 mod tests {
     use super::*;
     use crate::wire::{
-        output::encoder::{Encoder, EncodeInfo},
+        output::encoder::{Encoder, EncodeArgs},
         packet::{PacketEncryption, PacketType},
     };
     use over_there_auth::NoopAuthenticator;
@@ -194,7 +194,7 @@ mod tests {
         // packet, which would remove itself from the cache and allow
         // us to re-add a packet with the same id & index
         let p = &Encoder::default()
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id,
                 encryption,
                 data: &data,
@@ -251,7 +251,7 @@ mod tests {
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
         let p = &Encoder::default()
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id,
                 encryption,
                 data: &data,
@@ -275,7 +275,7 @@ mod tests {
 
         // Make one large packet so we can complete a message
         let p = &Encoder::default()
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
@@ -310,7 +310,7 @@ mod tests {
 
         // Make many small packets
         let packets = &mut Encoder::default()
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
@@ -343,7 +343,7 @@ mod tests {
 
         // Make one large packet so we can complete a message
         let p = &Encoder::default()
-            .encode(EncodeInfo {
+            .encode(EncodeArgs {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
@@ -417,7 +417,7 @@ mod tests {
 
             // Make a new packet per element in data
             let packets = Encoder::default()
-                .encode(EncodeInfo {
+                .encode(EncodeArgs {
                     id,
                     encryption,
                     data: &data.clone(),
