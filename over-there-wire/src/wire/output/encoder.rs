@@ -156,75 +156,71 @@ impl Encoder {
 
     fn cached_estimate_packet_overhead_size<S: Signer>(
         &mut self,
-        desired_data_size: usize,
+        max_data_size: usize,
         r#type: PacketType,
         signer: &S,
     ) -> Result<usize, serde_cbor::Error> {
         // Calculate key to use for cache
         // TODO: Convert authenticator into part of the key? Is this necessary?
-        let key = format!("{}{:?}", desired_data_size, r#type);
+        let key = format!("{}{:?}", max_data_size, r#type);
 
         // Check if we have a cached value and, if so, use it
         if let Some(value) = self.packet_overhead_size_cache.get(&key) {
             println!(
                 "cached_estimate_packet_overhead_size({}, {:?}, --) == {}",
-                desired_data_size, r#type, value
+                max_data_size, r#type, value
             );
             return Ok(*value);
         }
 
         // Otherwise, estimate the packet size, cache it, and return it
-        let overhead_size = Self::estimate_packet_overhead_size(
-            desired_data_size,
-            r#type,
-            signer,
-        )?;
+        let overhead_size =
+            Self::estimate_packet_overhead_size(max_data_size, r#type, signer)?;
         println!(
             "cached_estimate_packet_overhead_size({}, {:?}, --) == {}",
-            desired_data_size, r#type, overhead_size
+            max_data_size, r#type, overhead_size
         );
         self.packet_overhead_size_cache.insert(key, overhead_size);
         Ok(overhead_size)
     }
 
     pub(crate) fn estimate_packet_overhead_size<S: Signer>(
-        desired_data_size: usize,
+        max_data_size: usize,
         r#type: PacketType,
         signer: &S,
     ) -> Result<usize, serde_cbor::Error> {
         let packet_size =
-            Self::estimate_packet_size(desired_data_size, r#type, signer)?;
+            Self::estimate_packet_size(max_data_size, r#type, signer)?;
 
         // Figure out how much overhead is needed to fit the data into the packet
         // NOTE: If for some reason the packet -> vec has optimized the
         //       byte stream so well that it is smaller than the provided
         //       data, we will assume no overhead
-        Ok(if packet_size > desired_data_size {
+        Ok(if packet_size > max_data_size {
             println!(
                 "estimate_packet_overhead_size({}, {:?}, --) == {}",
-                desired_data_size,
+                max_data_size,
                 r#type,
-                packet_size - desired_data_size
+                packet_size - max_data_size
             );
-            packet_size - desired_data_size
+            packet_size - max_data_size
         } else {
             println!(
                 "estimate_packet_overhead_size({}, {:?}, --) == 0",
-                desired_data_size, r#type,
+                max_data_size, r#type,
             );
             0
         })
     }
 
     fn estimate_packet_size<S: Signer>(
-        desired_data_size: usize,
+        max_data_size: usize,
         r#type: PacketType,
         signer: &S,
     ) -> Result<usize, serde_cbor::Error> {
         // Produce random fake data to avoid any byte sequencing
-        let fake_data: Vec<u8> = (0..desired_data_size)
-            .map(|_| rand::random::<u8>())
-            .collect();
+        let fake_data: Vec<u8> =
+            (0..max_data_size).map(|_| rand::random::<u8>()).collect();
 
         // Produce a fake packet whose data fills the entire size, and then
         // see how much larger it is and use that as the overhead cost
@@ -243,7 +239,7 @@ impl Encoder {
         .map(|v| v.len());
         println!(
             "estimate_packet_size({}, {:?}, --) == {:?}",
-            desired_data_size, r#type, x
+            max_data_size, r#type, x
         );
         x
     }
