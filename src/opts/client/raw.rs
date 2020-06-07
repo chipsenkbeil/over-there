@@ -9,7 +9,7 @@ pub struct RawCommand {
     /// Raw input to be sent directly to the server
     pub input: Option<String>,
 
-    /// Specifies the format of input to the server
+    /// Specifies the format of input to the server and output from the server
     #[clap(
         short, 
         long, 

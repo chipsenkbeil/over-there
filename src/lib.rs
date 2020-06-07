@@ -321,7 +321,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                     &mut client,
                     &line,
                     c.format,
-                    cmd.output_format,
+                    c.format,
                     cmd.redirect_stdout.as_ref(),
                 )
                 .await?;
@@ -340,7 +340,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                         &mut client,
                         &line,
                         c.format,
-                        cmd.output_format,
+                        c.format,
                         cmd.redirect_stdout.as_ref(),
                     )
                     .await?;
