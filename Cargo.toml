@@ -21,6 +21,11 @@ members = [
     "over-there-wire",
 ]
 
+[profile.release]
+opt-level = 'z'
+lto = true
+codegen-units = 1
+
 [features]
 default = ["single-threaded", "format-json"]
 single-threaded = ["tokio/dns", "tokio/rt-core"]
