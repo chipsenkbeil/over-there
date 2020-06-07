@@ -10,7 +10,7 @@ pub(crate) struct EncodeArgs<'d, 's, S: Signer> {
     /// Used to specify the level of encryption to use
     pub encryption: PacketEncryption,
 
-    /// Desired maximum size of each packet (including metadata)
+    /// Desired maximum size of each packet (including all overhead like metadata)
     pub max_packet_size: usize,
 
     /// Key used to generate signatures
@@ -23,7 +23,7 @@ pub(crate) struct EncodeArgs<'d, 's, S: Signer> {
 
 #[derive(Debug, Error)]
 pub enum EncoderError {
-    DesiredChunkSizeTooSmall,
+    MaxPacketSizeTooSmall,
     FailedToEstimatePacketSize,
     FailedToSignPacket,
 }
@@ -67,13 +67,13 @@ impl Encoder {
         println!("FINAL OVERHEAD SIZE: {}", final_overhead_size);
         println!("DESIRED CHUNK SIZE: {}", max_packet_size);
 
-        // If the packet size would be so big that the overhead is at least
-        // as large as our desired total byte stream (chunk) size, we will
-        // exit because we cannot send packets without violating the requirement
+        // If the overhead would be so big that the overhead is at least as
+        // large as our max packet size, we will exit because we cannot send
+        // packets without violating the requirement
         if non_final_overhead_size >= max_packet_size
             || final_overhead_size >= max_packet_size
         {
-            return Err(EncoderError::DesiredChunkSizeTooSmall);
+            return Err(EncoderError::MaxPacketSizeTooSmall);
         }
 
         // Compute the data size for a non-final and final packet
@@ -278,7 +278,7 @@ mod tests {
             .unwrap_err();
 
         match err {
-            EncoderError::DesiredChunkSizeTooSmall => (),
+            EncoderError::MaxPacketSizeTooSmall => (),
             x => panic!("Unexpected error: {:?}", x),
         }
     }
