@@ -3,7 +3,7 @@ use over_there_auth::Signer;
 use over_there_derive::Error;
 use std::collections::HashMap;
 
-pub(crate) struct DisassembleInfo<'d, 's, S: Signer> {
+pub(crate) struct EncodeInfo<'d, 's, S: Signer> {
     /// ID used to group created packets together
     pub id: u32,
 
@@ -22,23 +22,23 @@ pub(crate) struct DisassembleInfo<'d, 's, S: Signer> {
 }
 
 #[derive(Debug, Error)]
-pub enum DisassemblerError {
+pub enum EncoderError {
     DesiredChunkSizeTooSmall,
     FailedToEstimatePacketSize,
     FailedToSignPacket,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Disassembler {
+pub(crate) struct Encoder {
     packet_overhead_size_cache: HashMap<String, usize>,
 }
 
-impl Disassembler {
-    pub fn make_packets_from_data<S: Signer>(
+impl Encoder {
+    pub fn encode<S: Signer>(
         &mut self,
-        info: DisassembleInfo<S>,
-    ) -> Result<Vec<Packet>, DisassemblerError> {
-        let DisassembleInfo {
+        info: EncodeInfo<S>,
+    ) -> Result<Vec<Packet>, EncoderError> {
+        let EncodeInfo {
             id,
             encryption,
             desired_chunk_size,
@@ -53,7 +53,7 @@ impl Disassembler {
                 PacketType::NotFinal,
                 signer,
             )
-            .map_err(|_| DisassemblerError::FailedToEstimatePacketSize)?;
+            .map_err(|_| EncoderError::FailedToEstimatePacketSize)?;
 
         let final_overhead_size = self
             .cached_estimate_packet_overhead_size(
@@ -61,7 +61,11 @@ impl Disassembler {
                 PacketType::Final { encryption },
                 signer,
             )
-            .map_err(|_| DisassemblerError::FailedToEstimatePacketSize)?;
+            .map_err(|_| EncoderError::FailedToEstimatePacketSize)?;
+
+        println!("NON FINAL OVERHEAD SIZE: {}", non_final_overhead_size);
+        println!("FINAL OVERHEAD SIZE: {}", final_overhead_size);
+        println!("DESIRED CHUNK SIZE: {}", desired_chunk_size);
 
         // If the packet size would be so big that the overhead is at least
         // as large as our desired total byte stream (chunk) size, we will
@@ -69,7 +73,7 @@ impl Disassembler {
         if non_final_overhead_size >= desired_chunk_size
             || final_overhead_size >= desired_chunk_size
         {
-            return Err(DisassemblerError::DesiredChunkSizeTooSmall);
+            return Err(EncoderError::DesiredChunkSizeTooSmall);
         }
 
         // Compute the data size for a non-final and final packet
@@ -123,7 +127,7 @@ impl Disassembler {
                 chunk,
                 signer,
             )
-            .map_err(|_| DisassemblerError::FailedToSignPacket)?;
+            .map_err(|_| EncoderError::FailedToSignPacket)?;
 
             // Store packet in our collection
             packets.push(packet);
@@ -142,7 +146,7 @@ impl Disassembler {
         r#type: PacketType,
         data: &[u8],
         signer: &S,
-    ) -> Result<Packet, rmp_serde::encode::Error> {
+    ) -> Result<Packet, serde_cbor::Error> {
         let metadata = Metadata { id, index, r#type };
         metadata.to_vec().map(|md| {
             let sig = signer.sign(&[md, data.to_vec()].concat());
@@ -155,13 +159,17 @@ impl Disassembler {
         desired_data_size: usize,
         r#type: PacketType,
         signer: &S,
-    ) -> Result<usize, rmp_serde::encode::Error> {
+    ) -> Result<usize, serde_cbor::Error> {
         // Calculate key to use for cache
         // TODO: Convert authenticator into part of the key? Is this necessary?
         let key = format!("{}{:?}", desired_data_size, r#type);
 
         // Check if we have a cached value and, if so, use it
         if let Some(value) = self.packet_overhead_size_cache.get(&key) {
+            println!(
+                "cached_estimate_packet_overhead_size({}, {:?}, --) == {}",
+                desired_data_size, r#type, value
+            );
             return Ok(*value);
         }
 
@@ -171,6 +179,10 @@ impl Disassembler {
             r#type,
             signer,
         )?;
+        println!(
+            "cached_estimate_packet_overhead_size({}, {:?}, --) == {}",
+            desired_data_size, r#type, overhead_size
+        );
         self.packet_overhead_size_cache.insert(key, overhead_size);
         Ok(overhead_size)
     }
@@ -179,17 +191,27 @@ impl Disassembler {
         desired_data_size: usize,
         r#type: PacketType,
         signer: &S,
-    ) -> Result<usize, rmp_serde::encode::Error> {
+    ) -> Result<usize, serde_cbor::Error> {
         let packet_size =
             Self::estimate_packet_size(desired_data_size, r#type, signer)?;
 
         // Figure out how much overhead is needed to fit the data into the packet
-        // NOTE: If for some reason the packet -> msgpack has optimized the
+        // NOTE: If for some reason the packet -> vec has optimized the
         //       byte stream so well that it is smaller than the provided
         //       data, we will assume no overhead
         Ok(if packet_size > desired_data_size {
+            println!(
+                "estimate_packet_overhead_size({}, {:?}, --) == {}",
+                desired_data_size,
+                r#type,
+                packet_size - desired_data_size
+            );
             packet_size - desired_data_size
         } else {
+            println!(
+                "estimate_packet_overhead_size({}, {:?}, --) == 0",
+                desired_data_size, r#type,
+            );
             0
         })
     }
@@ -198,7 +220,7 @@ impl Disassembler {
         desired_data_size: usize,
         r#type: PacketType,
         signer: &S,
-    ) -> Result<usize, rmp_serde::encode::Error> {
+    ) -> Result<usize, serde_cbor::Error> {
         // Produce random fake data to avoid any byte sequencing
         let fake_data: Vec<u8> = (0..desired_data_size)
             .map(|_| rand::random::<u8>())
@@ -210,7 +232,7 @@ impl Disassembler {
         // NOTE: This is a rough estimate and requires an entire serialization,
         //       but is the most straightforward way I can think of unless
         //       serde offers some form of size hinting for msgpack specifically
-        Disassembler::make_new_packet(
+        let x = Encoder::make_new_packet(
             u32::max_value(),
             u32::max_value(),
             r#type,
@@ -218,11 +240,16 @@ impl Disassembler {
             signer,
         )?
         .to_vec()
-        .map(|v| v.len())
+        .map(|v| v.len());
+        println!(
+            "estimate_packet_size({}, {:?}, --) == {:?}",
+            desired_data_size, r#type, x
+        );
+        x
     }
 }
 
-impl Default for Disassembler {
+impl Default for Encoder {
     fn default() -> Self {
         Self {
             packet_overhead_size_cache: HashMap::new(),
@@ -240,8 +267,8 @@ mod tests {
     fn fails_if_desired_chunk_size_is_too_low() {
         // Needs to accommodate metadata & data, which this does not
         let chunk_size = 1;
-        let err = Disassembler::default()
-            .make_packets_from_data(DisassembleInfo {
+        let err = Encoder::default()
+            .encode(EncodeInfo {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &vec![1, 2, 3],
@@ -251,7 +278,7 @@ mod tests {
             .unwrap_err();
 
         match err {
-            DisassemblerError::DesiredChunkSizeTooSmall => (),
+            EncoderError::DesiredChunkSizeTooSmall => (),
             x => panic!("Unexpected error: {:?}", x),
         }
     }
@@ -266,8 +293,8 @@ mod tests {
         // Make it so all the data fits in one packet
         let chunk_size = 1000;
 
-        let packets = Disassembler::default()
-            .make_packets_from_data(DisassembleInfo {
+        let packets = Encoder::default()
+            .encode(EncodeInfo {
                 id,
                 encryption,
                 data: &data,
@@ -296,7 +323,7 @@ mod tests {
 
         // Calculate the bigger of the two overhead sizes (final packet)
         // and ensure that we can only fit the last element in it
-        let overhead_size = Disassembler::estimate_packet_overhead_size(
+        let overhead_size = Encoder::estimate_packet_overhead_size(
             /* data size */ 1,
             PacketType::Final {
                 encryption: PacketEncryption::from(nonce),
@@ -306,8 +333,8 @@ mod tests {
         .unwrap();
         let chunk_size = overhead_size + 2;
 
-        let packets = Disassembler::default()
-            .make_packets_from_data(DisassembleInfo {
+        let packets = Encoder::default()
+            .encode(EncodeInfo {
                 id,
                 encryption: PacketEncryption::from(nonce),
                 data: &data,
@@ -351,8 +378,8 @@ mod tests {
         let data: Vec<u8> = [0; 100000].to_vec();
         let chunk_size = 512;
 
-        let packets = Disassembler::default()
-            .make_packets_from_data(DisassembleInfo {
+        let packets = Encoder::default()
+            .encode(EncodeInfo {
                 id,
                 encryption,
                 data: &data,

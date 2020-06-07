@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 #[derive(Debug, Error)]
-pub enum AssemblerError {
+pub enum DecoderError {
     PacketExists { id: u32, index: u32 },
     PacketBeyondLastIndex { id: u32, index: u32 },
     FinalPacketAlreadyExists { id: u32, index: u32 },
@@ -32,8 +32,8 @@ impl Default for PacketGroup {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Assembler {
-    /// Map of unique id to associated group of packets being assembled
+pub(crate) struct Decoder {
+    /// Map of unique id to associated group of packets being decoded
     packet_groups: HashMap<TtlValue<u32>, PacketGroup>,
 
     /// Maximum time-to-live for each group of packets before being removed;
@@ -41,7 +41,7 @@ pub(crate) struct Assembler {
     ttl: Duration,
 }
 
-impl Assembler {
+impl Decoder {
     pub fn new(ttl: Duration) -> Self {
         Self {
             packet_groups: HashMap::new(),
@@ -49,14 +49,14 @@ impl Assembler {
         }
     }
 
-    /// Returns the total packet groups contained within the assembler
+    /// Returns the total packet groups contained within the decoder
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.packet_groups.len()
     }
 
-    /// Adds a new packet to the assembler, consuming it for reconstruction
-    pub fn add_packet(&mut self, packet: Packet) -> Result<(), AssemblerError> {
+    /// Adds a new packet to the decoder, consuming it for reconstruction
+    pub fn add_packet(&mut self, packet: Packet) -> Result<(), DecoderError> {
         let id = packet.id();
         let index = packet.index();
         let is_final = packet.is_final();
@@ -70,13 +70,13 @@ impl Assembler {
 
         // Check if we already have this packet
         if group.packets.contains_key(&index) {
-            return Err(AssemblerError::PacketExists { id, index });
+            return Err(DecoderError::PacketExists { id, index });
         }
 
         // Check if we are adding a final packet when we already have one
         if let Some(last_index) = group.final_index {
             if is_final {
-                return Err(AssemblerError::FinalPacketAlreadyExists {
+                return Err(DecoderError::FinalPacketAlreadyExists {
                     id,
                     index: last_index,
                 });
@@ -85,7 +85,7 @@ impl Assembler {
 
         // Check if we are trying to add a packet beyond the final one
         if group.final_index.map(|i| index > i).unwrap_or(false) {
-            return Err(AssemblerError::PacketBeyondLastIndex { id, index });
+            return Err(DecoderError::PacketBeyondLastIndex { id, index });
         }
 
         // Add the packet to our group and, if it's final, mark it
@@ -103,12 +103,12 @@ impl Assembler {
         self.packet_groups.remove(&group_id.into()).is_some()
     }
 
-    /// Removes all expired packet groups from the assembler
+    /// Removes all expired packet groups from the decoder
     pub fn remove_expired(&mut self) {
         self.packet_groups.retain(|k, _| !k.has_expired())
     }
 
-    /// Determines whether or not all packets have been added to the assembler
+    /// Determines whether or not all packets have been added to the decoder
     pub fn verify(&self, group_id: u32) -> bool {
         self.packet_groups
             .get(&group_id.into())
@@ -122,10 +122,10 @@ impl Assembler {
     /// Reconstructs the data represented by the packets
     /// NOTE: This currently produces a copy of all data instead of passing
     ///       back out ownership
-    pub fn assemble(&self, group_id: u32) -> Result<Vec<u8>, AssemblerError> {
+    pub fn decode(&self, group_id: u32) -> Result<Vec<u8>, DecoderError> {
         // Verify that we have all packets
         if !self.verify(group_id) {
-            return Err(AssemblerError::IncompletePacketCollection);
+            return Err(DecoderError::IncompletePacketCollection);
         }
 
         // Grab the appropriate group, which we can now assume exists
@@ -141,7 +141,7 @@ impl Assembler {
     }
 }
 
-impl Default for Assembler {
+impl Default for Decoder {
     fn default() -> Self {
         Self::new(constants::DEFAULT_TTL)
     }
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn add_packet_fails_if_packet_already_exists() {
-        let mut a = Assembler::default();
+        let mut a = Decoder::default();
         let id = 123;
         let index = 999;
 
@@ -195,7 +195,7 @@ mod tests {
             .add_packet(make_empty_packet(id, index, false))
             .unwrap_err()
         {
-            AssemblerError::PacketExists {
+            DecoderError::PacketExists {
                 id: eid,
                 index: eindex,
             } => {
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn add_packet_fails_if_adding_packet_beyond_last() {
-        let mut a = Assembler::default();
+        let mut a = Decoder::default();
         let id = 123;
 
         // Add first packet successfully
@@ -222,7 +222,7 @@ mod tests {
 
         // Fail if adding packet after final packet
         match a.add_packet(make_empty_packet(id, 1, false)).unwrap_err() {
-            AssemblerError::PacketBeyondLastIndex {
+            DecoderError::PacketBeyondLastIndex {
                 id: eid,
                 index: eindex,
             } => {
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn add_packet_fails_if_last_packet_already_added() {
-        let mut a = Assembler::default();
+        let mut a = Decoder::default();
 
         // Make the second packet (index) be the last packet
         let result = a.add_packet(make_empty_packet(0, 1, true));
@@ -249,7 +249,7 @@ mod tests {
         // Fail if making the first packet (index) be the last packet
         // when we already have a last packet
         match a.add_packet(make_empty_packet(0, 0, true)).unwrap_err() {
-            AssemblerError::FinalPacketAlreadyExists { id, index } => {
+            DecoderError::FinalPacketAlreadyExists { id, index } => {
                 assert_eq!(id, 0, "Last packet id different than expected");
                 assert_eq!(
                     index, 1,
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn remove_group_should_remove_the_underlying_packet_group() {
-        let mut a = Assembler::default();
+        let mut a = Decoder::default();
 
         // Add a couple of packets
         a.add_packet(make_empty_packet(0, 0, true)).unwrap();
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn remove_expired_should_only_retain_packet_groups_not_expired() {
-        let mut a = Assembler::new(Duration::from_millis(10));
+        let mut a = Decoder::new(Duration::from_millis(10));
 
         // Add a couple of packets
         a.add_packet(make_empty_packet(0, 0, true)).unwrap();
@@ -300,13 +300,13 @@ mod tests {
 
     #[test]
     fn verify_yields_false_if_empty() {
-        let a = Assembler::default();
+        let a = Decoder::default();
         assert_eq!(a.verify(0), false);
     }
 
     #[test]
     fn verify_yields_false_if_missing_last_packet() {
-        let mut a = Assembler::default();
+        let mut a = Decoder::default();
 
         // Add first packet (index 0), still needing final packet
         let _ = a.add_packet(make_empty_packet(0, 0, false));
@@ -316,7 +316,7 @@ mod tests {
 
     #[test]
     fn verify_yields_false_if_missing_first_packet() {
-        let mut a = Assembler::default();
+        let mut a = Decoder::default();
 
         // Add packet at end (index 1), still needing first packet
         assert_eq!(
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn verify_yields_false_if_missing_inbetween_packet() {
-        let mut a = Assembler::default();
+        let mut a = Decoder::default();
 
         // Add packet at beginning (index 0)
         assert_eq!(
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn verify_yields_true_if_have_all_packets() {
-        let mut a = Assembler::default();
+        let mut a = Decoder::default();
 
         assert_eq!(
             a.add_packet(make_empty_packet(0, 0, true)).is_ok(),
@@ -363,32 +363,32 @@ mod tests {
     }
 
     #[test]
-    fn assemble_fails_if_not_verified() {
-        let a = Assembler::default();
+    fn decode_fails_if_not_verified() {
+        let a = Decoder::default();
 
-        let result = a.assemble(0);
+        let result = a.decode(0);
 
         match result.unwrap_err() {
-            AssemblerError::IncompletePacketCollection => (),
+            DecoderError::IncompletePacketCollection => (),
             e => panic!("Unexpected error {} received", e),
         }
     }
 
     #[test]
-    fn assemble_yields_data_from_single_packet_if_complete() {
-        let mut a = Assembler::default();
+    fn decode_yields_data_from_single_packet_if_complete() {
+        let mut a = Decoder::default();
         let data: Vec<u8> = vec![1, 2, 3];
 
         // Try a single packet and collecting data
         let _ = a.add_packet(make_packet(0, 0, true, data.clone()));
 
-        let collected_data = a.assemble(0).unwrap();
+        let collected_data = a.decode(0).unwrap();
         assert_eq!(data, collected_data);
     }
 
     #[test]
-    fn assemble_yields_combined_data_from_multiple_packets_if_complete() {
-        let mut a = Assembler::default();
+    fn decode_yields_combined_data_from_multiple_packets_if_complete() {
+        let mut a = Decoder::default();
         let data: Vec<u8> = vec![1, 2, 3, 4, 5];
 
         // Try a multiple packets and collecting data
@@ -396,7 +396,7 @@ mod tests {
         let _ = a.add_packet(make_packet(0, 0, false, data[0..1].to_vec()));
         let _ = a.add_packet(make_packet(0, 1, false, data[1..3].to_vec()));
 
-        let collected_data = a.assemble(0).unwrap();
+        let collected_data = a.decode(0).unwrap();
         assert_eq!(data, collected_data);
     }
 }

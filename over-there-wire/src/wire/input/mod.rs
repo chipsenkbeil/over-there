@@ -1,7 +1,7 @@
-pub mod assembler;
+pub mod decoder;
 
 use crate::wire::packet::Packet;
-use assembler::Assembler;
+use decoder::Decoder;
 use over_there_auth::Verifier;
 use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
 use over_there_derive::Error;
@@ -9,10 +9,10 @@ use std::time::Duration;
 
 #[derive(Debug, Error)]
 pub enum InputProcessorError {
-    DecodePacket(rmp_serde::decode::Error),
+    EncodePacket(serde_cbor::Error),
     UnableToVerifySignature,
     InvalidPacketSignature,
-    AssembleData(assembler::AssemblerError),
+    DecodeData(decoder::DecoderError),
     DecryptData(CryptError),
 }
 
@@ -22,7 +22,7 @@ where
     V: Verifier,
     D: Decrypter,
 {
-    assembler: Assembler,
+    decoder: Decoder,
     verifier: V,
     decrypter: D,
 }
@@ -33,9 +33,9 @@ where
     D: Decrypter,
 {
     pub fn new(packet_ttl: Duration, verifier: V, decrypter: D) -> Self {
-        let assembler = Assembler::new(packet_ttl);
+        let decoder = Decoder::new(packet_ttl);
         Self {
-            assembler,
+            decoder,
             verifier,
             decrypter,
         }
@@ -51,7 +51,7 @@ where
 
         // Process the data as a packet
         let p = Packet::from_slice(data)
-            .map_err(InputProcessorError::DecodePacket)?;
+            .map_err(InputProcessorError::EncodePacket)?;
 
         // Verify the packet's signature, skipping any form of assembly if
         // it is not a legit packet
@@ -63,21 +63,21 @@ where
         let nonce = p.nonce().cloned();
 
         // Ensure that packet groups are still valid
-        self.assembler.remove_expired();
+        self.decoder.remove_expired();
 
-        // Add the packet, see if we are ready to assemble the data, and do so
-        let do_assemble = add_packet_and_verify(&mut self.assembler, p)?;
-        if do_assemble {
+        // Add the packet, see if we are ready to decode the data, and do so
+        let do_decode = add_packet_and_verify(&mut self.decoder, p)?;
+        if do_decode {
             // Gather the complete data
-            let data = assemble_and_decrypt(
+            let data = decode_and_decrypt(
                 group_id,
-                &self.assembler,
+                &self.decoder,
                 &self.decrypter,
                 nonce,
             )?;
 
             // Remove the underlying group as we no longer need to keep it
-            self.assembler.remove_group(group_id);
+            self.decoder.remove_group(group_id);
 
             Ok(Some(data))
         } else {
@@ -101,36 +101,36 @@ where
 }
 
 /// Adds the packet to our internal cache and checks to see if we
-/// are ready to assemble the packet
+/// are ready to decode the packet
 fn add_packet_and_verify(
-    assembler: &mut Assembler,
+    decoder: &mut Decoder,
     packet: Packet,
 ) -> Result<bool, InputProcessorError> {
     let id = packet.id();
 
     // Bubble up the error; we don't care about the success
-    assembler
+    decoder
         .add_packet(packet)
-        .map_err(InputProcessorError::AssembleData)?;
+        .map_err(InputProcessorError::DecodeData)?;
 
-    Ok(assembler.verify(id))
+    Ok(decoder.verify(id))
 }
 
-/// Assembles the complete data held by the assembler and decrypts it
+/// Decodes the complete data held by the decoder and decrypts it
 /// using the internal bicrypter
-fn assemble_and_decrypt<D>(
+fn decode_and_decrypt<D>(
     group_id: u32,
-    assembler: &Assembler,
+    decoder: &Decoder,
     decrypter: &D,
     nonce: Option<Nonce>,
 ) -> Result<Vec<u8>, InputProcessorError>
 where
     D: Decrypter,
 {
-    // Assemble our data, which could be encrypted
-    let data = assembler
-        .assemble(group_id)
-        .map_err(InputProcessorError::AssembleData)?;
+    // Decode our data, which could be encrypted
+    let data = decoder
+        .decode(group_id)
+        .map_err(InputProcessorError::DecodeData)?;
 
     // Decrypt our collective data
     let data = decrypter
@@ -144,7 +144,7 @@ where
 mod tests {
     use super::*;
     use crate::wire::{
-        output::disassembler::{DisassembleInfo, Disassembler},
+        output::encoder::{Encoder, EncodeInfo},
         packet::{PacketEncryption, PacketType},
     };
     use over_there_auth::NoopAuthenticator;
@@ -165,15 +165,15 @@ mod tests {
         let mut processor = new_processor();
 
         match processor.process(&[0; 5]) {
-            Err(InputProcessorError::DecodePacket(_)) => (),
+            Err(InputProcessorError::EncodePacket(_)) => (),
             Err(x) => panic!("Unexpected error: {:?}", x),
             Ok(x) => panic!("Unexpected result: {:?}", x),
         }
     }
 
     #[test]
-    fn input_processor_process_should_fail_if_unable_to_add_packet_to_assembler(
-    ) {
+    fn input_processor_process_should_fail_if_unable_to_add_packet_to_decoder()
+    {
         let mut processor = new_processor();
         let id = 0;
         let encryption = PacketEncryption::None;
@@ -182,18 +182,19 @@ mod tests {
 
         // Calculate the bigger of the two overhead sizes (final packet)
         // and ensure that we can fit data in it
-        let overhead_size = Disassembler::estimate_packet_overhead_size(
+        let overhead_size = Encoder::estimate_packet_overhead_size(
             /* data size */ 1,
             PacketType::Final { encryption },
             &signer,
         )
         .unwrap();
 
+        println!("OVERHEAD SIZE: {}", overhead_size);
         // Make several packets so that we don't send a single and last
         // packet, which would remove itself from the cache and allow
         // us to re-add a packet with the same id & index
-        let p = &Disassembler::default()
-            .make_packets_from_data(DisassembleInfo {
+        let p = &Encoder::default()
+            .encode(EncodeInfo {
                 id,
                 encryption,
                 data: &data,
@@ -209,9 +210,9 @@ mod tests {
         );
 
         // Add the same packet more than once, which should
-        // trigger the assembler to fail
+        // trigger the decoder to fail
         match processor.process(&data) {
-            Err(InputProcessorError::AssembleData(_)) => (),
+            Err(InputProcessorError::DecodeData(_)) => (),
             Err(x) => panic!("Unexpected error: {:?}", x),
             Ok(x) => panic!("Unexpected result: {:?}", x),
         }
@@ -240,7 +241,7 @@ mod tests {
 
         // Calculate the bigger of the two overhead sizes (final packet)
         // and ensure that we can fit data in it
-        let overhead_size = Disassembler::estimate_packet_overhead_size(
+        let overhead_size = Encoder::estimate_packet_overhead_size(
             /* data size */ 1,
             PacketType::Final { encryption },
             &signer,
@@ -249,8 +250,8 @@ mod tests {
 
         // Make several packets so that we don't send a single and last
         // packet, which would result in a complete message
-        let p = &Disassembler::default()
-            .make_packets_from_data(DisassembleInfo {
+        let p = &Encoder::default()
+            .encode(EncodeInfo {
                 id,
                 encryption,
                 data: &data,
@@ -273,8 +274,8 @@ mod tests {
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
-        let p = &Disassembler::default()
-            .make_packets_from_data(DisassembleInfo {
+        let p = &Encoder::default()
+            .encode(EncodeInfo {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
@@ -298,7 +299,7 @@ mod tests {
 
     #[test]
     fn input_processor_process_should_remove_expired_packet_groups() {
-        // Create a custom context whose packet groups within its assembler
+        // Create a custom context whose packet groups within its decoder
         // will expire immediately
         let mut processor = InputProcessor::new(
             Duration::new(0, 0),
@@ -308,17 +309,18 @@ mod tests {
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make many small packets
-        let packets = &mut Disassembler::default()
-            .make_packets_from_data(DisassembleInfo {
+        let packets = &mut Encoder::default()
+            .encode(EncodeInfo {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
-                desired_chunk_size: Disassembler::estimate_packet_overhead_size(
+                desired_chunk_size: Encoder::estimate_packet_overhead_size(
                     data.len(),
                     PacketType::NotFinal,
                     &NoopAuthenticator,
                 )
-                .unwrap() + data.len(),
+                .unwrap()
+                    + data.len(),
                 signer: &NoopAuthenticator,
             })
             .unwrap();
@@ -334,14 +336,14 @@ mod tests {
     }
 
     #[test]
-    fn input_processor_process_should_remove_the_assembler_packet_group_if_does_complete_data(
+    fn input_processor_process_should_remove_the_decoder_packet_group_if_does_complete_data(
     ) {
         let mut processor = new_processor();
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
         // Make one large packet so we can complete a message
-        let p = &Disassembler::default()
-            .make_packets_from_data(DisassembleInfo {
+        let p = &Encoder::default()
+            .encode(EncodeInfo {
                 id: 0,
                 encryption: PacketEncryption::None,
                 data: &data,
@@ -352,7 +354,7 @@ mod tests {
         let pdata = p.to_vec().unwrap();
         processor.process(&pdata).unwrap();
 
-        assert_eq!(processor.assembler.len(), 0);
+        assert_eq!(processor.decoder.len(), 0);
     }
 
     #[cfg(test)]
@@ -406,7 +408,7 @@ mod tests {
 
             // Calculate the bigger of the two overhead sizes (final packet)
             // and ensure that we can fit data in it
-            let overhead_size = Disassembler::estimate_packet_overhead_size(
+            let overhead_size = Encoder::estimate_packet_overhead_size(
                 /* data size */ 1,
                 PacketType::Final { encryption },
                 &signer,
@@ -414,8 +416,8 @@ mod tests {
             .unwrap();
 
             // Make a new packet per element in data
-            let packets = Disassembler::default()
-                .make_packets_from_data(DisassembleInfo {
+            let packets = Encoder::default()
+                .encode(EncodeInfo {
                     id,
                     encryption,
                     data: &data.clone(),

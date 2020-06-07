@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Error)]
 pub enum MsgError {
-    EncodeMsg(rmp_serde::encode::Error),
-    DecodeMsg(rmp_serde::decode::Error),
+    AssembleMsg(serde_cbor::Error),
+    DisassembleMsg(serde_cbor::Error),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -53,11 +53,12 @@ impl Msg {
     }
 
     pub fn to_vec(&self) -> Result<Vec<u8>, MsgError> {
-        rmp_serde::to_vec(&self).map_err(MsgError::EncodeMsg)
+        // NOTE: Cannot use to_vec_packed here as it fails to deserialize
+        serde_cbor::ser::to_vec(&self).map_err(MsgError::AssembleMsg)
     }
 
     pub fn from_slice(slice: &[u8]) -> Result<Self, MsgError> {
-        rmp_serde::from_read_ref(slice).map_err(MsgError::DecodeMsg)
+        serde_cbor::from_slice(slice).map_err(MsgError::DisassembleMsg)
     }
 
     /// Sets the parent header of this msg with that of the provided header

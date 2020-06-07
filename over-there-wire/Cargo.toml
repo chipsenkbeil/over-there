@@ -11,7 +11,7 @@ repository = "https://github.com/chipsenkbeil/over-there/tree/master/over-there-
 [dependencies]
 serde = { version = "1.0.111", features = ["derive"] }
 serde_bytes = "0.11.3"
-rmp-serde = "0.14.3"
+serde_cbor = "0.11.1"
 log = "0.4.8"
 rand = "0.7.3"
 futures-io = "0.3.4"

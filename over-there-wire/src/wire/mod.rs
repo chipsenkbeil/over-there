@@ -13,9 +13,9 @@ use std::time::Duration;
 use tokio::net::{TcpStream, UdpSocket};
 
 // Export errors
-pub use input::assembler::AssemblerError;
+pub use input::decoder::DecoderError;
 pub use input::{InputProcessor, InputProcessorError};
-pub use output::disassembler::DisassemblerError;
+pub use output::encoder::EncoderError;
 pub use output::{OutputProcessor, OutputProcessorError};
 
 #[derive(Debug, Clone)]

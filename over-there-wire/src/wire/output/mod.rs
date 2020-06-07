@@ -1,15 +1,15 @@
-pub mod disassembler;
+pub mod encoder;
 
 use crate::wire::packet::PacketEncryption;
-use disassembler::{DisassembleInfo, Disassembler};
+use encoder::{Encoder, EncodeInfo};
 use over_there_auth::Signer;
 use over_there_crypto::{CryptError, Encrypter};
 use over_there_derive::Error;
 
 #[derive(Debug, Error)]
 pub enum OutputProcessorError {
-    EncodePacket(rmp_serde::encode::Error),
-    DisassembleData(disassembler::DisassemblerError),
+    DecodePacket(serde_cbor::Error),
+    EncodeData(encoder::EncoderError),
     EncryptData(CryptError),
 }
 
@@ -19,7 +19,7 @@ where
     S: Signer,
     E: Encrypter,
 {
-    disassembler: Disassembler,
+    encoder: Encoder,
     transmission_size: usize,
     signer: S,
     encrypter: E,
@@ -31,9 +31,9 @@ where
     E: Encrypter,
 {
     pub fn new(transmission_size: usize, signer: S, encrypter: E) -> Self {
-        let disassembler = Disassembler::default();
+        let encoder = Encoder::default();
         Self {
-            disassembler,
+            encoder,
             transmission_size,
             signer,
             encrypter,
@@ -58,27 +58,27 @@ where
         let id: u32 = Self::new_id();
 
         // Split data into multiple packets
-        // NOTE: Must protect mutable access to disassembler, which caches
+        // NOTE: Must protect mutable access to encoder, which caches
         //       computing the estimated packet sizes; if there is a way
         //       that we could do this faster (not need a cache), we could
         //       get rid of the locking and only need a reference
         let packets = self
-            .disassembler
-            .make_packets_from_data(DisassembleInfo {
+            .encoder
+            .encode(EncodeInfo {
                 id,
                 encryption,
                 data: &data,
                 desired_chunk_size: self.transmission_size,
                 signer: &self.signer,
             })
-            .map_err(OutputProcessorError::DisassembleData)?;
+            .map_err(OutputProcessorError::EncodeData)?;
 
         // For each packet, serialize and add to output
         let mut output = Vec::new();
         for packet in packets.iter() {
             let packet_data = packet
                 .to_vec()
-                .map_err(OutputProcessorError::EncodePacket)?;
+                .map_err(OutputProcessorError::DecodePacket)?;
             output.push(packet_data);
         }
 
@@ -112,7 +112,7 @@ mod tests {
         let data = vec![1, 2, 3];
 
         match processor.process(&data) {
-            Err(OutputProcessorError::DisassembleData(_)) => (),
+            Err(OutputProcessorError::EncodeData(_)) => (),
             x => panic!("Unexpected result: {:?}", x),
         }
     }

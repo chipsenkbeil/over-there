@@ -10,7 +10,7 @@ pub mod constants {
 
 // Export errors
 pub use wire::{
-    AssemblerError, DisassemblerError, InboundWireError, InputProcessorError,
+    EncoderError, DecoderError, InboundWireError, InputProcessorError,
     OutboundWireError, OutputProcessorError,
 };
 

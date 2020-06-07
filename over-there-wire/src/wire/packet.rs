@@ -85,8 +85,8 @@ pub(crate) struct Metadata {
 
 impl Metadata {
     /// Serializes the metadata to a collection of bytes
-    pub fn to_vec(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-        rmp_serde::to_vec(&self)
+    pub fn to_vec(&self) -> Result<Vec<u8>, serde_cbor::Error> {
+        serde_cbor::ser::to_vec_packed(&self)
     }
 }
 
@@ -136,7 +136,7 @@ impl Packet {
     /// Creates content used when producing and verifying a signature
     pub(crate) fn content_for_signature(
         &self,
-    ) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+    ) -> Result<Vec<u8>, serde_cbor::Error> {
         Ok([self.metadata.to_vec()?, self.data.to_vec()].concat())
     }
 
@@ -151,12 +151,12 @@ impl Packet {
     }
 
     /// Serializes the packet to a collection of bytes
-    pub fn to_vec(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-        rmp_serde::to_vec(&self)
+    pub fn to_vec(&self) -> Result<Vec<u8>, serde_cbor::Error> {
+        serde_cbor::ser::to_vec_packed(&self)
     }
 
     /// Deserializes the slice of bytes to a single packet
-    pub fn from_slice(slice: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_read_ref(slice)
+    pub fn from_slice(slice: &[u8]) -> Result<Self, serde_cbor::Error> {
+        serde_cbor::from_slice(slice)
     }
 }

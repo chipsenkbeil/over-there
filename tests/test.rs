@@ -53,7 +53,7 @@ async fn test_tcp_client_server_multiple_msgs() {
         // Server execution
         _ = run(build_server_opts(
                 addr_str.as_str(),
-                "Tcp",
+                "tcp",
                 vec![],
             )) => {
             panic!("Server exited before client requests finished!");
@@ -67,7 +67,7 @@ async fn test_tcp_client_server_multiple_msgs() {
             // Communicate to server using client
             run(build_client_opts(
                 addr_str.as_str(),
-                "Tcp",
+                "tcp",
                 vec!["exec", "echo", "test"],
                 &output_file_path,
             )).await.expect("Failed to send first request");
@@ -89,7 +89,7 @@ async fn test_tcp_client_server_multiple_msgs() {
             // On TCP issue, this would stall
             run(build_client_opts(
                 addr_str.as_str(),
-                "Tcp",
+                "tcp",
                 vec!["exec", "echo", "test2"],
                 &output_file_path,
             )).await.expect("Failed to send second request");
