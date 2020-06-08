@@ -1,4 +1,4 @@
-use crate::opts::types::Encryption;
+use crate::cli::opts::types::Encryption;
 use over_there_crypto::{self as crypto, key::Key};
 use std::io;
 

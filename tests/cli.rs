@@ -7,8 +7,8 @@ fn setup() -> String {
 }
 
 async fn run(args: Vec<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let opts = over_there::Opts::parse_from(args);
-    over_there::run(opts).await
+    let opts = over_there::cli::Opts::parse_from(args);
+    over_there::cli::run(opts).await
 }
 
 fn build_server_opts<'a>(
@@ -41,6 +41,7 @@ fn build_client_opts<'a>(
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_tcp_client_server_multiple_msgs() {
     let addr_str = setup();
     let output_file_path = tempfile::NamedTempFile::new()

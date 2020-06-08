@@ -1,4 +1,4 @@
-use crate::format::FormatOption;
+use crate::cli::format::FormatOption;
 use clap::Clap;
 use strum::VariantNames;
 

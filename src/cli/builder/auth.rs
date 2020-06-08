@@ -1,4 +1,4 @@
-use crate::opts::types::Authentication;
+use crate::cli::opts::types::Authentication;
 use over_there_auth::{self as auth};
 use std::io;
 

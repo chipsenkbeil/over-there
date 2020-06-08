@@ -1,7 +1,7 @@
 mod auth;
 mod crypto;
 
-use crate::opts::{client::ClientCommand, server::ServerCommand, types};
+use crate::cli::opts::{client::ClientCommand, server::ServerCommand, types};
 use log::debug;
 use over_there_core::{
     ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder, Transport,

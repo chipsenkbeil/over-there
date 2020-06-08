@@ -7,7 +7,7 @@ pub mod raw;
 pub mod version;
 
 use super::CommonOpts;
-use crate::format::FormatOption;
+use crate::cli::format::FormatOption;
 use clap::Clap;
 use std::path::PathBuf;
 use strum::VariantNames;
