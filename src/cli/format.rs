@@ -12,7 +12,6 @@ pub enum FormatOption {
     /// Human-readable format for input and output
     Human,
 
-    #[cfg(feature = "format-json")]
     /// JSON format for input and output
     Json,
 
@@ -27,7 +26,6 @@ pub fn text_to_content(
     text: &str,
 ) -> Result<Content, Box<dyn std::error::Error>> {
     match format_option {
-        #[cfg(feature = "format-json")]
         FormatOption::Json => Ok(serde_json::from_str(text)?),
 
         #[cfg(feature = "format-sexpression")]
@@ -51,7 +49,6 @@ where
     F: FnOnce(T) -> FormatResult,
 {
     let text = match format_option {
-        #[cfg(feature = "format-json")]
         FormatOption::Json => serde_json::to_string(&serializable_data)?,
 
         #[cfg(feature = "format-sexpression")]

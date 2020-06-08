@@ -5,13 +5,9 @@ pub async fn capabilities() -> CapabilitiesArgs {
     debug!("handler::capabilities");
     CapabilitiesArgs {
         capabilities: vec![
-            #[cfg(feature = "custom")]
             Capability::Custom,
-            #[cfg(feature = "exec")]
             Capability::Exec,
-            #[cfg(feature = "file-system")]
             Capability::FileSystem,
-            #[cfg(feature = "forward")]
             Capability::Forward,
         ],
     }
