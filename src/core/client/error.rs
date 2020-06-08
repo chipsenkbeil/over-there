@@ -1,4 +1,4 @@
-use crate::Reply;
+use crate::core::Reply;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::error::Error;

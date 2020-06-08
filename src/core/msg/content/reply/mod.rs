@@ -163,7 +163,7 @@ pub enum Reply {
     InternalDebug(InternalDebugArgs),
 }
 
-impl crate::SchemaInfo for Reply {}
+impl crate::core::SchemaInfo for Reply {}
 
 impl From<std::io::Error> for Reply {
     fn from(x: std::io::Error) -> Self {
@@ -190,7 +190,7 @@ pub enum ReplyError {
     FileSigChanged(FileSigChangedArgs),
 }
 
-impl crate::SchemaInfo for ReplyError {}
+impl crate::core::SchemaInfo for ReplyError {}
 
 impl ToString for ReplyError {
     fn to_string(&self) -> String {

@@ -7,7 +7,7 @@ pub mod state;
 
 pub use connected::ConnectedClient;
 
-use crate::{
+use crate::core::{
     event::{AddrEventManager, EventManager},
     msg::content::Content,
     Transport,

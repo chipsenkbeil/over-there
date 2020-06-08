@@ -1,4 +1,4 @@
-use crate::Msg;
+use crate::core::Msg;
 use std::net::SocketAddr;
 use tokio::sync::mpsc::Receiver;
 

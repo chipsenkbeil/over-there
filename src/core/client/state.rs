@@ -1,5 +1,5 @@
 use super::file::RemoteFile;
-use crate::msg::content::Reply;
+use crate::core::msg::content::Reply;
 use over_there_utils::CallbackManager;
 use std::collections::HashMap;
 use std::time::Instant;

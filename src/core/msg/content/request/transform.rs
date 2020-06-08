@@ -1,4 +1,4 @@
-use crate::{Reply, Request};
+use crate::core::{Reply, Request};
 use jsonpath_lib as jsonpath;
 use over_there_derive::Error;
 use schemars::JsonSchema;
@@ -75,7 +75,7 @@ impl LazilyTransformedRequest {
     }
 }
 
-impl crate::SchemaInfo for LazilyTransformedRequest {}
+impl crate::core::SchemaInfo for LazilyTransformedRequest {}
 
 /// Represents a transformation to apply against some request; uses syntax
 /// like JSONPath in that $.field can be used to reference the fields of the
@@ -94,12 +94,12 @@ pub struct TransformRule {
     pub value: String,
 }
 
-impl crate::SchemaInfo for TransformRule {}
+impl crate::core::SchemaInfo for TransformRule {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::reply::{CustomArgs, FileOpenedArgs};
+    use crate::core::reply::{CustomArgs, FileOpenedArgs};
 
     #[test]
     fn transform_with_reply_should_fail_if_rule_value_not_found() {

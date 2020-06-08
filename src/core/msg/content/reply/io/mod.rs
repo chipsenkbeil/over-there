@@ -15,7 +15,7 @@ pub struct IoErrorArgs {
     pub error_kind: SerErrorKind,
 }
 
-impl crate::SchemaInfo for IoErrorArgs {}
+impl crate::core::SchemaInfo for IoErrorArgs {}
 
 impl ToString for IoErrorArgs {
     fn to_string(&self) -> String {
@@ -119,7 +119,7 @@ pub enum SerErrorKind {
     NonExhaustive,
 }
 
-impl crate::SchemaInfo for SerErrorKind {}
+impl crate::core::SchemaInfo for SerErrorKind {}
 
 impl From<io::ErrorKind> for SerErrorKind {
     fn from(error_kind: io::ErrorKind) -> Self {

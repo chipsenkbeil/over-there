@@ -6,4 +6,4 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct CapabilitiesArgs;
 
-impl crate::SchemaInfo for CapabilitiesArgs {}
+impl crate::core::SchemaInfo for CapabilitiesArgs {}

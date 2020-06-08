@@ -9,4 +9,4 @@ pub struct ForwardArgs {
     pub request: Box<Request>,
 }
 
-impl crate::SchemaInfo for ForwardArgs {}
+impl crate::core::SchemaInfo for ForwardArgs {}

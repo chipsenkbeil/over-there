@@ -1,5 +1,5 @@
 use super::{AddrEventManager, EventManager};
-use crate::Msg;
+use crate::core::Msg;
 
 use log::error;
 use over_there_wire::{

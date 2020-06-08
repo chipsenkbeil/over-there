@@ -166,4 +166,4 @@ impl Request {
     }
 }
 
-impl crate::SchemaInfo for Request {}
+impl crate::core::SchemaInfo for Request {}

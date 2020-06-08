@@ -8,4 +8,4 @@ pub struct VersionArgs {
     pub version: String,
 }
 
-impl crate::SchemaInfo for VersionArgs {}
+impl crate::core::SchemaInfo for VersionArgs {}

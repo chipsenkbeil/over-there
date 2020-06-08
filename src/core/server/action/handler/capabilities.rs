@@ -1,4 +1,4 @@
-use crate::reply::{CapabilitiesArgs, Capability};
+use crate::core::reply::{CapabilitiesArgs, Capability};
 use log::debug;
 
 pub async fn capabilities() -> CapabilitiesArgs {

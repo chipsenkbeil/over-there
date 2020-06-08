@@ -9,7 +9,7 @@ pub struct CreateDirArgs {
     pub include_components: bool,
 }
 
-impl crate::SchemaInfo for CreateDirArgs {}
+impl crate::core::SchemaInfo for CreateDirArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -19,7 +19,7 @@ pub struct RenameDirArgs {
     pub to: String,
 }
 
-impl crate::SchemaInfo for RenameDirArgs {}
+impl crate::core::SchemaInfo for RenameDirArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -29,7 +29,7 @@ pub struct RemoveDirArgs {
     pub non_empty: bool,
 }
 
-impl crate::SchemaInfo for RemoveDirArgs {}
+impl crate::core::SchemaInfo for RemoveDirArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -38,7 +38,7 @@ pub struct ListDirContentsArgs {
     pub path: String,
 }
 
-impl crate::SchemaInfo for ListDirContentsArgs {}
+impl crate::core::SchemaInfo for ListDirContentsArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -50,7 +50,7 @@ pub struct OpenFileArgs {
     pub read_access: bool,
 }
 
-impl crate::SchemaInfo for OpenFileArgs {}
+impl crate::core::SchemaInfo for OpenFileArgs {}
 
 impl From<String> for OpenFileArgs {
     fn from(path: String) -> Self {
@@ -71,7 +71,7 @@ pub struct CloseFileArgs {
     pub sig: u32,
 }
 
-impl crate::SchemaInfo for CloseFileArgs {}
+impl crate::core::SchemaInfo for CloseFileArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -81,7 +81,7 @@ pub struct RenameUnopenedFileArgs {
     pub to: String,
 }
 
-impl crate::SchemaInfo for RenameUnopenedFileArgs {}
+impl crate::core::SchemaInfo for RenameUnopenedFileArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -92,7 +92,7 @@ pub struct RenameFileArgs {
     pub to: String,
 }
 
-impl crate::SchemaInfo for RenameFileArgs {}
+impl crate::core::SchemaInfo for RenameFileArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -101,7 +101,7 @@ pub struct RemoveUnopenedFileArgs {
     pub path: String,
 }
 
-impl crate::SchemaInfo for RemoveUnopenedFileArgs {}
+impl crate::core::SchemaInfo for RemoveUnopenedFileArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -111,7 +111,7 @@ pub struct RemoveFileArgs {
     pub sig: u32,
 }
 
-impl crate::SchemaInfo for RemoveFileArgs {}
+impl crate::core::SchemaInfo for RemoveFileArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -121,7 +121,7 @@ pub struct ReadFileArgs {
     pub sig: u32,
 }
 
-impl crate::SchemaInfo for ReadFileArgs {}
+impl crate::core::SchemaInfo for ReadFileArgs {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -132,4 +132,4 @@ pub struct WriteFileArgs {
     pub contents: Vec<u8>,
 }
 
-impl crate::SchemaInfo for WriteFileArgs {}
+impl crate::core::SchemaInfo for WriteFileArgs {}

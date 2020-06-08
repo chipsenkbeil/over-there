@@ -1,6 +1,6 @@
 mod handler;
 
-use crate::{
+use crate::core::{
     reply, server::state::ServerState, Content, Header,
     LazilyTransformedRequest, Msg, MsgError, Reply, ReplyError, Request,
     TransformRequestError,
@@ -413,7 +413,7 @@ async fn update_origin_last_touched(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::request;
+    use crate::core::request;
 
     #[tokio::test]
     async fn route_and_execute_with_sequence_should_execute_request_in_order() {

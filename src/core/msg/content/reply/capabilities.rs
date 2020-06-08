@@ -16,7 +16,7 @@ pub enum Capability {
     Forward,
 }
 
-impl crate::SchemaInfo for Capability {}
+impl crate::core::SchemaInfo for Capability {}
 
 #[derive(
     JsonSchema, Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq,
@@ -25,4 +25,4 @@ pub struct CapabilitiesArgs {
     pub capabilities: Vec<Capability>,
 }
 
-impl crate::SchemaInfo for CapabilitiesArgs {}
+impl crate::core::SchemaInfo for CapabilitiesArgs {}

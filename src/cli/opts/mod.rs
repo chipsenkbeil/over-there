@@ -19,7 +19,6 @@ pub enum Command {
     Server(server::ServerCommand),
 
     /// Prints schema information in JSON format
-    #[cfg(feature = "format-json")]
     #[clap(name = "schema")]
     Schema(schema::SchemaCommand),
 }

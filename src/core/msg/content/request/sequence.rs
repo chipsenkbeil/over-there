@@ -10,7 +10,7 @@ pub struct SequenceArgs {
     pub operations: Vec<LazilyTransformedRequest>,
 }
 
-impl crate::SchemaInfo for SequenceArgs {}
+impl crate::core::SchemaInfo for SequenceArgs {}
 
 impl From<Vec<LazilyTransformedRequest>> for SequenceArgs {
     fn from(operations: Vec<LazilyTransformedRequest>) -> Self {

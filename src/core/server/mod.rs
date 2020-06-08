@@ -7,7 +7,7 @@ pub mod state;
 
 pub use listening::ListeningServer;
 
-use crate::{event::AddrEventManager, Msg, Transport};
+use crate::core::{event::AddrEventManager, Msg, Transport};
 use derive_builder::Builder;
 use log::error;
 use over_there_wire::{Authenticator, Bicrypter, NetTransmission, Wire};

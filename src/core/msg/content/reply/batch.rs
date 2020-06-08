@@ -1,4 +1,4 @@
-use crate::Reply;
+use crate::core::Reply;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +9,7 @@ pub struct BatchArgs {
     pub results: Vec<Reply>,
 }
 
-impl crate::SchemaInfo for BatchArgs {}
+impl crate::core::SchemaInfo for BatchArgs {}
 
 impl From<Vec<Reply>> for BatchArgs {
     fn from(results: Vec<Reply>) -> Self {

@@ -4,7 +4,7 @@ use super::{
     proc::RemoteProc,
     state::ClientState,
 };
-use crate::{
+use crate::core::{
     event::{AddrEventManager, EventManager},
     msg::{
         content::{

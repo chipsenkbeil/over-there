@@ -1,4 +1,4 @@
-use crate::reply::FileOpenedArgs;
+use crate::core::reply::FileOpenedArgs;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteFile {

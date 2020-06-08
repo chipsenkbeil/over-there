@@ -759,6 +759,7 @@ dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "over-there-auth 0.1.0-alpha.1",
  "over-there-crypto 0.1.0-alpha.1",
+ "over-there-derive 0.1.0-alpha.1",
  "over-there-utils 0.1.0-alpha.1",
  "over-there-wire 0.1.0-alpha.1",
  "rand 0.7.3 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -1,7 +1,7 @@
 mod tcp;
 mod udp;
 
-use crate::Msg;
+use crate::core::Msg;
 
 use log::{error, trace, warn};
 use over_there_wire::InboundWireError;

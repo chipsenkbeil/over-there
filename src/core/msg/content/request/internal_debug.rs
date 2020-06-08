@@ -8,4 +8,4 @@ pub struct InternalDebugArgs {
     pub input: Vec<u8>,
 }
 
-impl crate::SchemaInfo for InternalDebugArgs {}
+impl crate::core::SchemaInfo for InternalDebugArgs {}
