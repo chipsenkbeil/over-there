@@ -2,6 +2,7 @@ mod builder;
 pub mod format;
 mod opts;
 
+use crate::core::{ConnectedClient, Content, RemoteProc, Reply, SchemaInfo};
 use format::FormatOption;
 use log::info;
 use opts::{
@@ -9,9 +10,6 @@ use opts::{
     schema::{SchemaSubcommand, SchemaType},
     server::ServerCommand,
     Command,
-};
-use crate::core::{
-    ConnectedClient, Content, RemoteProc, Reply, SchemaInfo,
 };
 use std::error::Error;
 use std::io;
