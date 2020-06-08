@@ -14,7 +14,6 @@ keywords = ["cli", "network", "client", "server", "remote"]
 [workspace]
 members = [
     "over-there-auth",
-    "over-there-core",
     "over-there-crypto",
     "over-there-derive",
     "over-there-utils",
@@ -27,23 +26,29 @@ lto = true
 codegen-units = 1
 
 [features]
-default = ["single-threaded", "format-json"]
+default = ["single-threaded"]
 single-threaded = ["tokio/dns", "tokio/rt-core"]
 multi-threaded = ["tokio/dns", "tokio/rt-threaded"]
-format-json = ["serde_json"]
 format-sexpression = ["serde-lexpr"]
 
 [dependencies]
-log = "0.4.8"
+chrono = { version = "0.4.10", features = ["serde"] }
+derive_builder = "0.9.0"
 env_logger = "0.7.1"
+futures = "0.3.4"
+jsonpath_lib = "0.2.4"
+log = "0.4.8"
+schemars = "0.7.6"
+serde = { version = "1.0.111", features = ["derive"] }
+serde_bytes = "0.11.3"
+serde_cbor = "0.11.1"
+serde_json = { version = "1.0.48" }
+serde-lexpr = { version = "0.1.1", optional = true }
 strum = "0.17.1"
 strum_macros = "0.17.1"
-serde = { version = "1.0.111", features = ["derive"] }
-serde_json = { version = "1.0.48", optional = true }
-serde-lexpr = { version = "0.1.1", optional = true }
+rand = "0.7.3"
 over-there-auth = { path = "./over-there-auth", version = "0.1.0-alpha.1" }
 over-there-crypto = { path = "./over-there-crypto", version = "0.1.0-alpha.1" }
-over-there-core = { path = "./over-there-core", version = "0.1.0-alpha.1" }
 over-there-utils = { path = "./over-there-utils", version = "0.1.0-alpha.1" }
 over-there-wire = { path = "./over-there-wire", version = "0.1.0-alpha.1" }
 
@@ -54,9 +59,16 @@ default-features = false # Must exclude color as it pulls in a conflicting
                          # and other dependencies using 1.0.5
 features = [ "suggestions", "derive", "std", "cargo", "wrap_help" ]
 
+[dependencies.derive_more]
+version = "0.99.3"
+default-features = false
+features = ["display"]
+
 [dependencies.tokio]
 version = "0.2.13"
-default-features = false
+features = ["fs", "io-util", "macros", "process", "sync", "time", "tcp", "udp"]
 
 [dev-dependencies]
+tokio = { version = "0.2.13", features = ["test-util"] }
+env_logger = "0.7.1"
 tempfile = "3.1.0"

@@ -1,6 +1,6 @@
-mod scenarios;
-mod setup;
+mod core_common;
 
+use core_common::{scenarios, setup};
 use setup::TestMode;
 
 #[tokio::test]
