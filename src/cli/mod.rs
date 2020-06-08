@@ -10,7 +10,7 @@ use opts::{
     server::ServerCommand,
     Command,
 };
-use over_there_core::{
+use crate::core::{
     ConnectedClient, Content, RemoteProc, Reply, SchemaInfo,
 };
 use std::error::Error;
@@ -512,9 +512,9 @@ async fn run_schema(cmd: SchemaSubcommand) -> Result<(), Box<dyn Error>> {
         SchemaSubcommand::Info(info) => println!(
             "{}",
             match info.schema_type {
-                SchemaType::Content => over_there_core::Content::schema(),
-                SchemaType::Request => over_there_core::Request::schema(),
-                SchemaType::Reply => over_there_core::Reply::schema(),
+                SchemaType::Content => crate::core::Content::schema(),
+                SchemaType::Request => crate::core::Request::schema(),
+                SchemaType::Reply => crate::core::Reply::schema(),
                 SchemaType::HeartbeatRequest => {
                     String::from("{}")
                 }
@@ -522,163 +522,163 @@ async fn run_schema(cmd: SchemaSubcommand) -> Result<(), Box<dyn Error>> {
                     String::from("{}")
                 }
                 SchemaType::CapabilitiesRequest => {
-                    over_there_core::request::CapabilitiesArgs::schema()
+                    crate::core::request::CapabilitiesArgs::schema()
                 }
                 SchemaType::CreateDirRequest => {
-                    over_there_core::request::CreateDirArgs::schema()
+                    crate::core::request::CreateDirArgs::schema()
                 }
                 SchemaType::RenameDirRequest => {
-                    over_there_core::request::RenameDirArgs::schema()
+                    crate::core::request::RenameDirArgs::schema()
                 }
                 SchemaType::RemoveDirRequest => {
-                    over_there_core::request::RemoveDirArgs::schema()
+                    crate::core::request::RemoveDirArgs::schema()
                 }
                 SchemaType::ListDirContentsRequest => {
-                    over_there_core::request::ListDirContentsArgs::schema()
+                    crate::core::request::ListDirContentsArgs::schema()
                 }
                 SchemaType::OpenFileRequest => {
-                    over_there_core::request::OpenFileArgs::schema()
+                    crate::core::request::OpenFileArgs::schema()
                 }
                 SchemaType::CloseFileRequest => {
-                    over_there_core::request::CloseFileArgs::schema()
+                    crate::core::request::CloseFileArgs::schema()
                 }
                 SchemaType::RenameUnopenedFileRequest => {
-                    over_there_core::request::RenameUnopenedFileArgs::schema()
+                    crate::core::request::RenameUnopenedFileArgs::schema()
                 }
                 SchemaType::RenameFileRequest => {
-                    over_there_core::request::RenameFileArgs::schema()
+                    crate::core::request::RenameFileArgs::schema()
                 }
                 SchemaType::RemoveUnopenedFileRequest => {
-                    over_there_core::request::RemoveUnopenedFileArgs::schema()
+                    crate::core::request::RemoveUnopenedFileArgs::schema()
                 }
                 SchemaType::RemoveFileRequest => {
-                    over_there_core::request::RemoveFileArgs::schema()
+                    crate::core::request::RemoveFileArgs::schema()
                 }
                 SchemaType::ReadFileRequest => {
-                    over_there_core::request::ReadFileArgs::schema()
+                    crate::core::request::ReadFileArgs::schema()
                 }
                 SchemaType::WriteFileRequest => {
-                    over_there_core::request::WriteFileArgs::schema()
+                    crate::core::request::WriteFileArgs::schema()
                 }
                 SchemaType::ExecProcRequest => {
-                    over_there_core::request::ExecProcArgs::schema()
+                    crate::core::request::ExecProcArgs::schema()
                 }
                 SchemaType::WriteProcStdinRequest => {
-                    over_there_core::request::WriteProcStdinArgs::schema()
+                    crate::core::request::WriteProcStdinArgs::schema()
                 }
                 SchemaType::ReadProcStdoutRequest => {
-                    over_there_core::request::ReadProcStdoutArgs::schema()
+                    crate::core::request::ReadProcStdoutArgs::schema()
                 }
                 SchemaType::ReadProcStderrRequest => {
-                    over_there_core::request::ReadProcStderrArgs::schema()
+                    crate::core::request::ReadProcStderrArgs::schema()
                 }
                 SchemaType::KillProcRequest => {
-                    over_there_core::request::KillProcArgs::schema()
+                    crate::core::request::KillProcArgs::schema()
                 }
                 SchemaType::ReadProcStatusRequest => {
-                    over_there_core::request::ReadProcStatusArgs::schema()
+                    crate::core::request::ReadProcStatusArgs::schema()
                 }
                 SchemaType::SequenceRequest => {
-                    over_there_core::request::SequenceArgs::schema()
+                    crate::core::request::SequenceArgs::schema()
                 }
                 SchemaType::BatchRequest => {
-                    over_there_core::request::BatchArgs::schema()
+                    crate::core::request::BatchArgs::schema()
                 }
                 SchemaType::ForwardRequest => {
-                    over_there_core::request::ForwardArgs::schema()
+                    crate::core::request::ForwardArgs::schema()
                 }
                 SchemaType::CustomRequest => {
-                    over_there_core::request::CustomArgs::schema()
+                    crate::core::request::CustomArgs::schema()
                 }
                 SchemaType::InternalDebugRequest => {
-                    over_there_core::request::InternalDebugArgs::schema()
+                    crate::core::request::InternalDebugArgs::schema()
                 }
                 SchemaType::HeartbeatReply => {
                     String::from("{}")
                 }
                 SchemaType::VersionReply => {
-                    over_there_core::reply::VersionArgs::schema()
+                    crate::core::reply::VersionArgs::schema()
                 }
                 SchemaType::CapabilitiesReply => {
-                    over_there_core::reply::CapabilitiesArgs::schema()
+                    crate::core::reply::CapabilitiesArgs::schema()
                 }
                 SchemaType::CreateDirReply => {
-                    over_there_core::reply::DirCreatedArgs::schema()
+                    crate::core::reply::DirCreatedArgs::schema()
                 }
                 SchemaType::RenameDirReply => {
-                    over_there_core::reply::DirRenamedArgs::schema()
+                    crate::core::reply::DirRenamedArgs::schema()
                 }
                 SchemaType::RemoveDirReply => {
-                    over_there_core::reply::DirRemovedArgs::schema()
+                    crate::core::reply::DirRemovedArgs::schema()
                 }
                 SchemaType::ListDirContentsReply => {
-                    over_there_core::reply::DirContentsListArgs::schema()
+                    crate::core::reply::DirContentsListArgs::schema()
                 }
                 SchemaType::OpenFileReply => {
-                    over_there_core::reply::FileOpenedArgs::schema()
+                    crate::core::reply::FileOpenedArgs::schema()
                 }
                 SchemaType::CloseFileReply => {
-                    over_there_core::reply::FileClosedArgs::schema()
+                    crate::core::reply::FileClosedArgs::schema()
                 }
                 SchemaType::RenameUnopenedFileReply => {
-                    over_there_core::reply::UnopenedFileRenamedArgs::schema()
+                    crate::core::reply::UnopenedFileRenamedArgs::schema()
                 }
                 SchemaType::RenameFileReply => {
-                    over_there_core::reply::FileRenamedArgs::schema()
+                    crate::core::reply::FileRenamedArgs::schema()
                 }
                 SchemaType::RemoveUnopenedFileReply => {
-                    over_there_core::reply::UnopenedFileRemovedArgs::schema()
+                    crate::core::reply::UnopenedFileRemovedArgs::schema()
                 }
                 SchemaType::RemoveFileReply => {
-                    over_there_core::reply::FileRemovedArgs::schema()
+                    crate::core::reply::FileRemovedArgs::schema()
                 }
                 SchemaType::ReadFileReply => {
-                    over_there_core::reply::FileContentsArgs::schema()
+                    crate::core::reply::FileContentsArgs::schema()
                 }
                 SchemaType::WriteFileReply => {
-                    over_there_core::reply::FileWrittenArgs::schema()
+                    crate::core::reply::FileWrittenArgs::schema()
                 }
                 SchemaType::ExecProcReply => {
-                    over_there_core::reply::ProcStartedArgs::schema()
+                    crate::core::reply::ProcStartedArgs::schema()
                 }
                 SchemaType::WriteProcStdinReply => {
-                    over_there_core::reply::ProcStdinWrittenArgs::schema()
+                    crate::core::reply::ProcStdinWrittenArgs::schema()
                 }
                 SchemaType::ReadProcStdoutReply => {
-                    over_there_core::reply::ProcStdoutContentsArgs::schema()
+                    crate::core::reply::ProcStdoutContentsArgs::schema()
                 }
                 SchemaType::ReadProcStderrReply => {
-                    over_there_core::reply::ProcStderrContentsArgs::schema()
+                    crate::core::reply::ProcStderrContentsArgs::schema()
                 }
                 SchemaType::KillProcReply => {
-                    over_there_core::reply::ProcKilledArgs::schema()
+                    crate::core::reply::ProcKilledArgs::schema()
                 }
                 SchemaType::ReadProcStatusReply => {
-                    over_there_core::reply::ProcStatusArgs::schema()
+                    crate::core::reply::ProcStatusArgs::schema()
                 }
                 SchemaType::GenericError => {
-                    over_there_core::reply::GenericErrorArgs::schema()
+                    crate::core::reply::GenericErrorArgs::schema()
                 }
                 SchemaType::IoError => {
-                    over_there_core::reply::IoErrorArgs::schema()
+                    crate::core::reply::IoErrorArgs::schema()
                 }
                 SchemaType::FileSigChanged => {
-                    over_there_core::reply::FileSigChangedArgs::schema()
+                    crate::core::reply::FileSigChangedArgs::schema()
                 }
                 SchemaType::SequenceReply => {
-                    over_there_core::reply::SequenceArgs::schema()
+                    crate::core::reply::SequenceArgs::schema()
                 }
                 SchemaType::BatchReply => {
-                    over_there_core::reply::BatchArgs::schema()
+                    crate::core::reply::BatchArgs::schema()
                 }
                 SchemaType::ForwardReply => {
-                    over_there_core::reply::ForwardArgs::schema()
+                    crate::core::reply::ForwardArgs::schema()
                 }
                 SchemaType::CustomReply => {
-                    over_there_core::reply::CustomArgs::schema()
+                    crate::core::reply::CustomArgs::schema()
                 }
                 SchemaType::InternalDebugReply => {
-                    over_there_core::reply::InternalDebugArgs::schema()
+                    crate::core::reply::InternalDebugArgs::schema()
                 }
             }
         ),

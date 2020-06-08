@@ -3,7 +3,7 @@ mod crypto;
 
 use crate::cli::opts::{client::ClientCommand, server::ServerCommand, types};
 use log::debug;
-use over_there_core::{
+use crate::core::{
     ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder, Transport,
 };
 use over_there_wire::{Authenticator, Bicrypter};

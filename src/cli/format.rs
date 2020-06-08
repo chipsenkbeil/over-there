@@ -1,4 +1,4 @@
-use over_there_core::Content;
+use crate::core::Content;
 use serde::Serialize;
 use strum_macros::{AsRefStr, EnumString, EnumVariantNames};
 
