@@ -4,9 +4,11 @@ use over_there::{
         self, ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder,
         Transport,
     },
-    transport::auth::Sha256Authenticator,
+    transport::{
+        auth::Sha256Authenticator,
+        crypto::{self, Aes256GcmBicrypter},
+    },
 };
-use over_there_crypto::{self as crypto, Aes256GcmBicrypter};
 use std::time::Duration;
 
 pub enum TestMode {

@@ -2,7 +2,7 @@ pub mod decoder;
 
 use crate::transport::{auth::Verifier, wire::packet::Packet};
 use decoder::Decoder;
-use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
+use crate::transport::crypto::{AssociatedData, CryptError, Decrypter, Nonce};
 use over_there_derive::Error;
 use std::time::Duration;
 
@@ -147,7 +147,7 @@ mod tests {
         output::encoder::{EncodeArgs, Encoder},
         packet::{PacketEncryption, PacketType},
     };
-    use over_there_crypto::NoopBicrypter;
+    use crate::transport::crypto::NoopBicrypter;
     use std::time::Duration;
 
     fn new_processor() -> InputProcessor<NoopAuthenticator, NoopBicrypter> {
@@ -366,7 +366,7 @@ mod tests {
     #[cfg(test)]
     mod crypt {
         use super::*;
-        use over_there_crypto::{CryptError, Decrypter, Encrypter};
+        use crate::transport::crypto::{CryptError, Decrypter, Encrypter};
 
         #[derive(Clone)]
         struct BadDecrypter;
@@ -390,8 +390,8 @@ mod tests {
 
             fn new_encrypt_associated_data(
                 &self,
-            ) -> over_there_crypto::AssociatedData {
-                over_there_crypto::AssociatedData::None
+            ) -> crate::transport::crypto::AssociatedData {
+                crate::transport::crypto::AssociatedData::None
             }
         }
 

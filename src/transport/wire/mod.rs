@@ -5,7 +5,7 @@ pub mod tcp;
 pub mod udp;
 
 use crate::transport::auth::{self as auth, Authenticator, Signer, Verifier};
-use over_there_crypto::{self as crypto, Bicrypter, Decrypter, Encrypter};
+use crate::transport::crypto::{self as crypto, Bicrypter, Decrypter, Encrypter};
 use over_there_derive::Error;
 use std::io;
 use std::net::SocketAddr;

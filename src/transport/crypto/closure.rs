@@ -1,4 +1,4 @@
-use crate::{AssociatedData, CryptError, Decrypter, Encrypter};
+use super::{AssociatedData, CryptError, Decrypter, Encrypter};
 
 #[derive(Clone)]
 pub struct ClosureEncrypter<F>
@@ -68,8 +68,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::super::nonce;
     use super::*;
-    use crate::nonce;
 
     #[test]
     fn closure_encrypter_encrypt_should_return_a_copy_of_input_data() {

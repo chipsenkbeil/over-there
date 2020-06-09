@@ -271,7 +271,7 @@ impl Default for Encoder {
 mod tests {
     use super::*;
     use crate::transport::auth::NoopAuthenticator;
-    use over_there_crypto::{nonce, Nonce};
+    use crate::transport::crypto::{nonce, Nonce};
 
     #[test]
     fn fails_if_max_packet_size_is_too_low() {

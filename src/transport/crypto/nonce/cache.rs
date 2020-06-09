@@ -1,5 +1,7 @@
-use super::AssociatedData;
-use crate::{Bicrypter, CryptError, Decrypter, Encrypter};
+use super::{
+    super::{Bicrypter, CryptError, Decrypter, Encrypter},
+    AssociatedData,
+};
 use lru::LruCache;
 use std::sync::{Arc, RwLock};
 
@@ -83,9 +85,8 @@ impl<T: Bicrypter> Decrypter for NonceCacheBicrypter<T> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::nonce::{self, Nonce};
     use super::*;
-    use crate::nonce::{self, Nonce};
-    use crate::{AssociatedData, CryptError};
 
     #[derive(Clone)]
     struct StubBicrypter(

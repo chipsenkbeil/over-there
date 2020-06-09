@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod crypto;
 pub mod net;
 mod wire;
 
@@ -25,4 +26,4 @@ pub use wire::{
 
 // Re-export the auth and crypto interfaces
 pub use auth::{Authenticator, Signer, Verifier};
-pub use over_there_crypto::{self as crypto, Bicrypter, Decrypter, Encrypter};
+pub use crypto::{Bicrypter, Decrypter, Encrypter};

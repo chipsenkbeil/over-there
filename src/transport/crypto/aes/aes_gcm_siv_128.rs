@@ -1,38 +1,38 @@
-use crate::{
-    key::Key256Bits,
+use super::super::{
+    key::{self, Key128Bits},
     nonce::{self, NonceSize},
     AssociatedData, Bicrypter, CryptError, Decrypter, Encrypter,
 };
 use aead::generic_array::GenericArray;
 use aead::{Aead, NewAead};
-use aes_gcm::Aes256Gcm;
+use aes_gcm_siv::Aes128GcmSiv;
 
 #[derive(Clone)]
-pub struct Aes256GcmBicrypter {
-    inner: Aes256Gcm,
+pub struct Aes128GcmSivBicrypter {
+    inner: Aes128GcmSiv,
     nonce_size: NonceSize,
 }
 
 /// NOTE: This is purely for derive_builder and should not be used externally
-impl Default for Aes256GcmBicrypter {
+impl Default for Aes128GcmSivBicrypter {
     fn default() -> Self {
-        Self::new(&crate::key::new_256bit_key())
+        Self::new(&key::new_128bit_key())
     }
 }
 
-impl Aes256GcmBicrypter {
-    pub fn new(key: &Key256Bits) -> Self {
+impl Aes128GcmSivBicrypter {
+    pub fn new(key: &Key128Bits) -> Self {
         let key = GenericArray::clone_from_slice(key);
-        Aes256GcmBicrypter {
-            inner: Aes256Gcm::new(key),
+        Aes128GcmSivBicrypter {
+            inner: Aes128GcmSiv::new(key),
             nonce_size: NonceSize::Nonce96Bits,
         }
     }
 }
 
-impl Bicrypter for Aes256GcmBicrypter {}
+impl Bicrypter for Aes128GcmSivBicrypter {}
 
-impl Encrypter for Aes256GcmBicrypter {
+impl Encrypter for Aes128GcmSivBicrypter {
     fn encrypt(
         &self,
         buffer: &[u8],
@@ -53,7 +53,7 @@ impl Encrypter for Aes256GcmBicrypter {
     }
 }
 
-impl Decrypter for Aes256GcmBicrypter {
+impl Decrypter for Aes128GcmSivBicrypter {
     fn decrypt(
         &self,
         buffer: &[u8],
@@ -72,13 +72,11 @@ impl Decrypter for Aes256GcmBicrypter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::key;
-    use crate::nonce::{self, Nonce};
-    use crate::{AssociatedData, CryptError, Decrypter, Encrypter};
+    use nonce::Nonce;
 
     #[test]
     fn encrypt_should_fail_if_no_nonce_provided() {
-        let bicrypter = Aes256GcmBicrypter::new(&key::new_256bit_key());
+        let bicrypter = Aes128GcmSivBicrypter::new(&key::new_128bit_key());
         let buffer = vec![1, 2, 3];
         let nonce = AssociatedData::None;
 
@@ -91,7 +89,7 @@ mod tests {
 
     #[test]
     fn decrypt_should_fail_if_no_nonce_provided() {
-        let bicrypter = Aes256GcmBicrypter::new(&key::new_256bit_key());
+        let bicrypter = Aes128GcmSivBicrypter::new(&key::new_128bit_key());
         let buffer = vec![1, 2, 3];
         let nonce = AssociatedData::None;
 
@@ -105,7 +103,7 @@ mod tests {
     #[test]
     fn encrypt_should_fail_if_nonce_is_wrong_size() {
         // Uses 96-bit nonce
-        let bicrypter = Aes256GcmBicrypter::new(&key::new_256bit_key());
+        let bicrypter = Aes128GcmSivBicrypter::new(&key::new_128bit_key());
         let buffer = vec![1, 2, 3];
         let nonce = AssociatedData::Nonce(Nonce::Nonce128Bits(
             nonce::new_128bit_nonce(),
@@ -121,7 +119,7 @@ mod tests {
     #[test]
     fn decrypt_should_fail_if_nonce_is_wrong_size() {
         // Uses 96-bit nonce
-        let bicrypter = Aes256GcmBicrypter::new(&key::new_256bit_key());
+        let bicrypter = Aes128GcmSivBicrypter::new(&key::new_128bit_key());
         let buffer = vec![1, 2, 3];
         let nonce = AssociatedData::Nonce(Nonce::Nonce128Bits(
             nonce::new_128bit_nonce(),
@@ -136,7 +134,7 @@ mod tests {
 
     #[test]
     fn can_encrypt_and_decrypt() {
-        let bicrypter = Aes256GcmBicrypter::new(&key::new_256bit_key());
+        let bicrypter = Aes128GcmSivBicrypter::new(&key::new_128bit_key());
 
         let plaintext = b"some message";
         let nonce = nonce::new_96bit_nonce();

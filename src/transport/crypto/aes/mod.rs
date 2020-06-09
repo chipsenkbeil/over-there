@@ -15,7 +15,7 @@ pub use aes_siv_256::Aes256SivBicrypter;
 use over_there_derive::Error;
 
 #[derive(Debug, Error)]
-pub enum AeadError {
+pub enum AesError {
     /// Contains generic AED error
     Generic(aead::Error),
 }
