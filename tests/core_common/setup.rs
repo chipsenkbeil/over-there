@@ -1,9 +1,11 @@
 use log::debug;
-use over_there::core::{
-    self, ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder,
-    Transport,
+use over_there::{
+    core::{
+        self, ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder,
+        Transport,
+    },
+    transport::auth::Sha256Authenticator,
 };
-use over_there_auth::Sha256Authenticator;
 use over_there_crypto::{self as crypto, Aes256GcmBicrypter};
 use std::time::Duration;
 

@@ -13,7 +13,6 @@ keywords = ["cli", "network", "client", "server", "remote"]
 
 [workspace]
 members = [
-    "over-there-auth",
     "over-there-crypto",
     "over-there-derive",
     "over-there-utils",
@@ -36,18 +35,20 @@ derive_builder = "0.9.0"
 env_logger = "0.7.1"
 futures = "0.3.4"
 futures-io = "0.3.4"
+hmac = "0.7.1"
 jsonpath_lib = "0.2.4"
 log = "0.4.8"
 rand = "0.7.3"
 schemars = "0.7.6"
 serde = { version = "1.0.111", features = ["derive"] }
+serde-big-array = "0.2.0"
 serde_bytes = "0.11.3"
 serde_cbor = "0.11.1"
 serde_json = { version = "1.0.48" }
 serde-lexpr = { version = "0.1.1", optional = true }
+sha2 = "0.8.1"
 strum = "0.17.1"
 strum_macros = "0.17.1"
-over-there-auth = { path = "./over-there-auth", version = "0.1.0-alpha.1" }
 over-there-crypto = { path = "./over-there-crypto", version = "0.1.0-alpha.1" }
 over-there-utils = { path = "./over-there-utils", version = "0.1.0-alpha.1" }
 over-there-derive = { path = "./over-there-derive", version = "0.1.0-alpha.1" }

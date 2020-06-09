@@ -1,5 +1,5 @@
-mod auth;
-pub use auth::{
+mod impls;
+pub use impls::{
     Authenticator, ClosureSigner, ClosureVerifier, NoopAuthenticator,
     Sha256Authenticator, Sha512Authenticator, Signer, Verifier,
 };

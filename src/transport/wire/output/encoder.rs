@@ -1,5 +1,7 @@
-use crate::wire::wire::packet::{Metadata, Packet, PacketEncryption, PacketType};
-use over_there_auth::Signer;
+use crate::transport::{
+    auth::Signer,
+    wire::packet::{Metadata, Packet, PacketEncryption, PacketType},
+};
 use over_there_derive::Error;
 use std::collections::HashMap;
 
@@ -268,7 +270,7 @@ impl Default for Encoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use over_there_auth::NoopAuthenticator;
+    use crate::transport::auth::NoopAuthenticator;
     use over_there_crypto::{nonce, Nonce};
 
     #[test]

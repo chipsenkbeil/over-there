@@ -1,8 +1,7 @@
 pub mod decoder;
 
-use crate::wire::wire::packet::Packet;
+use crate::transport::{auth::Verifier, wire::packet::Packet};
 use decoder::Decoder;
-use over_there_auth::Verifier;
 use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
 use over_there_derive::Error;
 use std::time::Duration;
@@ -143,11 +142,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wire::wire::{
+    use crate::transport::auth::NoopAuthenticator;
+    use crate::transport::wire::{
         output::encoder::{EncodeArgs, Encoder},
         packet::{PacketEncryption, PacketType},
     };
-    use over_there_auth::NoopAuthenticator;
     use over_there_crypto::NoopBicrypter;
     use std::time::Duration;
 

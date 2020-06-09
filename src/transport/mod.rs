@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod net;
 mod wire;
 
@@ -10,7 +11,7 @@ pub mod constants {
 
 // Export errors
 pub use wire::{
-    EncoderError, DecoderError, InboundWireError, InputProcessorError,
+    DecoderError, EncoderError, InboundWireError, InputProcessorError,
     OutboundWireError, OutputProcessorError,
 };
 
@@ -23,5 +24,5 @@ pub use wire::{
 };
 
 // Re-export the auth and crypto interfaces
-pub use over_there_auth::{self as auth, Authenticator, Signer, Verifier};
+pub use auth::{Authenticator, Signer, Verifier};
 pub use over_there_crypto::{self as crypto, Bicrypter, Decrypter, Encrypter};

@@ -91,20 +91,19 @@ impl TryFrom<&[u8]> for Digest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate as sign;
 
     #[test]
     fn verify_should_correctly_use_underlying_sha_function() {
         let key = b"some key";
         let msg = b"some message";
 
-        let digest_arr = sign::sign_sha256(key, msg);
+        let digest_arr = super::super::sign_sha256(key, msg);
         let digest = Digest::from(digest_arr);
         assert!(!digest.verify(b"bad key", msg), "Bad key succeeded");
         assert!(!digest.verify(key, b"bad msg"), "Bad message succeeded");
         assert!(digest.verify(key, msg), "Failed to verify legit message");
 
-        let digest_arr = sign::sign_sha512(key, msg);
+        let digest_arr = super::super::sign_sha512(key, msg);
         let digest = Digest::from(digest_arr);
         assert!(!digest.verify(b"bad key", msg), "Bad key succeeded");
         assert!(!digest.verify(key, b"bad msg"), "Bad message succeeded");

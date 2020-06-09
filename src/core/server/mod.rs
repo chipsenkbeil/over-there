@@ -10,7 +10,7 @@ pub use listening::ListeningServer;
 use crate::core::{event::AddrEventManager, Msg, Transport};
 use derive_builder::Builder;
 use log::error;
-use crate::wire::{Authenticator, Bicrypter, NetTransmission, Wire};
+use crate::transport::{Authenticator, Bicrypter, NetTransmission, Wire};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,7 +30,7 @@ where
     B: Bicrypter,
 {
     /// TTL to collect all packets for a msg
-    #[builder(default = "crate::wire::constants::DEFAULT_TTL")]
+    #[builder(default = "crate::transport::constants::DEFAULT_TTL")]
     packet_ttl: Duration,
 
     /// Used to sign & verify msgs

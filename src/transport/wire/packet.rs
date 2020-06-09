@@ -1,4 +1,4 @@
-use over_there_auth::Digest;
+use crate::transport::auth::Digest;
 use over_there_crypto::{AssociatedData, Nonce};
 use serde::{Deserialize, Serialize};
 

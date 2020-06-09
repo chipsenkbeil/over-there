@@ -1,3 +1,3 @@
 pub mod cli;
 pub mod core;
-mod wire;
+pub mod transport;
