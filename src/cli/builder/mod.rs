@@ -6,7 +6,7 @@ use log::debug;
 use crate::core::{
     ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder, Transport,
 };
-use over_there_wire::{Authenticator, Bicrypter};
+use crate::wire::{Authenticator, Bicrypter};
 use std::io;
 use tokio::net;
 
@@ -200,7 +200,7 @@ where
     A: Authenticator + Send + Sync + Clone + Default + 'static,
     B: Bicrypter + Send + Sync + Clone + Default + 'static,
 {
-    let addrs = over_there_wire::net::make_addr_list(
+    let addrs = crate::wire::net::make_addr_list(
         cmd.addr.ip(),
         vec![cmd.addr.port()],
     );

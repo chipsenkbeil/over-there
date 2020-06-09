@@ -4,7 +4,7 @@ mod udp;
 use crate::core::Msg;
 
 use log::{error, trace, warn};
-use over_there_wire::InboundWireError;
+use crate::wire::InboundWireError;
 use std::net::SocketAddr;
 use tokio::{sync::mpsc, task};
 

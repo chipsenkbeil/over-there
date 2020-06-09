@@ -1,4 +1,4 @@
-use crate::{constants, wire::packet::Packet};
+use crate::wire::{constants, wire::packet::Packet};
 use over_there_derive::Error;
 use over_there_utils::TtlValue;
 use std::collections::HashMap;
@@ -150,7 +150,7 @@ impl Default for Decoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wire::packet::{Metadata, PacketEncryption, PacketType};
+    use crate::wire::wire::packet::{Metadata, PacketEncryption, PacketType};
 
     /// Make a packet with data; if last, mark as so with no nonce
     fn make_packet(

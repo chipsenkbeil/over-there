@@ -2,7 +2,7 @@ use super::AddrEventManager;
 use crate::core::Msg;
 
 use log::error;
-use over_there_wire::{
+use crate::wire::{
     Authenticator, Bicrypter, Decrypter, Encrypter, Signer,
     UdpSocketInboundWire, UdpSocketOutboundWire, Verifier, Wire,
 };

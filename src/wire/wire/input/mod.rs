@@ -1,6 +1,6 @@
 pub mod decoder;
 
-use crate::wire::packet::Packet;
+use crate::wire::wire::packet::Packet;
 use decoder::Decoder;
 use over_there_auth::Verifier;
 use over_there_crypto::{AssociatedData, CryptError, Decrypter, Nonce};
@@ -143,7 +143,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wire::{
+    use crate::wire::wire::{
         output::encoder::{EncodeArgs, Encoder},
         packet::{PacketEncryption, PacketType},
     };

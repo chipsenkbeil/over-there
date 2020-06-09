@@ -3,6 +3,7 @@ mod event;
 mod msg;
 mod server;
 
+pub use crate::wire::net;
 pub use client::{
     error::AskError,
     error::ExecAskError,

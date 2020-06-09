@@ -1,10 +1,10 @@
 use log::debug;
-use over_there_auth::Sha256Authenticator;
 use over_there::core::{
-    ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder, Transport,
+    self, ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder,
+    Transport,
 };
+use over_there_auth::Sha256Authenticator;
 use over_there_crypto::{self as crypto, Aes256GcmBicrypter};
-use over_there_wire::{self as wire};
 use std::time::Duration;
 
 pub enum TestMode {
@@ -56,7 +56,7 @@ async fn start_tcp_client_and_server() -> TestBench {
     let server = ServerBuilder::default()
         .authenticator(auth.clone())
         .bicrypter(bicrypter.clone())
-        .transport(Transport::Tcp(wire::net::make_local_ipv4_addr_list()))
+        .transport(Transport::Tcp(core::net::make_local_ipv4_addr_list()))
         .build()
         .expect("Failed to build server config")
         .cloneable_listen()
@@ -87,7 +87,7 @@ async fn start_udp_client_and_server() -> TestBench {
     let server = ServerBuilder::default()
         .authenticator(auth.clone())
         .bicrypter(bicrypter.clone())
-        .transport(Transport::Udp(wire::net::make_local_ipv4_addr_list()))
+        .transport(Transport::Udp(core::net::make_local_ipv4_addr_list()))
         .build()
         .expect("Failed to build server config")
         .listen()

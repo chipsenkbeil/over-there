@@ -1,6 +1,6 @@
 pub mod encoder;
 
-use crate::wire::packet::PacketEncryption;
+use crate::wire::wire::packet::PacketEncryption;
 use encoder::{Encoder, EncodeArgs};
 use over_there_auth::Signer;
 use over_there_crypto::{CryptError, Encrypter};
@@ -93,7 +93,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wire::packet::Packet;
+    use crate::wire::wire::packet::Packet;
     use over_there_auth::{ClosureSigner, Digest, NoopAuthenticator};
     use over_there_crypto::{ClosureEncrypter, NoopBicrypter};
 
