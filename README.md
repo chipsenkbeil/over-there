@@ -2,13 +2,31 @@
 
 Tool to enable software management and execution remotely from "over there."
 
+## Building deve version
+
+By default, the CLI feature is not included. This means that executing a
+normal build will not include the binary:
+
+```
+cargo build
+```
+
+Instead, the *cli* feature must be specified:
+
+```
+cargo build --features 'default cli'
+```
+
+We include the *default* feature to ensure all standard features are
+also included.
+
 ## Making a release
 
 See the following link about file size:
 https://stackoverflow.com/a/54842093
 
 ```
-cargo build --release --bin over-there
+cargo build --release --features 'default cli'
 strip target/release/over-there
 ```
 
@@ -16,7 +34,7 @@ strip target/release/over-there
 
 ```
 rustup target add x86_64-unknown-linux-musl
-cargo build --release --bin over-there --target=x86_64-unknown-linux-musl
+cargo build --release --target=x86_64-unknown-linux-musl --features 'default cli'
 ```
 
 ## Notes on running

@@ -21,6 +21,11 @@ default = ["single-threaded"]
 single-threaded = ["tokio/dns", "tokio/rt-core"]
 multi-threaded = ["tokio/dns", "tokio/rt-threaded"]
 format-sexpression = ["serde-lexpr"]
+cli = ["clap"]
+
+[[bin]]
+name = "over-there"
+required-features = ["cli"]
 
 [dependencies]
 aead = "0.2.0"
@@ -54,6 +59,7 @@ default-features = false # Must exclude color as it pulls in a conflicting
                          # version of termcolor (1.1) whereas env_logger
                          # and other dependencies using 1.0.5
 features = [ "suggestions", "derive", "std", "cargo", "wrap_help" ]
+optional = true
 
 [dependencies.derive_more]
 version = "0.99.7"
