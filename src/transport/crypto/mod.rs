@@ -18,18 +18,19 @@ pub use closure::{ClosureDecrypter, ClosureEncrypter};
 
 pub mod split;
 
-use over_there_derive::Error;
+use derive_more::{Display, Error};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum CryptError {
     /// Internal Error related to encryption occurred
-    EncryptFailed(String),
+    EncryptFailed(#[error(ignore)] String),
 
     /// Internal Error related to decryption occurred
-    DecryptFailed(String),
+    DecryptFailed(#[error(ignore)] String),
 
     /// Contains the nonce that was already used
+    #[display(fmt = "nonce:{:?}", nonce)]
     NonceAlreadyUsed { nonce: Vec<u8> },
 
     /// Contains size of nonce provided

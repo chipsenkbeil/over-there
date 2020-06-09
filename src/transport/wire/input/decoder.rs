@@ -1,14 +1,26 @@
 use crate::transport::{constants, wire::packet::Packet};
-use over_there_derive::Error;
 use crate::utils::TtlValue;
+use derive_more::{Display, Error};
 use std::collections::HashMap;
 use std::time::Duration;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum DecoderError {
-    PacketExists { id: u32, index: u32 },
-    PacketBeyondLastIndex { id: u32, index: u32 },
-    FinalPacketAlreadyExists { id: u32, index: u32 },
+    #[display(fmt = "id:{}, index:{}", id, index)]
+    PacketExists {
+        id: u32,
+        index: u32,
+    },
+    #[display(fmt = "id:{}, index:{}", id, index)]
+    PacketBeyondLastIndex {
+        id: u32,
+        index: u32,
+    },
+    #[display(fmt = "id:{}, index:{}", id, index)]
+    FinalPacketAlreadyExists {
+        id: u32,
+        index: u32,
+    },
     IncompletePacketCollection,
 }
 

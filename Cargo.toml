@@ -11,11 +11,6 @@ repository = "https://github.com/chipsenkbeil/over-there"
 categories = ["command-line-utilities"]
 keywords = ["cli", "network", "client", "server", "remote"]
 
-[workspace]
-members = [
-    "over-there-derive",
-]
-
 [profile.release]
 opt-level = 'z'
 lto = true
@@ -52,7 +47,6 @@ serde-lexpr = { version = "0.1.1", optional = true }
 sha2 = "0.8.1"
 strum = "0.17.1"
 strum_macros = "0.17.1"
-over-there-derive = { path = "./over-there-derive", version = "0.1.0-alpha.1" }
 
 [dependencies.clap]
 version = "3.0.0-beta.1"
@@ -62,9 +56,9 @@ default-features = false # Must exclude color as it pulls in a conflicting
 features = [ "suggestions", "derive", "std", "cargo", "wrap_help" ]
 
 [dependencies.derive_more]
-version = "0.99.3"
+version = "0.99.7"
 default-features = false
-features = ["display"]
+features = ["display", "error"]
 
 [dependencies.tokio]
 version = "0.2.13"

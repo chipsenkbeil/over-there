@@ -5,8 +5,10 @@ pub mod tcp;
 pub mod udp;
 
 use crate::transport::auth::{self as auth, Authenticator, Signer, Verifier};
-use crate::transport::crypto::{self as crypto, Bicrypter, Decrypter, Encrypter};
-use over_there_derive::Error;
+use crate::transport::crypto::{
+    self as crypto, Bicrypter, Decrypter, Encrypter,
+};
+use derive_more::{Display, Error};
 use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -129,7 +131,7 @@ where
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum InboundWireError {
     IO(io::Error),
     InputProcessor(InputProcessorError),
@@ -198,7 +200,7 @@ where
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum OutboundWireError {
     IO(io::Error),
     OutputProcessor(output::OutputProcessorError),

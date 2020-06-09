@@ -1,4 +1,4 @@
-use over_there_derive::Error;
+use derive_more::{Display, Error};
 use rand::{rngs::OsRng, RngCore};
 use std::io::{self, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -7,7 +7,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum LocalFileError {
     SigMismatch,
     IoError(io::Error),

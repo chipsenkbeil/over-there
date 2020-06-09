@@ -1,19 +1,25 @@
 use crate::core::{Reply, Request};
+use derive_more::{Display, Error};
 use jsonpath_lib as jsonpath;
-use over_there_derive::Error;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Represents an error that can occur when transforming request replyd on
 /// prior results from a sequential operation
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum TransformRequestError {
     RequestToJsonFailed(serde_json::Error),
     JsonToRequestFailed(serde_json::Error),
-    ExtractingReplyValueFailed(jsonpath::JsonPathError),
-    ReplyValueMissing { path: String },
-    ReplyValueNotScalar { path: String },
-    ReplacementFailed(jsonpath::JsonPathError),
+    #[display(fmt = "{:?}", _0)]
+    ExtractingReplyValueFailed(#[error(ignore)] jsonpath::JsonPathError),
+    ReplyValueMissing {
+        path: String,
+    },
+    ReplyValueNotScalar {
+        path: String,
+    },
+    #[display(fmt = "{:?}", _0)]
+    ReplacementFailed(#[error(ignore)] jsonpath::JsonPathError),
 }
 
 /// Represents request that will be transformed at runtime replyd on some

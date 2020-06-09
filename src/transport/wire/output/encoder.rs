@@ -2,7 +2,7 @@ use crate::transport::{
     auth::Signer,
     wire::packet::{Metadata, Packet, PacketEncryption, PacketType},
 };
-use over_there_derive::Error;
+use derive_more::{Display, Error};
 use std::collections::HashMap;
 
 pub(crate) struct EncodeArgs<'d, 's, S: Signer> {
@@ -23,7 +23,7 @@ pub(crate) struct EncodeArgs<'d, 's, S: Signer> {
     pub data: &'d [u8],
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum EncoderError {
     MaxPacketSizeTooSmall,
     FailedToEstimateDataSize,

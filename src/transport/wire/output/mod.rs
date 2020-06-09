@@ -1,11 +1,11 @@
 pub mod encoder;
 
-use crate::transport::{auth::Signer, wire::packet::PacketEncryption};
-use encoder::{EncodeArgs, Encoder};
 use crate::transport::crypto::{CryptError, Encrypter};
-use over_there_derive::Error;
+use crate::transport::{auth::Signer, wire::packet::PacketEncryption};
+use derive_more::{Display, Error};
+use encoder::{EncodeArgs, Encoder};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum OutputProcessorError {
     DecodePacket(serde_cbor::Error),
     EncodeData(encoder::EncoderError),
@@ -93,8 +93,8 @@ where
 mod tests {
     use super::*;
     use crate::transport::auth::{ClosureSigner, Digest, NoopAuthenticator};
-    use crate::transport::wire::packet::Packet;
     use crate::transport::crypto::{ClosureEncrypter, NoopBicrypter};
+    use crate::transport::wire::packet::Packet;
 
     fn new_processor(
         buffer_size: usize,

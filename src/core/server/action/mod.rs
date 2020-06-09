@@ -5,16 +5,16 @@ use crate::core::{
     LazilyTransformedRequest, Msg, MsgError, Reply, ReplyError, Request,
     TransformRequestError,
 };
+use derive_more::{Display, Error};
 use futures::future::{BoxFuture, FutureExt};
 use log::trace;
-use over_there_derive::Error;
 use std::collections::hash_map::Entry;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::{runtime::Handle, sync::mpsc};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum ActionError {
     MsgError(MsgError),
     RespondFailed,
@@ -377,7 +377,7 @@ fn route_and_execute(
     .boxed()
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 enum SequenceError {
     Abort,
     Transform(TransformRequestError),

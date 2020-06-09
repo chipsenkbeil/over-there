@@ -1,11 +1,12 @@
-use over_there_derive::Error;
+use derive_more::{Display, Error};
 use std::time::{Duration, SystemTime, SystemTimeError};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum Error {
-    Exec(Box<dyn std::error::Error>),
+    Exec(#[error(ignore)] Box<dyn std::error::Error>),
     SystemTime(SystemTimeError),
-    Timeout(Duration),
+    #[display(fmt = "{:?}", _0)]
+    Timeout(#[error(ignore)] Duration),
 }
 
 /// Invokes a function repeatedly until it yields Some(T); if a timeout is reached,

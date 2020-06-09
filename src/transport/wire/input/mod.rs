@@ -1,12 +1,12 @@
 pub mod decoder;
 
+use crate::transport::crypto::{AssociatedData, CryptError, Decrypter, Nonce};
 use crate::transport::{auth::Verifier, wire::packet::Packet};
 use decoder::Decoder;
-use crate::transport::crypto::{AssociatedData, CryptError, Decrypter, Nonce};
-use over_there_derive::Error;
+use derive_more::{Display, Error};
 use std::time::Duration;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum InputProcessorError {
     EncodePacket(serde_cbor::Error),
     UnableToVerifySignature,
@@ -143,11 +143,11 @@ where
 mod tests {
     use super::*;
     use crate::transport::auth::NoopAuthenticator;
+    use crate::transport::crypto::NoopBicrypter;
     use crate::transport::wire::{
         output::encoder::{EncodeArgs, Encoder},
         packet::{PacketEncryption, PacketType},
     };
-    use crate::transport::crypto::NoopBicrypter;
     use std::time::Duration;
 
     fn new_processor() -> InputProcessor<NoopAuthenticator, NoopBicrypter> {

@@ -2,11 +2,11 @@ pub mod content;
 
 use chrono::prelude::{DateTime, Utc};
 use content::{Content, Reply, Request};
-use over_there_derive::Error;
+use derive_more::{Display, Error};
 use rand::random;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Error)]
+#[derive(Debug, Display, Error)]
 pub enum MsgError {
     AssembleMsg(serde_cbor::Error),
     DisassembleMsg(serde_cbor::Error),
