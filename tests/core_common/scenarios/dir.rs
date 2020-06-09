@@ -1,4 +1,4 @@
-use over_there_core::ConnectedClient;
+use over_there::core::ConnectedClient;
 
 pub async fn async_test(mut client: ConnectedClient) {
     // Produce a new directory to work in

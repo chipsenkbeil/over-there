@@ -1,4 +1,4 @@
-use over_there_core::{
+use over_there::core::{
     request::CustomArgs, AskError, ConnectedClient, Request,
 };
 use std::time::Duration;

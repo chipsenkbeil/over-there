@@ -1,4 +1,4 @@
-use over_there_core::{ConnectedClient, ExecAskError, RemoteProc};
+use over_there::core::{ConnectedClient, ExecAskError, RemoteProc};
 use std::time::{Duration, Instant};
 
 const OUTPUT_TIMEOUT: Duration = Duration::from_millis(2500);

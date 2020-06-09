@@ -1,6 +1,6 @@
 use log::debug;
 use over_there_auth::Sha256Authenticator;
-use over_there_core::{
+use over_there::core::{
     ClientBuilder, ConnectedClient, ListeningServer, ServerBuilder, Transport,
 };
 use over_there_crypto::{self as crypto, Aes256GcmBicrypter};

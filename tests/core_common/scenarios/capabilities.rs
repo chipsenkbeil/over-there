@@ -1,4 +1,4 @@
-use over_there_core::{Capability, ConnectedClient};
+use over_there::core::{Capability, ConnectedClient};
 
 pub async fn async_test(mut client: ConnectedClient) {
     let capabilities = client
