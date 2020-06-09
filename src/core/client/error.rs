@@ -56,8 +56,8 @@ pub enum FileAskError {
 
     #[display(fmt = "IO Error: {}", "_0")]
     #[serde(
-        serialize_with = "over_there_utils::serializers::io_error::serialize",
-        deserialize_with = "over_there_utils::serializers::io_error::deserialize"
+        serialize_with = "crate::utils::serializers::io_error::serialize",
+        deserialize_with = "crate::utils::serializers::io_error::deserialize"
     )]
     IoError(io::Error),
 

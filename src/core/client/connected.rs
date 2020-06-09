@@ -16,7 +16,7 @@ use crate::core::{
     },
 };
 use log::{error, trace};
-use over_there_utils::Either;
+use crate::utils::Either;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;

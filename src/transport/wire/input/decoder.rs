@@ -1,6 +1,6 @@
 use crate::transport::{constants, wire::packet::Packet};
 use over_there_derive::Error;
-use over_there_utils::TtlValue;
+use crate::utils::TtlValue;
 use std::collections::HashMap;
 use std::time::Duration;
 

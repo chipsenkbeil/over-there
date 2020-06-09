@@ -14,7 +14,7 @@ use crate::core::{
 };
 use derive_builder::Builder;
 use log::warn;
-use over_there_utils::Either;
+use crate::utils::Either;
 use crate::transport::{
     self as wire, Authenticator, Bicrypter, NetTransmission, Wire,
 };
