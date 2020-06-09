@@ -37,6 +37,18 @@ rustup target add x86_64-unknown-linux-musl
 cargo build --release --target=x86_64-unknown-linux-musl --features 'default cli'
 ```
 
+Note that on Mac OS X you will need to install *musl-gcc*:
+
+```
+brew install FiloSottile/musl-cross/musl-cross
+```
+
+And to do a strip (on Mac), use the musl strip:
+
+```
+x86_64-linux-musl-gcc target/x86_64-unknown-linux-musl/release/over-there
+```
+
 ## Notes on running
 
 One obvious one is that you need to match server IPv4 with client IPv4 and
