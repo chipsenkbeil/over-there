@@ -4,7 +4,7 @@
 [actions]: https://github.com/chipsenkbeil/over-there/actions?query=branch%3Amaster
 [Latest Version]: https://img.shields.io/crates/v/over-there.svg
 [crates.io]: https://crates.io/crates/over-there
-[over-there: rustc 1.39+]: https://img.shields.io/badge/over-there-rustc_1.39+-lightgray.svg
+[over-there: rustc 1.39+]: https://img.shields.io/badge/over--there-rustc_1.39+-lightgray.svg
 [Rust 1.39]: https://blog.rust-lang.org/2019/11/07/Rust-1.39.0.html
 
 **Over There is a library and tool to enable software management and execution remotely from "over there."**
