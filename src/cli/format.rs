@@ -29,9 +29,7 @@ pub fn text_to_content(
         FormatOption::Json => Ok(serde_json::from_str(text)?),
 
         #[cfg(feature = "format-sexpression")]
-        FormatOption::Sexpression => {
-            Ok(serde_lexpr::from_str(&serializable_data)?)
-        }
+        FormatOption::Sexpression => Ok(serde_lexpr::from_str(&text)?),
 
         FormatOption::Human => Err("Cannot convert to human format".into()),
     }
