@@ -1,9 +1,11 @@
-# Over There &emsp; [![Build Status]][actions] [![Latest Version]][crates.io] [![over-there: rustc 1.39+]][Rust 1.39]
+# Over There &emsp; [![Build Status]][actions] [![Latest Version]][crates.io] [![Latest Docs]][docs.rs] [![over-there: rustc 1.39+]][Rust 1.39]
 
 [Build Status]: https://img.shields.io/github/workflow/status/chipsenkbeil/over-there/CI/master
 [actions]: https://github.com/chipsenkbeil/over-there/actions?query=branch%3Amaster
 [Latest Version]: https://img.shields.io/crates/v/over-there.svg
 [crates.io]: https://crates.io/crates/over-there
+[Latest Docs]: https://docs.rs/over-there/badge.svg
+[docs.rs]: https://docs.rs/over-there
 [over-there: rustc 1.39+]: https://img.shields.io/badge/over--there-rustc_1.39+-lightgray.svg
 [Rust 1.39]: https://blog.rust-lang.org/2019/11/07/Rust-1.39.0.html
 
@@ -21,11 +23,8 @@ cargo build
 Instead, the *cli* feature must be specified:
 
 ```
-cargo build --features 'default cli'
+cargo build --features 'cli'
 ```
-
-We include the *default* feature to ensure all standard features are
-also included.
 
 ## Making a release
 
@@ -33,7 +32,7 @@ See the following link about file size:
 https://stackoverflow.com/a/54842093
 
 ```
-cargo build --release --features 'default cli'
+cargo build --release --features 'cli'
 strip target/release/over-there
 ```
 
@@ -41,7 +40,7 @@ strip target/release/over-there
 
 ```
 rustup target add x86_64-unknown-linux-musl
-cargo build --release --target=x86_64-unknown-linux-musl --features 'default cli'
+cargo build --release --target=x86_64-unknown-linux-musl --features 'cli'
 ```
 
 Note that on Mac OS X you will need to install *musl-gcc*:
