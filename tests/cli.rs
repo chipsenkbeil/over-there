@@ -1,49 +1,12 @@
-use clap::derive::Clap;
+mod cli_common;
+
+use cli_common as cc;
 use std::time::Duration;
-
-fn setup() -> String {
-    env_logger::init();
-    String::from("127.0.0.1:60123")
-}
-
-async fn run(args: Vec<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let opts = over_there::cli::Opts::parse_from(args);
-    over_there::cli::run(opts).await
-}
-
-fn build_server_opts<'a>(
-    addr: &'a str,
-    transport: &'a str,
-    mut other_opts: Vec<&'a str>,
-) -> Vec<&'a str> {
-    let mut opts = vec!["over-there", "server", addr, "-t", transport];
-    opts.append(&mut other_opts);
-    opts
-}
-
-fn build_client_opts<'a>(
-    addr: &'a str,
-    transport: &'a str,
-    mut other_opts: Vec<&'a str>,
-    output_path: &'a str,
-) -> Vec<&'a str> {
-    let mut opts = vec![
-        "over-there",
-        "client",
-        addr,
-        "-t",
-        transport,
-        "--redirect-stdout",
-        output_path,
-    ];
-    opts.append(&mut other_opts);
-    opts
-}
 
 #[tokio::test]
 #[ignore]
 async fn test_tcp_client_server_multiple_msgs() {
-    let addr_str = setup();
+    let addr_str = cc::setup();
     let output_file_path = tempfile::NamedTempFile::new()
         .expect("Failed to create temporary file")
         .path()
@@ -52,7 +15,7 @@ async fn test_tcp_client_server_multiple_msgs() {
 
     tokio::select! {
         // Server execution
-        _ = run(build_server_opts(
+        _ = cc::run(cc::build_server_opts(
                 addr_str.as_str(),
                 "tcp",
                 vec![],
@@ -66,7 +29,7 @@ async fn test_tcp_client_server_multiple_msgs() {
             tokio::time::delay_for(Duration::from_millis(100)).await;
 
             // Communicate to server using client
-            run(build_client_opts(
+            cc::run(cc::build_client_opts(
                 addr_str.as_str(),
                 "tcp",
                 vec!["exec", "echo", "test"],
@@ -88,7 +51,7 @@ async fn test_tcp_client_server_multiple_msgs() {
                 .expect("Failed to clear file");
 
             // On TCP issue, this would stall
-            run(build_client_opts(
+            cc::run(cc::build_client_opts(
                 addr_str.as_str(),
                 "tcp",
                 vec!["exec", "echo", "test2"],

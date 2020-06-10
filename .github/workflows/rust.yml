@@ -22,9 +22,9 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --all-features --verbose
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --all-features --verbose
   osx:
     runs-on: macos-latest
     steps:
@@ -37,6 +37,6 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --all-features --verbose
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --all-features --verbose
