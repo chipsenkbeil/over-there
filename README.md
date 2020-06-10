@@ -1,8 +1,15 @@
-# Over There
+# Over There &emsp; [![Build Status]][actions] [![Latest Version]][crates.io] [![over-there: rustc 1.39+]][Rust 1.39]
 
-Tool to enable software management and execution remotely from "over there."
+[Build Status]: https://img.shields.io/github/workflow/status/chipsenkbeil/over-there/CI/master
+[actions]: https://github.com/chipsenkbeil/over-there/actions?query=branch%3Amaster
+[Latest Version]: https://img.shields.io/crates/v/over-there.svg
+[crates.io]: https://crates.io/crates/over-there
+[over-there: rustc 1.39+]: https://img.shields.io/badge/over-there-rustc_1.39+-lightgray.svg
+[Rust 1.39]: https://blog.rust-lang.org/2019/11/07/Rust-1.39.0.html
 
-## Building deve version
+**Over There is a library and tool to enable software management and execution remotely from "over there."**
+
+## Building developer version
 
 By default, the CLI feature is not included. This means that executing a
 normal build will not include the binary:
