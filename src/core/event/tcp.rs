@@ -2,7 +2,7 @@ use super::{AddrEventManager, EventManager};
 use crate::core::Msg;
 
 use log::error;
-use crate::transport::{
+use crate::core::transport::{
     Authenticator, Bicrypter, Decrypter, Encrypter, Signer,
     TcpStreamInboundWire, TcpStreamOutboundWire, Verifier, Wire,
 };

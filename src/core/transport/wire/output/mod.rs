@@ -1,7 +1,7 @@
 pub mod encoder;
 
-use crate::transport::crypto::{CryptError, Encrypter};
-use crate::transport::{auth::Signer, wire::packet::PacketEncryption};
+use crate::core::transport::crypto::{CryptError, Encrypter};
+use crate::core::transport::{auth::Signer, wire::packet::PacketEncryption};
 use derive_more::{Display, Error};
 use encoder::{EncodeArgs, Encoder};
 
@@ -92,9 +92,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::auth::{ClosureSigner, Digest, NoopAuthenticator};
-    use crate::transport::crypto::{ClosureEncrypter, NoopBicrypter};
-    use crate::transport::wire::packet::Packet;
+    use crate::core::transport::auth::{ClosureSigner, Digest, NoopAuthenticator};
+    use crate::core::transport::crypto::{ClosureEncrypter, NoopBicrypter};
+    use crate::core::transport::wire::packet::Packet;
 
     fn new_processor(
         buffer_size: usize,
@@ -155,7 +155,7 @@ mod tests {
     #[cfg(test)]
     mod crypt {
         use super::*;
-        use crate::transport::crypto::{
+        use crate::core::transport::crypto::{
             AssociatedData, CryptError, Decrypter, Encrypter,
         };
 

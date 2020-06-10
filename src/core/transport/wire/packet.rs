@@ -1,5 +1,5 @@
-use crate::transport::auth::Digest;
-use crate::transport::crypto::{AssociatedData, Nonce};
+use crate::core::transport::auth::Digest;
+use crate::core::transport::crypto::{AssociatedData, Nonce};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]

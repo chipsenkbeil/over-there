@@ -1,4 +1,4 @@
-use crate::transport::{constants, wire::packet::Packet};
+use crate::core::transport::{constants, wire::packet::Packet};
 use crate::utils::TtlValue;
 use derive_more::{Display, Error};
 use std::collections::HashMap;
@@ -162,7 +162,7 @@ impl Default for Decoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::wire::packet::{
+    use crate::core::transport::wire::packet::{
         Metadata, PacketEncryption, PacketType,
     };
 

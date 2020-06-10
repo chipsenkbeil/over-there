@@ -4,8 +4,8 @@ mod packet;
 pub mod tcp;
 pub mod udp;
 
-use crate::transport::auth::{self as auth, Authenticator, Signer, Verifier};
-use crate::transport::crypto::{
+use crate::core::transport::auth::{self as auth, Authenticator, Signer, Verifier};
+use crate::core::transport::crypto::{
     self as crypto, Bicrypter, Decrypter, Encrypter,
 };
 use derive_more::{Display, Error};

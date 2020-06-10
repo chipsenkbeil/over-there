@@ -15,7 +15,7 @@ use crate::core::{
 use derive_builder::Builder;
 use log::warn;
 use crate::utils::Either;
-use crate::transport::{
+use crate::core::transport::{
     self as wire, Authenticator, Bicrypter, NetTransmission, Wire,
 };
 use std::net::SocketAddr;
@@ -36,7 +36,7 @@ where
     B: Bicrypter,
 {
     /// TTL to collect all packets for a msg
-    #[builder(default = "crate::transport::constants::DEFAULT_TTL")]
+    #[builder(default = "crate::core::transport::constants::DEFAULT_TTL")]
     packet_ttl: Duration,
 
     /// Used to sign & verify msgs

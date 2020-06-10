@@ -1,5 +1,5 @@
 use crate::cli::opts::types::Encryption;
-use crate::transport::crypto::{self as crypto, key::Key};
+use crate::core::transport::crypto::{self as crypto, key::Key};
 use std::io;
 
 macro_rules! match_key_or_err {

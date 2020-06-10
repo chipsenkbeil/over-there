@@ -2,8 +2,8 @@ mod client;
 mod event;
 mod msg;
 mod server;
+pub mod transport;
 
-pub use crate::transport::net;
 pub use client::{
     error::AskError,
     error::ExecAskError,
@@ -26,6 +26,7 @@ pub use server::{
     proc::{ExitStatus, LocalProc},
     ListeningServer, Server, ServerBuilder,
 };
+pub use transport::net;
 
 use std::net::SocketAddr;
 

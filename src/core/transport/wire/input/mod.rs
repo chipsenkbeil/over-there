@@ -1,7 +1,7 @@
 pub mod decoder;
 
-use crate::transport::crypto::{AssociatedData, CryptError, Decrypter, Nonce};
-use crate::transport::{auth::Verifier, wire::packet::Packet};
+use crate::core::transport::crypto::{AssociatedData, CryptError, Decrypter, Nonce};
+use crate::core::transport::{auth::Verifier, wire::packet::Packet};
 use decoder::Decoder;
 use derive_more::{Display, Error};
 use std::time::Duration;
@@ -142,9 +142,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::auth::NoopAuthenticator;
-    use crate::transport::crypto::NoopBicrypter;
-    use crate::transport::wire::{
+    use crate::core::transport::auth::NoopAuthenticator;
+    use crate::core::transport::crypto::NoopBicrypter;
+    use crate::core::transport::wire::{
         output::encoder::{EncodeArgs, Encoder},
         packet::{PacketEncryption, PacketType},
     };
@@ -366,7 +366,7 @@ mod tests {
     #[cfg(test)]
     mod crypt {
         use super::*;
-        use crate::transport::crypto::{CryptError, Decrypter, Encrypter};
+        use crate::core::transport::crypto::{CryptError, Decrypter, Encrypter};
 
         #[derive(Clone)]
         struct BadDecrypter;
@@ -390,8 +390,8 @@ mod tests {
 
             fn new_encrypt_associated_data(
                 &self,
-            ) -> crate::transport::crypto::AssociatedData {
-                crate::transport::crypto::AssociatedData::None
+            ) -> crate::core::transport::crypto::AssociatedData {
+                crate::core::transport::crypto::AssociatedData::None
             }
         }
 

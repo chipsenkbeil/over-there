@@ -1,5 +1,5 @@
 use crate::cli::opts::types::Authentication;
-use crate::transport::auth;
+use crate::core::transport::auth;
 use std::io;
 
 pub enum Authenticator {

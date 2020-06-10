@@ -1,4 +1,4 @@
-use crate::transport::{
+use crate::core::transport::{
     auth::Signer,
     wire::packet::{Metadata, Packet, PacketEncryption, PacketType},
 };
@@ -270,8 +270,8 @@ impl Default for Encoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::auth::NoopAuthenticator;
-    use crate::transport::crypto::{nonce, Nonce};
+    use crate::core::transport::auth::NoopAuthenticator;
+    use crate::core::transport::crypto::{nonce, Nonce};
 
     #[test]
     fn fails_if_max_packet_size_is_too_low() {
