@@ -15,3 +15,9 @@ impl From<Vec<u8>> for CustomArgs {
         Self { data }
     }
 }
+
+impl From<&[u8]> for CustomArgs {
+    fn from(data: &[u8]) -> Self {
+        Self::from(data.to_vec())
+    }
+}

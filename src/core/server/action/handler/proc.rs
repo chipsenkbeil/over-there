@@ -274,7 +274,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let args = write_proc_stdin(
             Arc::clone(&state),
@@ -327,7 +327,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let err = write_proc_stdin(
             Arc::clone(&state),
@@ -376,7 +376,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let args =
             read_proc_stdout(Arc::clone(&state), &ReadProcStdoutArgs { id })
@@ -406,7 +406,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let args =
             read_proc_stdout(Arc::clone(&state), &ReadProcStdoutArgs { id })
@@ -449,7 +449,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let args =
             read_proc_stderr(Arc::clone(&state), &ReadProcStderrArgs { id })
@@ -479,7 +479,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let args =
             read_proc_stderr(Arc::clone(&state), &ReadProcStderrArgs { id })
@@ -522,7 +522,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let args =
             read_proc_status(Arc::clone(&state), &ReadProcStatusArgs { id })
@@ -552,7 +552,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let args =
             read_proc_status(Arc::clone(&state), &ReadProcStatusArgs { id })
@@ -583,7 +583,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to start
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let args = kill_proc(Arc::clone(&state), &KillProcArgs { id })
             .await
@@ -610,7 +610,7 @@ mod tests {
             .insert(id, LocalProc::new(child).spawn());
 
         // Give process some time to run and complete
-        delay_for(Duration::from_millis(10)).await;
+        delay_for(Duration::from_millis(50)).await;
 
         let args = kill_proc(Arc::clone(&state), &KillProcArgs { id })
             .await

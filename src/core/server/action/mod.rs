@@ -414,21 +414,33 @@ async fn update_origin_last_touched(
 mod tests {
     use super::*;
     use crate::core::request;
+    use std::sync::mpsc;
 
     #[tokio::test]
     async fn route_and_execute_with_sequence_should_execute_request_in_order() {
-        let delay = 30;
         let mut state = ServerState::default();
-        make_custom_handler_return_time(&mut state, delay);
+        let (tx, rx) = mpsc::channel();
+
+        // Set custom handler to store
+        state.set_custom_handler(From::from(
+            move |req: request::CustomArgs| {
+                let tx_2 = tx.clone();
+                async move {
+                    tx_2.send(req.data.to_vec())
+                        .expect("Failed to send data on channel");
+                    Ok(reply::CustomArgs { data: req.data })
+                }
+            },
+        ));
 
         let reply = route_and_execute(
             Arc::new(state),
             Request::Sequence(From::from(vec![
-                Request::Custom(From::from(Vec::<u8>::new()))
+                Request::Custom(From::from("first".as_bytes()))
                     .into_lazily_transformed(vec![]),
-                Request::Custom(From::from(Vec::<u8>::new()))
+                Request::Custom(From::from("second".as_bytes()))
                     .into_lazily_transformed(vec![]),
-                Request::Custom(From::from(Vec::<u8>::new()))
+                Request::Custom(From::from("third".as_bytes()))
                     .into_lazily_transformed(vec![]),
             ])),
             2,
@@ -437,21 +449,22 @@ mod tests {
 
         match reply {
             Reply::Sequence(args) => {
-                let times = parse_replies_as_times(args.results);
+                // First, check that we got back expected results in order
+                assert_eq!(
+                    args.results,
+                    vec![
+                        Reply::Custom(From::from("first".as_bytes())),
+                        Reply::Custom(From::from("second".as_bytes())),
+                        Reply::Custom(From::from("third".as_bytes()))
+                    ]
+                );
 
-                // Time between each in sequence should be ~30 millis
-                assert!(
-                    times[0] < times[1] && times[1] - times[0] <= 40,
-                    "{} - {} not ~ 30 millis apart",
-                    times[1],
-                    times[0],
-                );
-                assert!(
-                    times[1] < times[2] && times[2] - times[1] <= 40,
-                    "{} - {} not ~ 30 millis apart",
-                    times[2],
-                    times[1]
-                );
+                // Second, check that we actually evaluated in order
+                let mut iter = rx.try_iter();
+                assert_eq!(iter.next(), Some("first".as_bytes().to_vec()));
+                assert_eq!(iter.next(), Some("second".as_bytes().to_vec()));
+                assert_eq!(iter.next(), Some("third".as_bytes().to_vec()));
+                assert_eq!(iter.next(), None);
             }
             x => panic!("Unexpected reply: {:?}", x),
         }

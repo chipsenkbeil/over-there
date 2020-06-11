@@ -124,31 +124,34 @@ mod tests {
 
     #[test]
     fn touch_should_renew_lifetime_of_value() {
-        let mut ttl_value = TtlValue::new(0, Duration::from_millis(5));
+        let mut ttl_value = TtlValue::new(0, Duration::from_millis(100));
 
-        std::thread::sleep(Duration::from_millis(3));
+        // Make the last touched time be in the past where we exceed the TTL
+        ttl_value.last_touched = Instant::now()
+            .checked_sub(Duration::from_millis(1000))
+            .unwrap();
 
+        // Now refresh
         ttl_value.touch();
-
-        std::thread::sleep(Duration::from_millis(3));
 
         assert!(!ttl_value.has_expired(), "Value expired unexpectedly");
     }
 
     #[test]
     fn has_expired_should_return_false_if_value_has_not_expired() {
-        let ttl_value = TtlValue::new(0, Duration::from_millis(5));
-
-        std::thread::sleep(Duration::from_millis(1));
+        let ttl_value = TtlValue::new(0, Duration::from_millis(100));
 
         assert!(!ttl_value.has_expired(), "Value expired unexpectedly");
     }
 
     #[test]
     fn has_expired_should_return_true_if_value_has_expired() {
-        let ttl_value = TtlValue::new(0, Duration::from_millis(5));
+        let mut ttl_value = TtlValue::new(0, Duration::from_millis(100));
 
-        std::thread::sleep(Duration::from_millis(6));
+        // Make the last touched time be in the past where we exceed the TTL
+        ttl_value.last_touched = Instant::now()
+            .checked_sub(Duration::from_millis(1000))
+            .unwrap();
 
         assert!(ttl_value.has_expired(), "Value not expired when should be");
     }
