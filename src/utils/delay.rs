@@ -70,8 +70,8 @@ mod tests {
             *after_delay.lock().unwrap() = Instant::now();
         });
 
-        // Wait twice as long to ensure the delay happens
-        thread::sleep(delay_duration * 2);
+        // Wait longer to ensure the delay happens
+        thread::sleep(delay_duration * 4);
 
         let elapsed = after
             .lock()
@@ -97,8 +97,8 @@ mod tests {
         // Immediately drop the delay instance
         drop(delay);
 
-        // Wait twice as long to ensure the delay happens
-        thread::sleep(delay_duration * 2);
+        // Wait longer to ensure the delay happens
+        thread::sleep(delay_duration * 4);
 
         assert!(
             did_occur.load(Ordering::Acquire),
@@ -118,8 +118,8 @@ mod tests {
         // Cancel immediately
         delay.cancel();
 
-        // Wait twice as long to ensure the delay happens
-        thread::sleep(delay_duration * 2);
+        // Wait longer to ensure the delay happens
+        thread::sleep(delay_duration * 4);
 
         assert!(
             !did_occur.load(Ordering::Acquire),
@@ -136,8 +136,8 @@ mod tests {
             did_occur_2.store(true, Ordering::Release);
         });
 
-        // Wait twice as long to ensure the delay happens
-        thread::sleep(delay_duration * 2);
+        // Wait longer to ensure the delay happens
+        thread::sleep(delay_duration * 4);
 
         // Cancel later, after the delay should have happened
         delay.cancel();
