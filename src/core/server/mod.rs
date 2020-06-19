@@ -7,10 +7,10 @@ pub mod state;
 
 pub use listening::ListeningServer;
 
+use crate::core::transport::{Authenticator, Bicrypter, NetTransmission, Wire};
 use crate::core::{event::AddrEventManager, Msg, Transport};
 use derive_builder::Builder;
 use log::error;
-use crate::core::transport::{Authenticator, Bicrypter, NetTransmission, Wire};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -61,6 +61,10 @@ where
     /// TTL for an untouched, dead process before it is removed during cleanup
     #[builder(default = "state::constants::DEFAULT_DEAD_PROC_TTL")]
     dead_proc_ttl: Duration,
+
+    /// Handler to use for custom msgs
+    #[builder(setter(strip_option), default)]
+    custom_handler: Option<custom::CustomHandler>,
 }
 
 impl<A, B> Server<A, B>
@@ -68,17 +72,27 @@ where
     A: Authenticator + Send + Sync + 'static,
     B: Bicrypter + Send + Sync + 'static,
 {
+    fn make_state(&self) -> Arc<state::ServerState> {
+        let mut state = state::ServerState::new(
+            self.file_ttl,
+            self.proc_ttl,
+            self.dead_proc_ttl,
+        );
+
+        if let Some(custom_handler) = self.custom_handler.clone() {
+            state.set_custom_handler(custom_handler);
+        }
+
+        Arc::new(state)
+    }
+
     /// Starts actively listening for msgs via the specified transport medium
     ///
     /// Will fail if using TCP transport as requires Clone; should instead
     /// use `cloneable_listen` if using TCP
     pub async fn listen(self) -> io::Result<ListeningServer> {
         let handle = Handle::current();
-        let state = Arc::new(state::ServerState::new(
-            self.file_ttl,
-            self.proc_ttl,
-            self.dead_proc_ttl,
-        ));
+        let state = self.make_state();
 
         handle.spawn(cleanup_loop(Arc::clone(&state), self.cleanup_interval));
 
@@ -103,11 +117,7 @@ where
     /// using cloneable methods for Authenticator and Bicrypter operations
     pub async fn cloneable_listen(self) -> io::Result<ListeningServer> {
         let handle = Handle::current();
-        let state = Arc::new(state::ServerState::new(
-            self.file_ttl,
-            self.proc_ttl,
-            self.dead_proc_ttl,
-        ));
+        let state = self.make_state();
 
         handle.spawn(cleanup_loop(Arc::clone(&state), self.cleanup_interval));
 
