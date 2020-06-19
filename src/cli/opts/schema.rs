@@ -92,6 +92,7 @@ pub enum SchemaType {
     CustomReply,
     InternalDebugReply,
 
+    ErrorReply,
     GenericError,
     IoError,
     FileSigChanged,

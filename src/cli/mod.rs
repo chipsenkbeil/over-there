@@ -711,6 +711,9 @@ async fn run_schema(cmd: SchemaSubcommand) -> Result<(), Box<dyn Error>> {
                 SchemaType::ReadProcStatusReply => {
                     crate::core::reply::ProcStatusArgs::schema()
                 }
+                SchemaType::ErrorReply => {
+                    crate::core::reply::ReplyError::schema()
+                }
                 SchemaType::GenericError => {
                     crate::core::reply::GenericErrorArgs::schema()
                 }
