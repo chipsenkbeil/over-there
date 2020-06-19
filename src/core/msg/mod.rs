@@ -21,7 +21,17 @@ pub struct Header {
     pub creation_date: DateTime<Utc>,
 }
 
+impl Header {
+    /// Creates a new Header with the provided ID
+    pub fn with_id(id: u32) -> Self {
+        let mut header = Header::default();
+        header.id = id;
+        header
+    }
+}
+
 impl Default for Header {
+    /// Creates a new Header with a random ID
     fn default() -> Self {
         Self {
             id: random(),

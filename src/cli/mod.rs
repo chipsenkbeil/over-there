@@ -11,12 +11,22 @@ use opts::{
     server::ServerCommand,
     Command,
 };
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::error::Error;
 use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 pub use opts::Opts;
+
+pub type Metadata = HashMap<String, String>;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ContentAndMetadata {
+    content: Content,
+    metadata: Metadata,
+}
 
 /// Primary entrypoint to run the executable based on input options
 pub async fn run(opts: Opts) -> Result<(), Box<dyn Error>> {
@@ -320,7 +330,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                     &line,
                     c.format,
                     c.format,
-                    cmd.redirect_stdout.as_ref(),
+                    c.meta_mode,
                 )
                 .await?;
             }
@@ -339,7 +349,7 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
                         &line,
                         c.format,
                         c.format,
-                        cmd.redirect_stdout.as_ref(),
+                        c.meta_mode,
                     )
                     .await?;
 
@@ -362,13 +372,36 @@ async fn run_client(cmd: ClientCommand) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn execute_raw(
+async fn execute_raw_content(
     client: &mut ConnectedClient,
     input: &str,
     format: FormatOption,
 ) -> Result<Reply, Box<dyn std::error::Error>> {
-    match format::text_to_content(format, input)? {
+    let content: Content = format::convert_text(format, input)?;
+    match content {
         Content::Request(x) => Ok(client.ask(x).await?),
+        x => Err(format!("Unexpected input: {:?}", x).into()),
+    }
+}
+
+async fn execute_raw_content_and_metadata(
+    client: &mut ConnectedClient,
+    input: &str,
+    format: FormatOption,
+) -> Result<
+    (
+        Result<Reply, Box<dyn std::error::Error>>,
+        HashMap<String, String>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let content_and_metadata: ContentAndMetadata =
+        format::convert_text(format, input)?;
+    match content_and_metadata {
+        ContentAndMetadata {
+            content: Content::Request(x),
+            metadata,
+        } => Ok((client.ask(x).await.map_err(Box::from), metadata)),
         x => Err(format!("Unexpected input: {:?}", x).into()),
     }
 }
@@ -378,21 +411,45 @@ async fn execute_raw_and_report(
     input: &str,
     input_format: FormatOption,
     output_format: FormatOption,
-    redirect_output: Option<&PathBuf>,
+    meta_mode: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    match execute_raw(client, &input, input_format).await {
-        Ok(reply) => Ok(format_content_write!(
-            output_format,
-            redirect_output,
-            Content::from(reply),
-            Ok(format!("{:?}", &reply)),
-        )?),
-        Err(x) => Ok(format_content_write!(
-            output_format,
-            redirect_output,
-            Content::from(Reply::from(x)),
-            Ok(format!("{:?}", &x)),
-        )?),
+    if meta_mode {
+        match execute_raw_content_and_metadata(client, &input, input_format)
+            .await
+        {
+            Ok((result, metadata)) => format::format_println(
+                output_format,
+                ContentAndMetadata {
+                    content: match result {
+                        Ok(reply) => Content::from(reply),
+                        Err(x) => Content::from(Reply::from(x)),
+                    },
+                    metadata,
+                },
+                |_| Err("Unreachable".into()),
+            ),
+            Err(x) => format::format_println(
+                output_format,
+                ContentAndMetadata {
+                    content: Content::from(Reply::from(x)),
+                    metadata: HashMap::new(),
+                },
+                |_| Err("Unreachable".into()),
+            ),
+        }
+    } else {
+        match execute_raw_content(client, &input, input_format).await {
+            Ok(reply) => format::format_content_println(
+                output_format,
+                Content::from(reply),
+                |_| Err("Unreachable".into()),
+            ),
+            Err(x) => format::format_content_println(
+                output_format,
+                Content::from(Reply::from(x)),
+                |_| Err("Unreachable".into()),
+            ),
+        }
     }
 }
 

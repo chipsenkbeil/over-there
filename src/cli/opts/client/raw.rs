@@ -18,6 +18,7 @@ pub struct RawCommand {
             .filter(|v| **v != FormatOption::Human.as_ref())
             .map(|v| *v)
             .collect::<Vec<&str>>(), 
+        default_value = FormatOption::Json.as_ref(),
     )]
     pub format: FormatOption,
 
@@ -26,4 +27,10 @@ pub struct RawCommand {
     /// is terminated or stdin is closed
     #[clap(short, long)]
     pub interactive: bool,
+
+    /// If provided, will send and receive content and meta information.
+    /// Useful for specifying additional information when sending content and
+    /// having that information available on replies (such as callback IDs)
+    #[clap(short, long)]
+    pub meta_mode: bool,
 }

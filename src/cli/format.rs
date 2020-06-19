@@ -1,5 +1,5 @@
 use crate::core::Content;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use strum_macros::{AsRefStr, EnumString, EnumVariantNames};
 
 pub type FormatResult = Result<String, Box<dyn std::error::Error>>;
@@ -21,10 +21,10 @@ pub enum FormatOption {
 }
 
 /// Tries to convert provided text with the specified format to content
-pub fn text_to_content(
+pub fn convert_text<T: for<'de> Deserialize<'de>>(
     format_option: FormatOption,
     text: &str,
-) -> Result<Content, Box<dyn std::error::Error>> {
+) -> Result<T, Box<dyn std::error::Error>> {
     match format_option {
         FormatOption::Json => Ok(serde_json::from_str(text)?),
 
