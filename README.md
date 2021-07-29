@@ -1,3 +1,5 @@
+# Abandoned in favor of https://github.com/chipsenkbeil/distant
+
 # Over There &emsp; [![Build Status]][actions] [![Latest Version]][crates.io] [![Latest Docs]][docs.rs] [![over-there: rustc 1.39+]][Rust 1.39]
 
 [Build Status]: https://img.shields.io/github/workflow/status/chipsenkbeil/over-there/CI/master
